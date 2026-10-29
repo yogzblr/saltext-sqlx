@@ -40,6 +40,7 @@ _ALLOWED = frozenset(
         "ssl_certs_dir",
         "ssl_mode",
         "ssl_files",
+        "allow_call_params",
     )
 )
 
@@ -167,7 +168,19 @@ def validate_profile(name, raw, policy=None):
             _invalid(name, f"'{key}' exceeds the hard maximum of {maximum}")
         out[key] = value
 
-    resolved = tls.validate(name, raw, dialect, policy)  # SPEC section 7 / D12; checks the files, no network
+    allowed = raw.get("allow_call_params")
+    if (
+        allowed is not None
+    ):  # narrows sqlx:_policy:allow_call_params for this profile (lib/overrides.py)
+        if not isinstance(allowed, list) or not all(
+            isinstance(n, str) and n != "*" for n in allowed
+        ):
+            _invalid(name, "'allow_call_params' must be a list of explicit field names")
+        out["allow_call_params"] = list(allowed)
+
+    resolved = tls.validate(
+        name, raw, dialect, policy
+    )  # SPEC section 7 / D12; checks the files, no network
     if resolved is not None:
         out["ssl_certs_dir"] = raw["ssl_certs_dir"]
         out["tls"] = resolved
