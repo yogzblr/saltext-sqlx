@@ -401,7 +401,7 @@ the same change.
 - Docker images (`docker-compose.yml` was never started), including whether the official images match the Ubuntu builds.
 - Whether the server keeps running a statement after PyMySQL's `read_timeout` fires.
 - That connect timeouts fire (the sandbox network never black-holes).
-- TLS certificate verification behaviour of any driver.
+- TLS certificate verification behaviour of Oracle (python-oracledb) and SQL Server (pymssql): see section 12 for the three databases that were run.
 
 ## 11. Reproduce
 
@@ -414,3 +414,64 @@ for d in postgresql mysql mariadb oracle mssql; do /tmp/v/bin/python -I scripts/
 /tmp/v/bin/python -I scripts/probes/render_wire_shapes.py
 ```
 Repeat the probes in a venv with `sqlalchemy==2.1.6` to refresh section 8 (the renderer expects both result sets).
+
+## 12. TLS failures (certificate directory, SPEC section 3.1, decision D12)
+
+Added by hand after the renderer's sections (`scripts/probes/render_wire_shapes.py` does not write this section; re-add it
+if that script regenerates the file). Observed with `tests-support/tls` (`up.sh`, `gen_certs.sh`, `observe.py`) on 2026-10-29:
+PostgreSQL 16.15 (libpq 18.0.6, psycopg 3.3.6), MySQL 8.0.46 (`require_secure_transport=ON`), MariaDB 10.11.14, PyMySQL 1.2.3,
+SQLAlchemy 2.0.55, Python 3.13.16. Throw-away CA; the server certificate has `SAN DNS:localhost, IP:127.0.0.1`; hosts used:
+`localhost` (match) and `127.0.0.2` (no match). Accounts: `tls_pw` (password, TLS only) and `tls_cert` (certificate;
+PostgreSQL `hostssl ... cert clientcert=verify-full`, MySQL/MariaDB `REQUIRE X509`).
+
+The first column is the raw driver exception (`exc.orig.args`, through SQLAlchemy 2.0.55); the second is what the caller gets
+from the module after `errors.py` and `tls.scrub` (paths reduced to file names; host and port are profile values).
+
+### PostgreSQL (psycopg `OperationalError`, no SQLSTATE in any case)
+
+| Case | Code | Final message (after `[E_CODE] postgresql:`) |
+|---|---|---|
+| unknown CA (client `ca.pem` is another CA) | `E_CONNECT` | `connection failed: connection to server at "127.0.0.1", port 54339 failed: SSL error: certificate verify failed` |
+| hostname not in the SANs, `verify-full` | `E_CONNECT` | `... failed: server certificate for "localhost" (and 1 other name) does not match host name "127.0.0.2"` (`verify-ca` connects) |
+| expired client certificate | `E_CONNECT` | `... failed: SSL error: ssl/tls alert certificate expired` |
+| client certificate signed by another CA | `E_CONNECT` | `... failed: SSL error: tlsv1 alert unknown ca` |
+| expired SERVER certificate | `E_CONNECT` | `... failed: SSL error: certificate verify failed` (same text as an unknown CA: libpq does not give the reason) |
+| client certificate required, none sent | `E_AUTH_FAILED` | `... failed: FATAL: connection requires a valid client certificate` |
+| certificate CN does not match the user | `E_AUTH_FAILED` | `... failed: FATAL: certificate authentication failed for user "tls_mismatch"` |
+| server requires TLS, client used `sslmode=disable` | `E_CONNECT` | `... failed: FATAL: pg_hba.conf rejects connection for host "127.0.0.1", user "tls_pw", database "tlsdb", no encryption` |
+| server has no TLS, `sslmode=verify-full` (standard server, port 54329) | `E_CONNECT` | `... failed: server does not support SSL, but SSL was required` |
+| `ca.pem` missing at connect time | `E_CONNECT` | `root certificate file "<path>" does not exist` + a hint line (the module refuses this earlier, at profile load) |
+| key file is garbage | `E_CONNECT` | `... failed: could not load private key file "client.key": unsupported` (libpq quotes the full path; shown here after `tls.scrub`) |
+| key does not match the certificate | `E_CONNECT` | `... failed: could not load private key file "client.key": key values mismatch` |
+| key removed after validation | `E_CONNECT` | `... failed: certificate present, but not private key file "client.key"` |
+| key mode 0644 (libpq) | `E_CONNECT` | `... failed: private key file "<path>" has group or world access; file must have permissions u=rw (0600) or less if owned by the current user, or permissions u=rw,g=r (0640) or less if owned by root` (the module refuses this earlier with `[E_POLICY]`) |
+
+`sslmode=require` with a wrong `sslrootcert` fails like `verify-ca` (`SSL error: certificate verify failed`); without
+`sslrootcert` it connects with no verification at all. That is why `ssl_mode: require` is refused with a directory.
+With no client pair configured and `sslcertmode=disable`, a certificate-only account gets the `connection requires a valid client
+certificate` error; without it libpq would have looked in `~/.postgresql/` and `$PGSSLCERT`.
+
+### MySQL 8.0.46 and MariaDB 10.11.14 (PyMySQL; identical on both unless noted)
+
+| Case | Raw exception | Code | Final message (after `[E_CODE] mysql <n>:`) |
+|---|---|---|---|
+| unknown CA | `OperationalError` 2003, no SQLSTATE | `E_CONNECT` | `Can't connect to MySQL server on 'localhost' ([SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: self-signed certificate in certificate chain (_ssl.c:1032))` |
+| hostname not in the SANs, `verify-full` | 2003 | `E_CONNECT` | `Can't connect to MySQL server on '127.0.0.2' ([SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: IP address mismatch, certificate is not valid for '127.0.0.2'. (_ssl.c:1032))` (`verify-ca` connects) |
+| expired SERVER certificate | 2003 | `E_CONNECT` | `... certificate verify failed: certificate has expired (_ssl.c:1032))` |
+| expired client certificate | 2013 | `E_CONNECT` | `Lost connection to MySQL server during query ([SSL: SSLV3_ALERT_CERTIFICATE_EXPIRED] sslv3 alert certificate expired (_ssl.c:2660))` |
+| client certificate signed by another CA | 2013 | `E_CONNECT` | `Lost connection to MySQL server during query ([SSL: TLSV1_ALERT_UNKNOWN_CA] tlsv1 alert unknown ca (_ssl.c:2660))` |
+| `REQUIRE X509` account, no client certificate | 1045, SQLSTATE 28000 | `E_AUTH_FAILED` | `Access denied for user 'tls_cert'@'localhost' (using password: YES)` (no TLS-specific reason from the server) |
+| `REQUIRE SSL` account, `ssl_disabled` | 1045 | `E_AUTH_FAILED` | `Access denied for user 'tls_pw'@'localhost' (using password: YES)` |
+| MySQL `require_secure_transport=ON`, plain connection, passwordless root | `OperationalError` 3159 | `E_CONNECT` | `Connections using insecure transport are prohibited while --require_secure_transport=ON.` (MariaDB has no such variable and accepted the plain connection) |
+| key file is garbage | raw `ssl.SSLError` (not a `DBAPIError`) args `(524297, '[SSL] PEM lib (_ssl.c:4129)')` | `E_CONNECT` | `[SSL] PEM lib (_ssl.c:4129)` |
+| key does not match the certificate | raw `ssl.SSLError` `(116, '[X509: KEY_VALUES_MISMATCH] key values mismatch (_ssl.c:4129)')` | `E_CONNECT` | same text |
+| key file removed after validation | raw `FileNotFoundError` `(2, 'No such file or directory')` | `E_CONNECT` | `a TLS file given to the driver (CA, client certificate or key) could not be opened: No such file or directory` (no file name) |
+
+PyMySQL does not check key file modes: a 0644 key connected successfully on both servers, so the mode rule is enforced by the
+module alone (`[E_POLICY]` at profile load). PyMySQL with no TLS arguments at all negotiates TLS opportunistically (a
+`REQUIRE SSL` account connected that way). How SQLAlchemy 2.0.55 passes the arguments: URL-query `ssl_ca`, `ssl_cert`, `ssl_key`
+are moved into PyMySQL's `ssl` dict and `ssl_verify_cert` / `ssl_verify_identity` stay keywords; PyMySQL 1.2.3 rebuilds its TLS
+context from the keywords whenever any `ssl_*` keyword is set and then drops the dict, so the CA would be lost. The module
+therefore passes all five as `connect_args` (PyMySQL keywords), which works.
+
+No Oracle or SQL Server TLS case was run.

@@ -1,5 +1,5 @@
 """TLS failure mapping in lib/errors.py. Every message below was observed on a live TLS server (docs/WIRE_SHAPES.md
-section 11) with PostgreSQL 16.15 (libpq 18.0.6, psycopg 3.3.6), MySQL 8.0.46, MariaDB 10.11.14 and PyMySQL 1.2.3.
+section 12) with PostgreSQL 16.15 (libpq 18.0.6, psycopg 3.3.6), MySQL 8.0.46, MariaDB 10.11.14 and PyMySQL 1.2.3.
 """
 
 import ssl

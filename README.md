@@ -38,6 +38,30 @@ sqlx:
       row_limit: 500                       # default 500, hard max 10000
 ```
 
+TLS with a certificate directory (SPEC section 3.1, decision D12). The operator sets the root once; a profile names a
+directory below it. Nothing about it can be chosen by a caller:
+
+```yaml
+sqlx:
+  _policy:
+    ssl_certs_dir_root: /etc/salt/sqlx-certs        # required for any ssl_certs_dir, else [E_POLICY]
+  profiles:
+    orders_pg_tls:
+      dialect: postgresql                           # also mysql (MySQL and MariaDB); oracle is UNVERIFIED; mssql is refused
+      host: db1.internal                            # must be in the server certificate's SANs for verify-full
+      port: 5432
+      database: orders
+      username: salt_ro
+      password: sdb://vault/orders_pg               # omit for certificate-only accounts
+      ssl_certs_dir: /etc/salt/sqlx-certs/orders_pg # ca.pem (required); client.pem + client.key (optional, mutual TLS)
+      ssl_mode: verify-full                         # default; or verify-ca (checks the chain, not the host name)
+      # ssl_files: {ca: ca.crt, cert: client.crt, key: client.key}   # only if your file names differ
+```
+
+Keep private keys at mode `0600` (or `0640` owned by root); a key with group or world access is refused. Verified on
+PostgreSQL 16, MySQL 8.0 and MariaDB 10.11 against throw-away certificates (`tests-support/tls/`). **Oracle and SQL Server
+TLS are unverified**: Oracle's argument mapping is unit-tested only, and `ssl_certs_dir` is rejected for SQL Server.
+
 ```bash
 salt 'db-minion-01' sqlx.ping profile=orders_pg
 salt 'db-minion-01' sqlx.query profile=orders_pg sql="select id, total from orders where status = :s" params='{"s": "open"}' limit=50

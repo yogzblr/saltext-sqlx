@@ -51,7 +51,7 @@ SERVERS = {
     },
 }
 
-# fragments of the real driver messages (docs/WIRE_SHAPES.md section 11), per server
+# fragments of the real driver messages (docs/WIRE_SHAPES.md section 12), per server
 UNKNOWN_CA = {
     "postgresql": "certificate verify failed",
     "mysql": "certificate verify failed",

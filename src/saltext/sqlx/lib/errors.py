@@ -131,7 +131,7 @@ _PG_TEXT = (
     ("could not connect", "E_CONNECT"),
     ("server closed the connection", "E_CONNECT"),
     ("are allowed as placeholders", "E_OPTION_INVALID"),
-    # TLS (docs/WIRE_SHAPES.md section 11; libpq 18.0.6 against PostgreSQL 16.15). Paths in these are removed by
+    # TLS (docs/WIRE_SHAPES.md section 12; libpq 18.0.6 against PostgreSQL 16.15). Paths in these are removed by
     # ``tls.scrub`` in ``engine`` before the caller sees them.
     ("connection requires a valid client certificate", "E_AUTH_FAILED"),
     ("certificate authentication failed", "E_AUTH_FAILED"),
