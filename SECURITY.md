@@ -38,8 +38,10 @@ Every guard tested on MySQL and MariaDB is therefore bypassable by a statement a
 and CREATE TABLE, and for SELECT in a schema it was not granted (PostgreSQL 42501; MySQL and MariaDB 1142). Account `rw`
 used through a transaction that is rolled back left no row behind.
 
-**Oracle and SQL Server: NOT RUN.** No server could be started, so neither `SET TRANSACTION READ ONLY` on Oracle nor the
-role behaviour on either was observed. Treat them as unprotected by the guard until observed.
+**Oracle and SQL Server: NOT RUN.** No server could be started (Docker Hub, MCR and the Oracle registry returned HTTP 403 in
+the build environment), so neither `SET TRANSACTION READ ONLY` on Oracle nor the role behaviour on either was observed.
+Treat them as unprotected by the guard until observed. The owner must run them on a machine with registry access, with
+`tests-support/up.sh` and `scripts/probes/` (task T1b).
 
 Therefore **every profile used by `query` must connect as a role that has only read privileges** (SELECT on the needed
 schemas; no INSERT/UPDATE/DELETE/DDL; no EXECUTE on write-capable functions; no superuser; on Oracle no `ANY` system privileges such as `SELECT ANY TABLE`
@@ -55,10 +57,10 @@ beyond what is needed, and no `EXECUTE` on write-capable packages). `read_only: 
 | Caller points the minion at an arbitrary host (SSRF, credential relay) | Profiles only; call arguments cannot set host, port, driver, URL or `connect_args` (D1) |
 | Secrets in the Salt job cache | `password` is `sdb://` only in production; `allow_inline_secrets` is not provided. The call never carries a secret. Salt stores job args and returns on the master and event bus |
 | SQL text and results in the job cache | They are stored by Salt. Prefer `params` for values, keep `row_limit` small, set `keep_jobs`, consider an external job cache disabled for this function. Treat results as data in the master's job cache for DPDP and sovereignty purposes |
-| Error text leaking data | `DETAIL` lines (for example `Key (email)=(x) already exists`) are excluded unless `error_detail: true`; SQL text and bound values are never included |
+| Error text leaking data | The module never adds the SQL text, `params`, the URL or a secret to a message, and never uses `str()` of the SQLAlchemy exception (it appends `[SQL: ...]` and `[parameters: ...]` with bound values; observed). `DETAIL` lines (for example `Key (email)=(x) already exists`) are excluded unless `error_detail: true`. **Limit, observed:** the server's own primary message can still echo a bound value (PostgreSQL 22P02, MySQL/MariaDB 1366) and, on MySQL/MariaDB, a row value (`Duplicate entry '...'`, 1062), which `error_detail: false` cannot remove. Keep secrets out of `params` and out of unique keys that the caller can probe |
 | Driver option abuse (`ssl_context`, callables, local file read via `local_infile`, `allowLoadLocalInfile`) | Per-driver `connect_args` allowlist; reject anything not listed |
 | Resource exhaustion | Row, byte, time and retry caps; hard maxima in code |
-| Credential in logs/URLs | Build URLs with `URL.create`; never log a URL or password; masking filter; verified that a failed-connect exception message did not contain the password (psycopg) — re-verify per driver in T1 |
+| Credential in logs/URLs | Build URLs with `URL.create`; never log a URL or password; masking filter (`secrets.MaskingFilter`, `secrets.mask`). Observed (T1): the account password did not appear in `str`, `repr`, `repr(orig)`, `repr(orig.args)` or the formatted traceback of any case on PostgreSQL, MySQL and MariaDB, nor in the Oracle and SQL Server connection-failure rows. Not examined: successful-connect logging and driver debug output. Oracle and SQL Server server-side cases: **NOT RUN** (owner task T1b) |
 | Unreviewed LGPL code paths | LGPL drivers (psycopg, pymssql) are accepted as unmodified pip dependencies (owner decision 2026-10-29); do not vendor or patch them |
 | Supply chain on an air-gapped host | Mirror wheels for each driver for Salt's Python version; pin versions; check hashes |
 
@@ -98,6 +100,7 @@ when present so actions are attributable.
 - [ ] Secret never appears in any log record, exception, or return (parametrised over every error path)
 - [ ] Call arguments cannot set host/port/driver/URL/connect_args
 - [ ] `connect_args` allowlist reviewed per driver
-- [ ] `error_detail: false` verified not to leak `DETAIL` on a unique violation
+- [ ] `error_detail: false` verified not to leak `DETAIL` on a unique violation (PostgreSQL only; on MySQL/MariaDB the value is in the primary message, so document it instead)
+- [ ] The Oracle and SQL Server probes have been run by the owner (T1b) and section 2 and SPEC sections 7-8 updated from them
 - [ ] eauth regex example from section 4 tested through `salt-api`
 - [ ] Dependency licences listed in `NOTICE` (MIT, BSD, Apache-2.0, LGPL accepted)

@@ -15,17 +15,17 @@ avoid (lost errors, wrong exception classes, encoding) only show up against a re
 
 Run matrix: Salt 3008.x (primary), 3007.x and 3006.x (compat); SQLAlchemy 2.0.x now, 2.1.x when D4 is resolved.
 
-## 2. Test databases (STARTING POINT — only PostgreSQL has been run)
+## 2. Test databases (PostgreSQL, MySQL and MariaDB observed natively; Oracle and SQL Server NOT RUN)
 
 | Dialect | Suggested image | Notes |
 |---|---|---|
 | PostgreSQL | `postgres:16` | **Create the database as UTF8.** A SQL_ASCII database makes psycopg 3 return `bytes` for text and SQLAlchemy crashes at first connect with `TypeError: cannot use a string pattern on a bytes-like object` (seen when a cluster was created under the C locale). `initdb -E UTF8` or `POSTGRES_INITDB_ARGS="-E UTF8"` |
-| MySQL | `mysql:8` | `MAX_EXECUTION_TIME` applies to SELECT only |
-| MariaDB | `mariadb:11` | timeout variable is `max_statement_time` (seconds) |
+| MySQL | `mysql:8.0` | Observed on 8.0.46. `MAX_EXECUTION_TIME` raises 3024 for a SELECT over a table, is silent for a table-less `SELECT SLEEP()` and does not limit `INSERT ... SELECT` |
+| MariaDB | `mariadb:10.11` | Observed on 10.11.14. Timeout variable is `max_statement_time` (seconds, fractions accepted); read-only variable is `tx_read_only` |
 | Oracle | `gvenzl/oracle-free` | thin mode, no Instant Client |
 | SQL Server | `mcr.microsoft.com/mssql/server` | requires accepting the vendor EULA in the compose file; ARM hosts may need emulation |
 
-Image tags and start-up flags have **not been tested**; T1 fixes them and records changes in `tests-support/NOTES.md`.
+The Docker images and compose file have **not been run**: T1 observed PostgreSQL, MySQL and MariaDB from native packages, and Oracle and SQL Server not at all (registries returned HTTP 403). Changes to the suggestions are in `tests-support/NOTES.md`; the owner confirms the images and runs the Oracle and SQL Server probes (T1b).
 Each database gets two accounts: `ro` (SELECT only) and `rw` (DML on a scratch schema), plus a seeded `orders` table with
 text, numeric, timestamp, UUID/GUID, binary, JSON and NULL columns.
 
@@ -37,11 +37,11 @@ text, numeric, timestamp, UUID/GUID, binary, JSON and NULL columns.
 | `test_profiles.py` | required keys; unknown key → `E_PROFILE_INVALID`; dialect/driver mismatch; defaults; call cannot override host/driver/url/connect_args |
 | `test_secrets.py` | `sdb://` via injected callable; empty → `E_SECRET`; masking: no exception text or log record contains the secret, parametrised over every error path |
 | `test_dialects.py` | URL built with `URL.create` for passwords containing `@ : / % ?`; connect_args allowlist; session-setup SQL uses `int()`-validated values |
-| `test_errors.py` | table-driven: (dialect, sqlstate/vendor code, class) → code; includes the five observed PostgreSQL rows from SPEC section 8; unknown → `E_INTERNAL` with class name only; `error_detail` false drops DETAIL; SQL text and params never in a message |
+| `test_errors.py` | table-driven: (dialect, sqlstate/vendor code, class) → code; includes the observed PostgreSQL, MySQL and MariaDB rows from SPEC section 8 and the raw non-`DBAPIError` exceptions (`TypeError`, `RuntimeError`, `AttributeError`, `ValueError`, `InvalidRequestError`) → `E_INTERNAL`; unknown → `E_INTERNAL` with class name only; `error_detail` false drops DETAIL; SQL text and params never in a message |
 | `test_serialize.py` | each type in SPEC section 9; NaN/Infinity; very large ints; `bytes`; nested JSON; everything passes `json.dumps` |
 | `test_runner.py` (SQLite) | `limit+1` truncation; `max_bytes` truncation; no-row statements; `query` always rolls back (assert via a second connection); `execute` commits only when allowed and not `dry_run` |
 | `test_checks.py` | every operator; numeric-string comparison; missing cell → `ok:false`; truncated row count → `ok:null`; retry loop honours cap using a fake clock |
-| `test_text_binds.py` | the three verified `text()` traps: `:name::int` is **not** a bind; `'{"a":1}'` needs `\:`; `%` fine under `text()` |
+| `test_text_binds.py` | the three observed `text()` traps: `:name::int` is **not** a bind; `'{"a":1}'` needs `\:`; `%` fine under `text()` |
 | `test_guard.py` | source scan: `commit(` only in `runner.run_execute`; no `exec_driver_sql(` called with caller SQL; no import of a driver outside `dialects.py` |
 | `test_module.py` | `__virtual__` with/without SQLAlchemy; each function with an injected fake runner; returns JSON-serialisable |
 

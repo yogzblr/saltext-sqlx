@@ -16,7 +16,7 @@ each gate.
 - R4. Callers select a **profile**; they never supply host, port, driver, URL, `connect_args` or credentials.
 - R5. `query` never commits. `commit(` exists only inside `runner.run_execute`.
 - R6. `execute` is refused unless the profile has `allow_execute: true`; apply the verb filter and `dry_run`.
-- R7. The in-session read-only guard is best effort (it was **verified bypassable** on PostgreSQL). Never claim read-only is enforced by the module; the database role does that. Say so in docs and tests.
+- R7. The in-session read-only guard is best effort (it was **observed bypassable** on PostgreSQL, MySQL and MariaDB; Oracle and SQL Server NOT RUN). Never claim read-only is enforced by the module; the database role does that. Say so in docs and tests.
 - R8. Hard caps for rows, bytes, time, retries live in code. Profile and call may only lower them.
 - R9. Secrets are `sdb://` references in profiles; resolve late, hold in locals, mask in logs.
 
@@ -43,9 +43,14 @@ each gate.
 | `text("select :a::int")` | `:a` is not treated as a bind; the driver sees a literal `:a` and fails with a syntax error | `CAST(:a AS int)` |
 | `text("select '{\"a\":1}'")` | `:1` read as a bind → `A value is required for bind parameter '1'` | write `\:` |
 | `exec_driver_sql("... like '%b%'")` with psycopg | `only '%s', '%b', '%t' are allowed as placeholders` | use `text()` for caller SQL |
-| Trusting `SET TRANSACTION READ ONLY` | caller SQL can `SET TRANSACTION READ WRITE` or `COMMIT` and write | read-only DB role |
+| Trusting `SET TRANSACTION READ ONLY` (or any in-session guard) | caller SQL can `SET TRANSACTION READ WRITE`, `START TRANSACTION READ WRITE` or `COMMIT` and write. Bypassable on PostgreSQL 16.15, MySQL 8.0.46 and MariaDB 10.11.14 (WIRE_SHAPES section 3); Oracle and SQL Server NOT RUN | read-only DB role |
 | Using `postgres.psql_query`-style return-on-failure | the real error is lost | R1 |
-| Treating `ProgrammingError` as a subclass of `OperationalError` (as Salt's `mysql.query` does) | syntax errors escape as raw tracebacks | catch `DBAPIError` |
+| Treating `ProgrammingError` as a subclass of `OperationalError` (as Salt's `mysql.query` does) | syntax errors escape as raw tracebacks | catch `DBAPIError` **and more** (next rows) |
+| Assuming `DBAPIError` is the only exception that reaches the caller | observed raw: `TypeError` (PostgreSQL SQL_ASCII, first connect), `RuntimeError` and `AttributeError` (PyMySQL auth without or with `cryptography`), `ValueError` (`exec_driver_sql` with a literal `%` on PyMySQL), `sqlalchemy.exc.InvalidRequestError` (mis-read bind) | catch `Exception` around connect and execute; unknown class -> `E_INTERNAL` with the class name only |
+| Using `str()` of a SQLAlchemy exception as the message | it appends `[SQL: ...]` and `[parameters: ...]` with the bound values (WIRE_SHAPES section 1, case x3) | use the message of `exc.orig` only (R3) |
+| Mapping on SQLSTATE class or exception class | PyMySQL raises 1054 and 1142 as `OperationalError` although SQLSTATE class is 42; 1366 has SQLSTATE `HY000` on MySQL and `22007` on MariaDB; connect-phase errors have no SQLSTATE on PostgreSQL and MySQL/MariaDB | use the vendor code first (R2), SQLSTATE next, class last |
+| Expecting `SELECT 1/0` to fail on MySQL or MariaDB | it returns `NULL`; error 1365 appears only in a data-changing statement | do not use it as an error-fidelity case there |
+| Relying on `MAX_EXECUTION_TIME` on MySQL | a table-less `SELECT SLEEP(n)` is cut short silently (returns 1, no error) and `INSERT ... SELECT` is not limited; it does not exist on MariaDB (use `max_statement_time`, seconds) | per-flavour timeout statement; see SPEC section 7 and D11 |
 
 ## Phase order
 
