@@ -2,6 +2,7 @@
 
 import ast
 import pathlib
+import re
 import subprocess
 import sys
 import types
@@ -179,17 +180,17 @@ def test_load_driver_returns_module(monkeypatch):
 
 
 def test_missing_driver_only_affects_its_dialect(monkeypatch):
-    real = dialects.importlib.import_module
-
-    def selective(name, *a, **k):
+    def selective(name):
         if name == "oracledb":
             raise ImportError("nope")
-        return real(name, *a, **k)
+        return types.ModuleType(name)
 
     monkeypatch.setattr(dialects.importlib, "import_module", selective)
     with pytest.raises(CommandExecutionError):
         dialects.adapter("oracle").load_driver()
-    assert dialects.adapter("postgresql").load_driver().__name__ == "psycopg"
+    assert (
+        dialects.adapter("postgresql").load_driver().__name__ == "psycopg"
+    )  # fake module, no real driver needed
 
 
 # --- URL --------------------------------------------------------------------------------------
@@ -416,14 +417,12 @@ def test_oracle_session_setup_sets_call_timeout_and_read_only():
 def test_mssql_session_setup_runs_nothing():
     conn = FakeConn()
     dialects.adapter("mssql").session_setup(conn, make("mssql"), 4000, True)
-    assert conn.statements == []
+    assert not conn.statements
 
 
 @pytest.mark.parametrize("dialect", DIALECTS)
 @pytest.mark.parametrize("read_only", [True, False])
 def test_session_sql_is_constant_text_plus_one_integer(dialect, read_only):
-    import re
-
     conn = FakeConn(driver_connection=types.SimpleNamespace())
     dialects.adapter(dialect).session_setup(conn, make(dialect), "5000", read_only)
     for sql in conn.statements:
@@ -451,14 +450,14 @@ def test_session_setup_rejects_non_integer_timeout(dialect, bad):
     with pytest.raises(SaltInvocationError) as exc:
         dialects.adapter(dialect).session_setup(conn, make(dialect), bad, True)
     assert str(exc.value).startswith("[E_OPTION_INVALID]")
-    assert conn.statements == []
+    assert not conn.statements
 
 
 @pytest.mark.parametrize("dialect", DIALECTS)
 def test_session_setup_rejects_timeout_above_hard_cap(dialect):
     conn = FakeConn()
     _policy(dialects.adapter(dialect).session_setup, conn, make(dialect), 300_001, True)
-    assert conn.statements == []
+    assert not conn.statements
 
 
 @pytest.mark.parametrize("dialect", DIALECTS)
@@ -489,7 +488,7 @@ def test_version_runs_constant_sql(dialect, sql):
 def test_version_oracle_uses_driver_attribute():
     conn = FakeConn(driver_connection=types.SimpleNamespace(version="23.4.0.24"))
     assert dialects.adapter("oracle").version(conn) == "23.4.0.24"
-    assert conn.statements == []
+    assert not conn.statements
 
 
 def test_version_is_always_text():

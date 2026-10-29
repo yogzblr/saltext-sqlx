@@ -152,7 +152,9 @@ class Adapter:
     def _set_read_only(self, conn):
         raise NotImplementedError  # pragma: no cover
 
-    def session_setup(self, conn, profile, timeout_ms, read_only):  # pylint: disable=unused-argument
+    def session_setup(
+        self, conn, profile, timeout_ms, read_only
+    ):  # pylint: disable=unused-argument
         """
         Apply the statement timeout and, when ``read_only`` is true, the best-effort read-only guard.
 
@@ -234,7 +236,9 @@ class MySQL(Adapter):
         if getattr(conn.dialect, "is_mariadb", False):
             # UNVERIFIED(T1): MariaDB ``max_statement_time`` takes seconds (decimals allowed), from documentation;
             # it applies to every statement type. Needs MariaDB >= 10.1.
-            conn.exec_driver_sql(f"SET SESSION max_statement_time = {int(ms) // 1000}.{int(ms) % 1000:03d}")
+            conn.exec_driver_sql(
+                f"SET SESSION max_statement_time = {int(ms) // 1000}.{int(ms) % 1000:03d}"
+            )
         else:
             # UNVERIFIED(T1): MySQL >= 5.7.8 ``MAX_EXECUTION_TIME`` in ms, from documentation; it applies to SELECT
             # statements only, so DML is not bounded by it.
@@ -311,7 +315,9 @@ class MSSQL(Adapter):
 
 
 _ADAPTERS = {a.name: a for a in (PostgreSQL(), MySQL(), Oracle(), MSSQL())}
-assert set(_ADAPTERS) == set(DIALECT_DRIVERS)  # nosec - import-time consistency check, no user input
+assert set(_ADAPTERS) == set(
+    DIALECT_DRIVERS
+)  # nosec - import-time consistency check, no user input
 
 
 def adapter(dialect):
@@ -319,5 +325,8 @@ def adapter(dialect):
     try:
         return _ADAPTERS[dialect]
     except (KeyError, TypeError):
-        _fail("E_PROFILE_INVALID", f"unsupported dialect (expected one of: {', '.join(sorted(DIALECT_DRIVERS))})")
+        _fail(
+            "E_PROFILE_INVALID",
+            f"unsupported dialect (expected one of: {', '.join(sorted(DIALECT_DRIVERS))})",
+        )
     return None  # pragma: no cover

@@ -1,6 +1,8 @@
 """Unit tests for saltext.sqlx.lib.engine (TEST_PLAN sections 3 and 4)."""
 
 import types
+from urllib.parse import quote
+from urllib.parse import quote_plus
 
 import pytest
 import sqlalchemy
@@ -34,6 +36,29 @@ def make(dialect="postgresql", **overrides):
     return prof
 
 
+@pytest.fixture(autouse=True)
+def no_real_driver(monkeypatch):
+    """
+    Unit tests must not need psycopg/PyMySQL/oracledb/pymssql installed (the nox ``unit`` session installs none).
+    Driver import is faked and ``create_engine`` returns a real NullPool engine on SQLite, recording the URL and
+    keyword arguments that the module passed. Real-driver behaviour is covered by the functional tests.
+    """
+    created = []
+    real_create = sqlalchemy.create_engine
+
+    def fake_create(url, **kw):
+        eng = real_create(
+            "sqlite://",
+            **{k: v for k, v in kw.items() if k in ("poolclass", "hide_parameters", "echo")},
+        )
+        created.append({"url": url, **kw})
+        return eng
+
+    monkeypatch.setattr(dialects.importlib, "import_module", types.ModuleType)
+    monkeypatch.setattr(engine, "create_engine", fake_create)
+    return created
+
+
 def _all_text(exc):
     """Every string reachable from an exception: message, args, cause and context chain."""
     seen = []
@@ -55,41 +80,30 @@ def _assert_clean(exc):
 # --- build_engine -----------------------------------------------------------------------------
 
 
-def test_build_engine_uses_nullpool():
+def test_build_engine_uses_nullpool(no_real_driver):
     eng = engine.build_engine(make(), PASSWORD)
     try:
         assert isinstance(eng, Engine)
         assert isinstance(eng.pool, NullPool)
-        assert eng.url.password == PASSWORD
-        assert eng.url.drivername == "postgresql+psycopg"
     finally:
         eng.dispose()
-
-
-def test_build_engine_hides_parameters_and_does_not_echo():
-    eng = engine.build_engine(make(), PASSWORD)
-    try:
-        assert eng.hide_parameters is True
-        assert eng.echo is False
-    finally:
-        eng.dispose()
-
-
-def test_build_engine_passes_connect_timeout_and_allowlisted_args(monkeypatch):
-    seen = {}
-    real = sqlalchemy.create_engine
-
-    def spy(url, **kw):
-        seen["url"] = url
-        seen.update(kw)
-        return real(url, **kw)
-
-    monkeypatch.setattr(engine, "create_engine", spy)
-    eng = engine.build_engine(make(connect_timeout_s=7, connect_args={"application_name": "salt"}), PASSWORD)
-    eng.dispose()
+    seen = no_real_driver[0]
     assert seen["poolclass"] is NullPool
-    assert seen["connect_args"] == {"connect_timeout": 7, "application_name": "salt"}
     assert isinstance(seen["url"], sqlalchemy.engine.URL)
+    assert seen["url"].password == PASSWORD
+    assert seen["url"].drivername == "postgresql+psycopg"
+
+
+def test_build_engine_hides_parameters_and_does_not_echo(no_real_driver):
+    engine.build_engine(make(), PASSWORD).dispose()
+    assert no_real_driver[0]["hide_parameters"] is True
+    assert no_real_driver[0]["echo"] is False
+
+
+def test_build_engine_passes_connect_timeout_and_allowlisted_args(no_real_driver):
+    prof = make(connect_timeout_s=7, connect_args={"application_name": "salt"})
+    engine.build_engine(prof, PASSWORD).dispose()
+    assert no_real_driver[0]["connect_args"] == {"application_name": "salt", "connect_timeout": 7}
 
 
 def test_build_engine_rejects_forbidden_connect_args():
@@ -98,17 +112,12 @@ def test_build_engine_rejects_forbidden_connect_args():
     assert str(exc.value).startswith("[E_POLICY]")
 
 
-def test_build_engine_timeout_override_can_only_lower(monkeypatch):
-    seen = {}
-    real = sqlalchemy.create_engine
-    monkeypatch.setattr(
-        engine, "create_engine", lambda url, **kw: seen.update(kw) or real(url, **kw)
-    )
+def test_build_engine_timeout_override_can_only_lower(no_real_driver):
     prof = make("mssql", statement_timeout_ms=10_000)
     engine.build_engine(prof, PASSWORD, timeout_ms=3000).dispose()
-    assert seen["connect_args"]["timeout"] == 3
+    assert no_real_driver[-1]["connect_args"]["timeout"] == 3
     engine.build_engine(prof, PASSWORD, timeout_ms=99_000).dispose()
-    assert seen["connect_args"]["timeout"] == 10
+    assert no_real_driver[-1]["connect_args"]["timeout"] == 10
     assert prof["statement_timeout_ms"] == 10_000
 
 
@@ -153,8 +162,16 @@ def test_managed_engine_disposes_when_body_raises(monkeypatch):
     assert spy.calls == 1
 
 
+def _refuse(monkeypatch, message="connection refused"):
+    def boom(self, *a, **k):
+        raise sqlalchemy.exc.OperationalError("connect", {}, Exception(message))
+
+    monkeypatch.setattr(Engine, "connect", boom)
+
+
 def test_connection_disposes_when_connect_fails(monkeypatch):
     spy = Spy(monkeypatch)
+    _refuse(monkeypatch)
     with pytest.raises(CommandExecutionError):
         with engine.connection(make(), PASSWORD):
             pass  # pragma: no cover
@@ -164,11 +181,24 @@ def test_connection_disposes_when_connect_fails(monkeypatch):
 # --- first-connect failures -------------------------------------------------------------------
 
 
-def test_connection_refused_is_e_connect_without_secrets():
+def test_connection_refused_is_e_connect_without_secrets(monkeypatch):
+    _refuse(monkeypatch, "connection refused")
     with pytest.raises(CommandExecutionError) as exc:
         with engine.connection(make(), PASSWORD):
             pass  # pragma: no cover
-    assert str(exc.value).startswith("[E_CONNECT] postgresql")
+    assert str(exc.value) == "[E_CONNECT] postgresql: connection refused"
+    _assert_clean(exc.value)
+
+
+def test_oserror_at_connect_is_e_connect(monkeypatch):
+    def boom(self, *a, **k):
+        raise OSError(f"[Errno -2] Name or service not known {PASSWORD}")
+
+    monkeypatch.setattr(Engine, "connect", boom)
+    with pytest.raises(CommandExecutionError) as exc:
+        with engine.connection(make(), PASSWORD):
+            pass  # pragma: no cover
+    assert str(exc.value).startswith("[E_CONNECT] postgresql: [Errno -2]")
     _assert_clean(exc.value)
 
 
@@ -216,9 +246,6 @@ def test_bytes_typeerror_on_non_postgres_is_not_the_ascii_message(monkeypatch):
     ["{pw}", "user=salt_ro password={pw} host=h", "postgresql://u:{q}@h/db", "{q}", "{qp}"],
 )
 def test_driver_message_containing_password_is_scrubbed(monkeypatch, variant):
-    from urllib.parse import quote
-    from urllib.parse import quote_plus
-
     text = variant.format(pw=PASSWORD, q=quote(PASSWORD, safe=""), qp=quote_plus(PASSWORD))
 
     def boom(self, *a, **k):
@@ -229,7 +256,7 @@ def test_driver_message_containing_password_is_scrubbed(monkeypatch, variant):
         with engine.connection(make(), PASSWORD):
             pass  # pragma: no cover
     assert str(exc.value).startswith("[E_CONNECT] postgresql")
-    assert "***" in str(exc.value)
+    assert "***" in str(exc.value) or "<url>" in str(exc.value)
     _assert_clean(exc.value)
 
 
@@ -254,6 +281,12 @@ def _oracle(code, message):
         ("postgresql", _pg("28000", "no pg_hba.conf entry"), "E_AUTH_FAILED"),
         ("postgresql", _pg("08006", "connection failure"), "E_CONNECT"),
         ("postgresql", _Orig("connection refused"), "E_CONNECT"),
+        # VERIFIED: psycopg 3 connect failures have no sqlstate; only the text identifies a bad password
+        (
+            "postgresql",
+            _Orig('connection failed: FATAL:  password authentication failed for user "u"'),
+            "E_AUTH_FAILED",
+        ),
         ("mysql", _Orig(1045, "Access denied"), "E_AUTH_FAILED"),
         ("mysql", _Orig(2003, "Can't connect"), "E_CONNECT"),
         ("oracle", _oracle(1017, "invalid credential"), "E_AUTH_FAILED"),
@@ -276,7 +309,9 @@ def test_connect_failure_codes(monkeypatch, dialect, err, code):
 
 def test_error_message_is_single_line_and_bounded(monkeypatch):
     def boom(self, *a, **k):
-        raise sqlalchemy.exc.OperationalError("connect", {}, Exception("line1\nline2 " + "x" * 5000))
+        raise sqlalchemy.exc.OperationalError(
+            "connect", {}, Exception("line1\nline2 " + "x" * 5000)
+        )
 
     monkeypatch.setattr(Engine, "connect", boom)
     with pytest.raises(CommandExecutionError) as exc:
@@ -294,7 +329,7 @@ class ConnStub:
         self.statements = []
         self.closed = False
 
-    def exec_driver_sql(self, sql, *a):
+    def exec_driver_sql(self, sql, *_):
         self.statements.append(sql)
 
     def close(self):
@@ -347,7 +382,7 @@ def test_connection_closes_and_disposes_when_body_raises(monkeypatch):
 
 def test_connection_setup_failure_closes_and_disposes(monkeypatch):
     class BadStub(ConnStub):
-        def exec_driver_sql(self, sql, *a):
+        def exec_driver_sql(self, sql, *_):
             raise RuntimeError("setup failed")
 
     stub = BadStub()
@@ -369,7 +404,7 @@ def test_ping_returns_spec_shape(monkeypatch):
             return "16.4"
 
     class PingStub(ConnStub):
-        def exec_driver_sql(self, sql, *a):
+        def exec_driver_sql(self, sql, *_):
             self.statements.append(sql)
             return Res()
 
@@ -384,7 +419,8 @@ def test_ping_returns_spec_shape(monkeypatch):
     assert stub.closed
 
 
-def test_ping_failure_propagates_e_connect():
+def test_ping_failure_propagates_e_connect(monkeypatch):
+    _refuse(monkeypatch)
     with pytest.raises(CommandExecutionError) as exc:
         engine.ping(make(), PASSWORD)
     assert str(exc.value).startswith("[E_CONNECT]")
