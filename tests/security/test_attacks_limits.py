@@ -109,12 +109,6 @@ def test_mysql_hint_cannot_raise_the_statement_timeout(request, server, salt):
     """D2: ``/*+ MAX_EXECUTION_TIME(n) */`` overrides the session variable, so a caller can lift the cap."""
     if server.key != "mysql":
         pytest.skip("MySQL 8 only")
-    defect(
-        request,
-        server,
-        "D2",
-        "optimizer hint MAX_EXECUTION_TIME(100000) overrides the module's session timeout",
-    )
     outcome, seconds = timed(
         salt,
         "ro",
@@ -133,12 +127,6 @@ def test_mariadb_set_statement_cannot_raise_the_statement_timeout(request, serve
     """D2: ``SET STATEMENT max_statement_time=0 FOR ...`` overrides the session variable for that statement."""
     if server.key != "mariadb":
         pytest.skip("MariaDB only")
-    defect(
-        request,
-        server,
-        "D2",
-        "SET STATEMENT max_statement_time=0 FOR ... overrides the module's session timeout",
-    )
     outcome, seconds = timed(
         salt, "ro", "SET STATEMENT max_statement_time=0 FOR SELECT SLEEP(3)", timeout_ms=800
     )
@@ -162,8 +150,9 @@ def test_benchmark_is_interrupted(server, salt):
     assert seconds < 2.5
 
 
-def test_documented_mysql_dml_is_not_limited_by_max_execution_time(server, salt, tmp_path):
-    """SPEC section 7: MAX_EXECUTION_TIME covers SELECT only. MariaDB cancels the same INSERT ... SELECT."""
+def test_mysql_dml_is_cut_by_the_read_timeout_backstop(server, salt, tmp_path):
+    """SPEC section 7: MAX_EXECUTION_TIME covers SELECT only (MariaDB cancels the same INSERT ... SELECT itself); the
+    PyMySQL read_timeout backstop (T11 D2) cuts it on MySQL."""
     if server.dialect != "mysql":
         pytest.skip("MySQL family only")
     table = harness.unique("scratch.t11_dml")
@@ -182,10 +171,8 @@ def test_documented_mysql_dml_is_not_limited_by_max_execution_time(server, salt,
             f"{server.key} INSERT ... SELECT SLEEP(2) timeout_ms=800",
             f"{seconds:.1f}s {harness.describe(outcome)}",
         )
-        if server.key == "mysql":
-            assert seconds >= 1.8 and outcome[0] == "OK"
-        else:
-            assert seconds < 2.5 and outcome[0] == "ERR" and "[E_TIMEOUT]" in str(outcome[1])
+        # MySQL's MAX_EXECUTION_TIME ignores INSERT ... SELECT; the PyMySQL read_timeout backstop (T11 D2) cuts it.
+        assert seconds < 2.5 and outcome[0] == "ERR" and "[E_TIMEOUT]" in str(outcome[1])
     finally:
         server.admin(f"DROP TABLE IF EXISTS {table}")
 

@@ -236,9 +236,22 @@ class MySQL(Adapter):
     )
     _version_sql = "SELECT VERSION()"
 
+    #: Seconds added to the statement timeout before the client gives up (T11 D2).
+    READ_TIMEOUT_MARGIN_S = 1.0
+
     def _timeout_connect_args(self, profile):
-        # UNVERIFIED(T1): PyMySQL ``connect_timeout`` (seconds) from documentation.
-        return {"connect_timeout": profile["connect_timeout_s"]}
+        # ``read_timeout`` is the client-side backstop for the server-side limit (T11 D2): the statement itself can
+        # lift ``MAX_EXECUTION_TIME`` (``/*+ MAX_EXECUTION_TIME(n) */``) or ``max_statement_time`` (``SET STATEMENT``),
+        # and MySQL's variable does not cover INSERT ... SELECT. The margin lets the server's own error (3024 /
+        # 1969, ``E_TIMEOUT`` with the real message) arrive first in the normal case; otherwise the driver raises
+        # 2013 "timed out", which ``errors._my`` also maps to ``E_TIMEOUT``. A lower ``read_timeout`` in the profile
+        # is honoured; a higher one is not.
+        backstop = int(profile["statement_timeout_ms"]) / 1000 + self.READ_TIMEOUT_MARGIN_S
+        for source in (profile.get("connect_args"), profile.get("query")):
+            given = (source or {}).get("read_timeout")
+            if isinstance(given, (int, float)) and not isinstance(given, bool) and given > 0:
+                backstop = min(backstop, given)
+        return {"connect_timeout": profile["connect_timeout_s"], "read_timeout": backstop}
 
     def _set_timeout(self, conn, ms):
         if getattr(conn.dialect, "is_mariadb", False):
