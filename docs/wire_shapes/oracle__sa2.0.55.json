@@ -1,0 +1,304 @@
+{
+ "meta": {
+  "dialect": "oracle",
+  "python": "3.13.16",
+  "sqlalchemy": "2.0.55",
+  "drivers": {
+   "oracledb": "26.1.0"
+  },
+  "server_reachable": false,
+  "not_run_reason": "No server could be started: Docker Hub, MCR, Oracle and vendor package hosts return HTTP 403 to the egress proxy (policy), and there is no apt package. Only client-side cases ran.",
+  "generated": "2026-10-29T02:47:04+00:00"
+ },
+ "results": [
+  {
+   "dialect": "oracle",
+   "case": "ping",
+   "status": "NOT RUN",
+   "reason": "No server could be started: Docker Hub, MCR, Oracle and vendor package hosts return HTTP 403 to the egress proxy (policy), and there is no apt package. Only client-side cases ran."
+  },
+  {
+   "dialect": "oracle",
+   "case": "wrong_password",
+   "status": "NOT RUN",
+   "reason": "No server could be started: Docker Hub, MCR, Oracle and vendor package hosts return HTTP 403 to the egress proxy (policy), and there is no apt package. Only client-side cases ran."
+  },
+  {
+   "dialect": "oracle",
+   "case": "unreachable_port",
+   "status": "error",
+   "sa_exc": "sqlalchemy.exc.OperationalError",
+   "dbapi_error": true,
+   "driver_exc": "oracledb.exceptions.OperationalError",
+   "driver_mro": [
+    "oracledb.exceptions.OperationalError",
+    "oracledb.exceptions.DatabaseError",
+    "oracledb.exceptions.Error"
+   ],
+   "args_types": [
+    "_Error"
+   ],
+   "args0_fields": {
+    "code": "0",
+    "full_code": "DPY-6005",
+    "is_session_dead": "False",
+    "isrecoverable": "False",
+    "iswarning": "False",
+    "message": "DPY-6005: cannot connect to database (CONNECTION_ID=cuBMzfC5As0XFTtimWRF0g==).\n[Errno 111] Connection refused",
+    "offset": "0"
+   },
+   "args0_class": "oracledb.errors._Error",
+   "driver_attrs": {},
+   "sqlstate": null,
+   "vendor_code": "DPY-6005",
+   "message": "DPY-6005: cannot connect to database (CONNECTION_ID=cuBMzfC5As0XFTtimWRF0g==).\n[Errno 111] Connection refused",
+   "password_in": {
+    "str(exc)": false,
+    "repr(exc)": false,
+    "repr(orig)": false,
+    "repr(orig.args)": false,
+    "traceback": false
+   },
+   "sql_text_in_str": false,
+   "parameters_block_in_str": false,
+   "bound_value_in_str": false,
+   "bound_value_in_driver_message": false,
+   "sa_has_statement_attr": false,
+   "str_exc_first_line": "(oracledb.exceptions.OperationalError) DPY-6005: cannot connect to database (CONNECTION_ID=cuBMzfC5As0XFTtimWRF0g==)."
+  },
+  {
+   "dialect": "oracle",
+   "case": "unknown_database",
+   "status": "NOT RUN",
+   "reason": "No server could be started: Docker Hub, MCR, Oracle and vendor package hosts return HTTP 403 to the egress proxy (policy), and there is no apt package. Only client-side cases ran."
+  },
+  {
+   "dialect": "oracle",
+   "case": "connect_timeout_blackhole",
+   "status": "error",
+   "sa_exc": "sqlalchemy.exc.OperationalError",
+   "dbapi_error": true,
+   "driver_exc": "oracledb.exceptions.OperationalError",
+   "driver_mro": [
+    "oracledb.exceptions.OperationalError",
+    "oracledb.exceptions.DatabaseError",
+    "oracledb.exceptions.Error"
+   ],
+   "args_types": [
+    "_Error"
+   ],
+   "args0_fields": {
+    "code": "0",
+    "full_code": "DPY-6005",
+    "is_session_dead": "False",
+    "isrecoverable": "False",
+    "iswarning": "False",
+    "message": "DPY-6005: cannot connect to database (CONNECTION_ID=3OON9mDCZoCcVjd9qvaB+g==).\n[Errno 111] Connection refused",
+    "offset": "0"
+   },
+   "args0_class": "oracledb.errors._Error",
+   "driver_attrs": {},
+   "sqlstate": null,
+   "vendor_code": "DPY-6005",
+   "message": "DPY-6005: cannot connect to database (CONNECTION_ID=3OON9mDCZoCcVjd9qvaB+g==).\n[Errno 111] Connection refused",
+   "password_in": {
+    "str(exc)": false,
+    "repr(exc)": false,
+    "repr(orig)": false,
+    "repr(orig.args)": false,
+    "traceback": false
+   },
+   "sql_text_in_str": false,
+   "parameters_block_in_str": false,
+   "bound_value_in_str": false,
+   "bound_value_in_driver_message": false,
+   "sa_has_statement_attr": false,
+   "str_exc_first_line": "(oracledb.exceptions.OperationalError) DPY-6005: cannot connect to database (CONNECTION_ID=3OON9mDCZoCcVjd9qvaB+g==).",
+   "note": "192.0.2.1 (TEST-NET-1), connect timeout 2 s; result depends on the sandbox network"
+  },
+  {
+   "dialect": "oracle",
+   "case": "syntax_error",
+   "status": "NOT RUN",
+   "reason": "No server could be started: Docker Hub, MCR, Oracle and vendor package hosts return HTTP 403 to the egress proxy (policy), and there is no apt package. Only client-side cases ran."
+  },
+  {
+   "dialect": "oracle",
+   "case": "missing_table",
+   "status": "NOT RUN",
+   "reason": "No server could be started: Docker Hub, MCR, Oracle and vendor package hosts return HTTP 403 to the egress proxy (policy), and there is no apt package. Only client-side cases ran."
+  },
+  {
+   "dialect": "oracle",
+   "case": "missing_column",
+   "status": "NOT RUN",
+   "reason": "No server could be started: Docker Hub, MCR, Oracle and vendor package hosts return HTTP 403 to the egress proxy (policy), and there is no apt package. Only client-side cases ran."
+  },
+  {
+   "dialect": "oracle",
+   "case": "division_by_zero",
+   "status": "NOT RUN",
+   "reason": "No server could be started: Docker Hub, MCR, Oracle and vendor package hosts return HTTP 403 to the egress proxy (policy), and there is no apt package. Only client-side cases ran."
+  },
+  {
+   "dialect": "oracle",
+   "case": "division_by_zero_dml",
+   "status": "NOT RUN",
+   "reason": "No server could be started: Docker Hub, MCR, Oracle and vendor package hosts return HTTP 403 to the egress proxy (policy), and there is no apt package. Only client-side cases ran."
+  },
+  {
+   "dialect": "oracle",
+   "case": "unique_violation",
+   "status": "NOT RUN",
+   "reason": "No server could be started: Docker Hub, MCR, Oracle and vendor package hosts return HTTP 403 to the egress proxy (policy), and there is no apt package. Only client-side cases ran."
+  },
+  {
+   "dialect": "oracle",
+   "case": "permission_denied_insert",
+   "status": "NOT RUN",
+   "reason": "No server could be started: Docker Hub, MCR, Oracle and vendor package hosts return HTTP 403 to the egress proxy (policy), and there is no apt package. Only client-side cases ran."
+  },
+  {
+   "dialect": "oracle",
+   "case": "permission_denied_select",
+   "status": "NOT RUN",
+   "reason": "No server could be started: Docker Hub, MCR, Oracle and vendor package hosts return HTTP 403 to the egress proxy (policy), and there is no apt package. Only client-side cases ran."
+  },
+  {
+   "dialect": "oracle",
+   "case": "ro_update",
+   "status": "NOT RUN",
+   "reason": "No server could be started: Docker Hub, MCR, Oracle and vendor package hosts return HTTP 403 to the egress proxy (policy), and there is no apt package. Only client-side cases ran."
+  },
+  {
+   "dialect": "oracle",
+   "case": "ro_delete",
+   "status": "NOT RUN",
+   "reason": "No server could be started: Docker Hub, MCR, Oracle and vendor package hosts return HTTP 403 to the egress proxy (policy), and there is no apt package. Only client-side cases ran."
+  },
+  {
+   "dialect": "oracle",
+   "case": "ro_ddl",
+   "status": "NOT RUN",
+   "reason": "No server could be started: Docker Hub, MCR, Oracle and vendor package hosts return HTTP 403 to the egress proxy (policy), and there is no apt package. Only client-side cases ran."
+  },
+  {
+   "dialect": "oracle",
+   "case": "bad_cast_bound_value",
+   "status": "NOT RUN",
+   "reason": "No server could be started: Docker Hub, MCR, Oracle and vendor package hosts return HTTP 403 to the egress proxy (policy), and there is no apt package. Only client-side cases ran."
+  },
+  {
+   "dialect": "oracle",
+   "case": "rw_write_then_rollback",
+   "status": "NOT RUN",
+   "reason": "No server could be started: Docker Hub, MCR, Oracle and vendor package hosts return HTTP 403 to the egress proxy (policy), and there is no apt package. Only client-side cases ran."
+  },
+  {
+   "dialect": "oracle",
+   "case": "call_timeout",
+   "status": "NOT RUN",
+   "reason": "No server could be started: Docker Hub, MCR, Oracle and vendor package hosts return HTTP 403 to the egress proxy (policy), and there is no apt package. Only client-side cases ran.",
+   "mechanism": "connection.call_timeout = 300 (ms)",
+   "statement": "begin dbms_session.sleep(3); end;"
+  },
+  {
+   "dialect": "oracle",
+   "case": "guard_control_no_guard",
+   "status": "NOT RUN",
+   "reason": "No server could be started: Docker Hub, MCR, Oracle and vendor package hosts return HTTP 403 to the egress proxy (policy), and there is no apt package. Only client-side cases ran."
+  },
+  {
+   "dialect": "oracle",
+   "case": "guard[SET TRANSACTION READ ONLY]_write",
+   "status": "NOT RUN",
+   "reason": "No server could be started: Docker Hub, MCR, Oracle and vendor package hosts return HTTP 403 to the egress proxy (policy), and there is no apt package. Only client-side cases ran."
+  },
+  {
+   "dialect": "oracle",
+   "case": "bypass[SET TRANSACTION READ ONLY -> SET TRANSACTION READ WRITE]",
+   "status": "NOT RUN",
+   "reason": "No server could be started: Docker Hub, MCR, Oracle and vendor package hosts return HTTP 403 to the egress proxy (policy), and there is no apt package. Only client-side cases ran."
+  },
+  {
+   "dialect": "oracle",
+   "case": "bypass[SET TRANSACTION READ ONLY -> COMMIT then write]",
+   "status": "NOT RUN",
+   "reason": "No server could be started: Docker Hub, MCR, Oracle and vendor package hosts return HTTP 403 to the egress proxy (policy), and there is no apt package. Only client-side cases ran."
+  },
+  {
+   "dialect": "oracle",
+   "case": "types_roundtrip",
+   "status": "NOT RUN",
+   "reason": "No server could be started: Docker Hub, MCR, Oracle and vendor package hosts return HTTP 403 to the egress proxy (policy), and there is no apt package. Only client-side cases ran."
+  },
+  {
+   "dialect": "oracle",
+   "case": "text_trap_compile_client_side",
+   "status": "ok",
+   "paramstyle": "named",
+   "compiled": {
+    "colon_cast  select :a::int": {
+     "bind_names": [],
+     "compiled": "select :a::int"
+    },
+    "json literal select '{\"a\":1}'": {
+     "bind_names": [
+      "\"1\""
+     ],
+     "compiled": "select '{\"a\":\"1\"}'"
+    },
+    "escaped     select '{\"a\"\\:1}'": {
+     "bind_names": [],
+     "compiled": "select '{\"a\":1}'"
+    },
+    "percent     like '%b%'": {
+     "bind_names": [],
+     "compiled": "select 'abc' like '%b%'"
+    },
+    "CAST(:a AS ..)": {
+     "bind_names": [
+      "a"
+     ],
+     "compiled": "select CAST(:a AS number)"
+    }
+   }
+  },
+  {
+   "dialect": "oracle",
+   "case": "text_trap_colon_cast",
+   "status": "NOT RUN",
+   "reason": "No server could be started: Docker Hub, MCR, Oracle and vendor package hosts return HTTP 403 to the egress proxy (policy), and there is no apt package. Only client-side cases ran."
+  },
+  {
+   "dialect": "oracle",
+   "case": "text_trap_json_colon_literal",
+   "status": "NOT RUN",
+   "reason": "No server could be started: Docker Hub, MCR, Oracle and vendor package hosts return HTTP 403 to the egress proxy (policy), and there is no apt package. Only client-side cases ran."
+  },
+  {
+   "dialect": "oracle",
+   "case": "text_trap_json_colon_escaped",
+   "status": "NOT RUN",
+   "reason": "No server could be started: Docker Hub, MCR, Oracle and vendor package hosts return HTTP 403 to the egress proxy (policy), and there is no apt package. Only client-side cases ran."
+  },
+  {
+   "dialect": "oracle",
+   "case": "text_percent_in_text",
+   "status": "NOT RUN",
+   "reason": "No server could be started: Docker Hub, MCR, Oracle and vendor package hosts return HTTP 403 to the egress proxy (policy), and there is no apt package. Only client-side cases ran."
+  },
+  {
+   "dialect": "oracle",
+   "case": "text_cast_bind",
+   "status": "NOT RUN",
+   "reason": "No server could be started: Docker Hub, MCR, Oracle and vendor package hosts return HTTP 403 to the egress proxy (policy), and there is no apt package. Only client-side cases ran."
+  },
+  {
+   "dialect": "oracle",
+   "case": "driver_sql_percent_no_params",
+   "status": "NOT RUN",
+   "reason": "No server could be started: Docker Hub, MCR, Oracle and vendor package hosts return HTTP 403 to the egress proxy (policy), and there is no apt package. Only client-side cases ran."
+  }
+ ]
+}

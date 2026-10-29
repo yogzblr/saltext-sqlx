@@ -1,0 +1,1777 @@
+{
+ "meta": {
+  "dialect": "mariadb",
+  "python": "3.13.16",
+  "sqlalchemy": "2.1.6",
+  "drivers": {
+   "PyMySQL": "1.2.3",
+   "cryptography": "50.0.2"
+  },
+  "server_reachable": true,
+  "not_run_reason": null,
+  "generated": "2026-10-29T02:47:18+00:00"
+ },
+ "results": [
+  {
+   "dialect": "mariadb",
+   "case": "ping",
+   "status": "ok",
+   "value": "{'select_ping': 1, 'version': '10.11.14-MariaDB-0ubuntu0.24.04.1', 'sa_dialect': 'mysql', 'sa_driver': 'pymysql', 'is_mariadb': True, 'server_version_info': [10, 11, 14], 'default_isolation': 'REPEATABLE READ'}",
+   "data": {
+    "select_ping": 1,
+    "version": "10.11.14-MariaDB-0ubuntu0.24.04.1",
+    "sa_dialect": "mysql",
+    "sa_driver": "pymysql",
+    "is_mariadb": true,
+    "server_version_info": [
+     10,
+     11,
+     14
+    ],
+    "default_isolation": "REPEATABLE READ"
+   }
+  },
+  {
+   "dialect": "mariadb",
+   "case": "wrong_password",
+   "status": "error",
+   "sa_exc": "sqlalchemy.exc.OperationalError",
+   "dbapi_error": true,
+   "driver_exc": "pymysql.err.OperationalError",
+   "driver_mro": [
+    "pymysql.err.OperationalError",
+    "pymysql.err.DatabaseError",
+    "pymysql.err.Error",
+    "pymysql.err.MySQLError"
+   ],
+   "args_types": [
+    "int",
+    "str"
+   ],
+   "driver_attrs": {
+    "sqlstate": "28000"
+   },
+   "sqlstate": "28000",
+   "vendor_code": 1045,
+   "message": "(1045, \"Access denied for user 'rw'@'localhost' (using password: YES)\")",
+   "password_in": {
+    "str(exc)": false,
+    "repr(exc)": false,
+    "repr(orig)": false,
+    "repr(orig.args)": false,
+    "traceback": false
+   },
+   "sql_text_in_str": false,
+   "parameters_block_in_str": false,
+   "bound_value_in_str": false,
+   "bound_value_in_driver_message": false,
+   "sa_has_statement_attr": false,
+   "str_exc_first_line": "(pymysql.err.OperationalError) (1045, \"Access denied for user 'rw'@'localhost' (using password: YES)\")"
+  },
+  {
+   "dialect": "mariadb",
+   "case": "unreachable_port",
+   "status": "error",
+   "sa_exc": "sqlalchemy.exc.OperationalError",
+   "dbapi_error": true,
+   "driver_exc": "pymysql.err.OperationalError",
+   "driver_mro": [
+    "pymysql.err.OperationalError",
+    "pymysql.err.DatabaseError",
+    "pymysql.err.Error",
+    "pymysql.err.MySQLError"
+   ],
+   "args_types": [
+    "int",
+    "str"
+   ],
+   "driver_attrs": {
+    "traceback": "Traceback (most recent call last):\n  File \"/tmp/claude-0/-home-claude/a699ac3d-776f-5957-9d9f-d51700cb98c4/scratchpad/venv21/lib/python3.13/site-packages/pymysql/connections.py\", line 681, in connect\n    sock = socket.create_connection(\n        (self.host, self.port), self.connect_timeout, **kwargs\n    )\n  File \"/usr/lib/python3.13/socket.py\", line 868, in create_connection\n    raise exceptions[0]\n  File \"/usr/lib/python3.13/socket.py\", line 853, in create_connection\n    sock.connect(sa)\n    ~~~~~~~~~~~~^^^^\nConnectionRefusedError: [Errno 111] Connection refused\n"
+   },
+   "sqlstate": null,
+   "vendor_code": 2003,
+   "message": "(2003, \"Can't connect to MySQL server on '127.0.0.1' ([Errno 111] Connection refused)\")",
+   "password_in": {
+    "str(exc)": false,
+    "repr(exc)": false,
+    "repr(orig)": false,
+    "repr(orig.args)": false,
+    "traceback": false
+   },
+   "sql_text_in_str": false,
+   "parameters_block_in_str": false,
+   "bound_value_in_str": false,
+   "bound_value_in_driver_message": false,
+   "sa_has_statement_attr": false,
+   "str_exc_first_line": "(pymysql.err.OperationalError) (2003, \"Can't connect to MySQL server on '127.0.0.1' ([Errno 111] Connection refused)\")"
+  },
+  {
+   "dialect": "mariadb",
+   "case": "unknown_database",
+   "status": "error",
+   "sa_exc": "sqlalchemy.exc.OperationalError",
+   "dbapi_error": true,
+   "driver_exc": "pymysql.err.OperationalError",
+   "driver_mro": [
+    "pymysql.err.OperationalError",
+    "pymysql.err.DatabaseError",
+    "pymysql.err.Error",
+    "pymysql.err.MySQLError"
+   ],
+   "args_types": [
+    "int",
+    "str"
+   ],
+   "driver_attrs": {
+    "sqlstate": "42000"
+   },
+   "sqlstate": "42000",
+   "vendor_code": 1044,
+   "message": "(1044, \"Access denied for user 'rw'@'%' to database 'nope'\")",
+   "password_in": {
+    "str(exc)": false,
+    "repr(exc)": false,
+    "repr(orig)": false,
+    "repr(orig.args)": false,
+    "traceback": false
+   },
+   "sql_text_in_str": false,
+   "parameters_block_in_str": false,
+   "bound_value_in_str": false,
+   "bound_value_in_driver_message": false,
+   "sa_has_statement_attr": false,
+   "str_exc_first_line": "(pymysql.err.OperationalError) (1044, \"Access denied for user 'rw'@'%' to database 'nope'\")"
+  },
+  {
+   "dialect": "mariadb",
+   "case": "connect_timeout_blackhole",
+   "status": "error",
+   "sa_exc": "sqlalchemy.exc.OperationalError",
+   "dbapi_error": true,
+   "driver_exc": "pymysql.err.OperationalError",
+   "driver_mro": [
+    "pymysql.err.OperationalError",
+    "pymysql.err.DatabaseError",
+    "pymysql.err.Error",
+    "pymysql.err.MySQLError"
+   ],
+   "args_types": [
+    "int",
+    "str"
+   ],
+   "driver_attrs": {
+    "traceback": "Traceback (most recent call last):\n  File \"/tmp/claude-0/-home-claude/a699ac3d-776f-5957-9d9f-d51700cb98c4/scratchpad/venv21/lib/python3.13/site-packages/pymysql/connections.py\", line 681, in connect\n    sock = socket.create_connection(\n        (self.host, self.port), self.connect_timeout, **kwargs\n    )\n  File \"/usr/lib/python3.13/socket.py\", line 868, in create_connection\n    raise exceptions[0]\n  File \"/usr/lib/python3.13/socket.py\", line 853, in create_connection\n    sock.connect(sa)\n    ~~~~~~~~~~~~^^^^\nConnectionRefusedError: [Errno 111] Connection refused\n"
+   },
+   "sqlstate": null,
+   "vendor_code": 2003,
+   "message": "(2003, \"Can't connect to MySQL server on '192.0.2.1' ([Errno 111] Connection refused)\")",
+   "password_in": {
+    "str(exc)": false,
+    "repr(exc)": false,
+    "repr(orig)": false,
+    "repr(orig.args)": false,
+    "traceback": false
+   },
+   "sql_text_in_str": false,
+   "parameters_block_in_str": false,
+   "bound_value_in_str": false,
+   "bound_value_in_driver_message": false,
+   "sa_has_statement_attr": false,
+   "str_exc_first_line": "(pymysql.err.OperationalError) (2003, \"Can't connect to MySQL server on '192.0.2.1' ([Errno 111] Connection refused)\")",
+   "note": "192.0.2.1 (TEST-NET-1), connect timeout 2 s; result depends on the sandbox network"
+  },
+  {
+   "dialect": "mariadb",
+   "case": "syntax_error",
+   "status": "error",
+   "sa_exc": "sqlalchemy.exc.ProgrammingError",
+   "dbapi_error": true,
+   "driver_exc": "pymysql.err.ProgrammingError",
+   "driver_mro": [
+    "pymysql.err.ProgrammingError",
+    "pymysql.err.DatabaseError",
+    "pymysql.err.Error",
+    "pymysql.err.MySQLError"
+   ],
+   "args_types": [
+    "int",
+    "str"
+   ],
+   "driver_attrs": {
+    "sqlstate": "42000"
+   },
+   "sqlstate": "42000",
+   "vendor_code": 1064,
+   "message": "(1064, \"You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near 'selec 1' at line 1\")",
+   "password_in": {
+    "str(exc)": false,
+    "repr(exc)": false,
+    "repr(orig)": false,
+    "repr(orig.args)": false,
+    "traceback": false
+   },
+   "sql_text_in_str": true,
+   "parameters_block_in_str": false,
+   "bound_value_in_str": false,
+   "bound_value_in_driver_message": false,
+   "sa_has_statement_attr": true,
+   "str_exc_first_line": "(pymysql.err.ProgrammingError) (1064, \"You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near 'selec 1' at line 1\")"
+  },
+  {
+   "dialect": "mariadb",
+   "case": "missing_table",
+   "status": "error",
+   "sa_exc": "sqlalchemy.exc.ProgrammingError",
+   "dbapi_error": true,
+   "driver_exc": "pymysql.err.ProgrammingError",
+   "driver_mro": [
+    "pymysql.err.ProgrammingError",
+    "pymysql.err.DatabaseError",
+    "pymysql.err.Error",
+    "pymysql.err.MySQLError"
+   ],
+   "args_types": [
+    "int",
+    "str"
+   ],
+   "driver_attrs": {
+    "sqlstate": "42S02"
+   },
+   "sqlstate": "42S02",
+   "vendor_code": 1146,
+   "message": "(1146, \"Table 'scratch.nope' doesn't exist\")",
+   "password_in": {
+    "str(exc)": false,
+    "repr(exc)": false,
+    "repr(orig)": false,
+    "repr(orig.args)": false,
+    "traceback": false
+   },
+   "sql_text_in_str": true,
+   "parameters_block_in_str": false,
+   "bound_value_in_str": false,
+   "bound_value_in_driver_message": false,
+   "sa_has_statement_attr": true,
+   "str_exc_first_line": "(pymysql.err.ProgrammingError) (1146, \"Table 'scratch.nope' doesn't exist\")"
+  },
+  {
+   "dialect": "mariadb",
+   "case": "missing_column",
+   "status": "error",
+   "sa_exc": "sqlalchemy.exc.OperationalError",
+   "dbapi_error": true,
+   "driver_exc": "pymysql.err.OperationalError",
+   "driver_mro": [
+    "pymysql.err.OperationalError",
+    "pymysql.err.DatabaseError",
+    "pymysql.err.Error",
+    "pymysql.err.MySQLError"
+   ],
+   "args_types": [
+    "int",
+    "str"
+   ],
+   "driver_attrs": {
+    "sqlstate": "42S22"
+   },
+   "sqlstate": "42S22",
+   "vendor_code": 1054,
+   "message": "(1054, \"Unknown column 'nope' in 'SELECT'\")",
+   "password_in": {
+    "str(exc)": false,
+    "repr(exc)": false,
+    "repr(orig)": false,
+    "repr(orig.args)": false,
+    "traceback": false
+   },
+   "sql_text_in_str": true,
+   "parameters_block_in_str": false,
+   "bound_value_in_str": false,
+   "bound_value_in_driver_message": false,
+   "sa_has_statement_attr": true,
+   "str_exc_first_line": "(pymysql.err.OperationalError) (1054, \"Unknown column 'nope' in 'SELECT'\")"
+  },
+  {
+   "dialect": "mariadb",
+   "case": "division_by_zero",
+   "status": "ok",
+   "value": "[(None,)]"
+  },
+  {
+   "dialect": "mariadb",
+   "case": "division_by_zero_dml",
+   "status": "error",
+   "sa_exc": "sqlalchemy.exc.OperationalError",
+   "dbapi_error": true,
+   "driver_exc": "pymysql.err.OperationalError",
+   "driver_mro": [
+    "pymysql.err.OperationalError",
+    "pymysql.err.DatabaseError",
+    "pymysql.err.Error",
+    "pymysql.err.MySQLError"
+   ],
+   "args_types": [
+    "int",
+    "str"
+   ],
+   "driver_attrs": {
+    "sqlstate": "22012"
+   },
+   "sqlstate": "22012",
+   "vendor_code": 1365,
+   "message": "(1365, 'Division by 0')",
+   "password_in": {
+    "str(exc)": false,
+    "repr(exc)": false,
+    "repr(orig)": false,
+    "repr(orig.args)": false,
+    "traceback": false
+   },
+   "sql_text_in_str": true,
+   "parameters_block_in_str": false,
+   "bound_value_in_str": false,
+   "bound_value_in_driver_message": false,
+   "sa_has_statement_attr": true,
+   "str_exc_first_line": "(pymysql.err.OperationalError) (1365, 'Division by 0')"
+  },
+  {
+   "dialect": "mariadb",
+   "case": "unique_violation",
+   "status": "error",
+   "sa_exc": "sqlalchemy.exc.IntegrityError",
+   "dbapi_error": true,
+   "driver_exc": "pymysql.err.IntegrityError",
+   "driver_mro": [
+    "pymysql.err.IntegrityError",
+    "pymysql.err.DatabaseError",
+    "pymysql.err.Error",
+    "pymysql.err.MySQLError"
+   ],
+   "args_types": [
+    "int",
+    "str"
+   ],
+   "driver_attrs": {
+    "sqlstate": "23000"
+   },
+   "sqlstate": "23000",
+   "vendor_code": 1062,
+   "message": "(1062, \"Duplicate entry 'a@example.com' for key 'PRIMARY'\")",
+   "password_in": {
+    "str(exc)": false,
+    "repr(exc)": false,
+    "repr(orig)": false,
+    "repr(orig.args)": false,
+    "traceback": false
+   },
+   "sql_text_in_str": true,
+   "parameters_block_in_str": false,
+   "bound_value_in_str": false,
+   "bound_value_in_driver_message": false,
+   "sa_has_statement_attr": true,
+   "str_exc_first_line": "(pymysql.err.IntegrityError) (1062, \"Duplicate entry 'a@example.com' for key 'PRIMARY'\")"
+  },
+  {
+   "dialect": "mariadb",
+   "case": "permission_denied_insert",
+   "status": "error",
+   "sa_exc": "sqlalchemy.exc.OperationalError",
+   "dbapi_error": true,
+   "driver_exc": "pymysql.err.OperationalError",
+   "driver_mro": [
+    "pymysql.err.OperationalError",
+    "pymysql.err.DatabaseError",
+    "pymysql.err.Error",
+    "pymysql.err.MySQLError"
+   ],
+   "args_types": [
+    "int",
+    "str"
+   ],
+   "driver_attrs": {
+    "sqlstate": "42000"
+   },
+   "sqlstate": "42000",
+   "vendor_code": 1142,
+   "message": "(1142, \"INSERT command denied to user 'ro'@'localhost' for table `scratch`.`orders`\")",
+   "password_in": {
+    "str(exc)": false,
+    "repr(exc)": false,
+    "repr(orig)": false,
+    "repr(orig.args)": false,
+    "traceback": false
+   },
+   "sql_text_in_str": true,
+   "parameters_block_in_str": false,
+   "bound_value_in_str": false,
+   "bound_value_in_driver_message": false,
+   "sa_has_statement_attr": true,
+   "str_exc_first_line": "(pymysql.err.OperationalError) (1142, \"INSERT command denied to user 'ro'@'localhost' for table `scratch`.`orders`\")"
+  },
+  {
+   "dialect": "mariadb",
+   "case": "permission_denied_select",
+   "status": "error",
+   "sa_exc": "sqlalchemy.exc.OperationalError",
+   "dbapi_error": true,
+   "driver_exc": "pymysql.err.OperationalError",
+   "driver_mro": [
+    "pymysql.err.OperationalError",
+    "pymysql.err.DatabaseError",
+    "pymysql.err.Error",
+    "pymysql.err.MySQLError"
+   ],
+   "args_types": [
+    "int",
+    "str"
+   ],
+   "driver_attrs": {
+    "sqlstate": "42000"
+   },
+   "sqlstate": "42000",
+   "vendor_code": 1142,
+   "message": "(1142, \"SELECT command denied to user 'ro'@'localhost' for table `private`.`secrets`\")",
+   "password_in": {
+    "str(exc)": false,
+    "repr(exc)": false,
+    "repr(orig)": false,
+    "repr(orig.args)": false,
+    "traceback": false
+   },
+   "sql_text_in_str": true,
+   "parameters_block_in_str": false,
+   "bound_value_in_str": false,
+   "bound_value_in_driver_message": false,
+   "sa_has_statement_attr": true,
+   "str_exc_first_line": "(pymysql.err.OperationalError) (1142, \"SELECT command denied to user 'ro'@'localhost' for table `private`.`secrets`\")"
+  },
+  {
+   "dialect": "mariadb",
+   "case": "ro_update",
+   "status": "error",
+   "sa_exc": "sqlalchemy.exc.OperationalError",
+   "dbapi_error": true,
+   "driver_exc": "pymysql.err.OperationalError",
+   "driver_mro": [
+    "pymysql.err.OperationalError",
+    "pymysql.err.DatabaseError",
+    "pymysql.err.Error",
+    "pymysql.err.MySQLError"
+   ],
+   "args_types": [
+    "int",
+    "str"
+   ],
+   "driver_attrs": {
+    "sqlstate": "42000"
+   },
+   "sqlstate": "42000",
+   "vendor_code": 1142,
+   "message": "(1142, \"UPDATE command denied to user 'ro'@'localhost' for table `scratch`.`orders`\")",
+   "password_in": {
+    "str(exc)": false,
+    "repr(exc)": false,
+    "repr(orig)": false,
+    "repr(orig.args)": false,
+    "traceback": false
+   },
+   "sql_text_in_str": true,
+   "parameters_block_in_str": false,
+   "bound_value_in_str": false,
+   "bound_value_in_driver_message": false,
+   "sa_has_statement_attr": true,
+   "str_exc_first_line": "(pymysql.err.OperationalError) (1142, \"UPDATE command denied to user 'ro'@'localhost' for table `scratch`.`orders`\")"
+  },
+  {
+   "dialect": "mariadb",
+   "case": "ro_delete",
+   "status": "error",
+   "sa_exc": "sqlalchemy.exc.OperationalError",
+   "dbapi_error": true,
+   "driver_exc": "pymysql.err.OperationalError",
+   "driver_mro": [
+    "pymysql.err.OperationalError",
+    "pymysql.err.DatabaseError",
+    "pymysql.err.Error",
+    "pymysql.err.MySQLError"
+   ],
+   "args_types": [
+    "int",
+    "str"
+   ],
+   "driver_attrs": {
+    "sqlstate": "42000"
+   },
+   "sqlstate": "42000",
+   "vendor_code": 1142,
+   "message": "(1142, \"DELETE command denied to user 'ro'@'localhost' for table `scratch`.`orders`\")",
+   "password_in": {
+    "str(exc)": false,
+    "repr(exc)": false,
+    "repr(orig)": false,
+    "repr(orig.args)": false,
+    "traceback": false
+   },
+   "sql_text_in_str": true,
+   "parameters_block_in_str": false,
+   "bound_value_in_str": false,
+   "bound_value_in_driver_message": false,
+   "sa_has_statement_attr": true,
+   "str_exc_first_line": "(pymysql.err.OperationalError) (1142, \"DELETE command denied to user 'ro'@'localhost' for table `scratch`.`orders`\")"
+  },
+  {
+   "dialect": "mariadb",
+   "case": "ro_ddl",
+   "status": "error",
+   "sa_exc": "sqlalchemy.exc.OperationalError",
+   "dbapi_error": true,
+   "driver_exc": "pymysql.err.OperationalError",
+   "driver_mro": [
+    "pymysql.err.OperationalError",
+    "pymysql.err.DatabaseError",
+    "pymysql.err.Error",
+    "pymysql.err.MySQLError"
+   ],
+   "args_types": [
+    "int",
+    "str"
+   ],
+   "driver_attrs": {
+    "sqlstate": "42000"
+   },
+   "sqlstate": "42000",
+   "vendor_code": 1142,
+   "message": "(1142, \"CREATE command denied to user 'ro'@'localhost' for table `scratch`.`ddl_probe`\")",
+   "password_in": {
+    "str(exc)": false,
+    "repr(exc)": false,
+    "repr(orig)": false,
+    "repr(orig.args)": false,
+    "traceback": false
+   },
+   "sql_text_in_str": true,
+   "parameters_block_in_str": false,
+   "bound_value_in_str": false,
+   "bound_value_in_driver_message": false,
+   "sa_has_statement_attr": true,
+   "str_exc_first_line": "(pymysql.err.OperationalError) (1142, \"CREATE command denied to user 'ro'@'localhost' for table `scratch`.`ddl_probe`\")"
+  },
+  {
+   "dialect": "mariadb",
+   "case": "bad_cast_bound_value",
+   "status": "error",
+   "sa_exc": "sqlalchemy.exc.DataError",
+   "dbapi_error": true,
+   "driver_exc": "pymysql.err.DataError",
+   "driver_mro": [
+    "pymysql.err.DataError",
+    "pymysql.err.DatabaseError",
+    "pymysql.err.Error",
+    "pymysql.err.MySQLError"
+   ],
+   "args_types": [
+    "int",
+    "str"
+   ],
+   "driver_attrs": {
+    "sqlstate": "22007"
+   },
+   "sqlstate": "22007",
+   "vendor_code": 1366,
+   "message": "(1366, \"Incorrect integer value: 'zz_secret_bound_value' for column `scratch`.`t_probe`.`id` at row 1\")",
+   "password_in": {
+    "str(exc)": false,
+    "repr(exc)": false,
+    "repr(orig)": false,
+    "repr(orig.args)": false,
+    "traceback": false
+   },
+   "sql_text_in_str": true,
+   "parameters_block_in_str": true,
+   "bound_value_in_str": true,
+   "bound_value_in_driver_message": true,
+   "sa_has_statement_attr": true,
+   "str_exc_first_line": "(pymysql.err.DataError) (1366, \"Incorrect integer value: 'zz_secret_bound_value' for column `scratch`.`t_probe`.`id` at row 1\")"
+  },
+  {
+   "dialect": "mariadb",
+   "case": "rw_write_then_rollback",
+   "status": "ok",
+   "value": "{'rows_after_rollback': 0}"
+  },
+  {
+   "dialect": "mariadb",
+   "case": "max_statement_time_select",
+   "status": "error",
+   "sa_exc": "sqlalchemy.exc.OperationalError",
+   "dbapi_error": true,
+   "driver_exc": "pymysql.err.OperationalError",
+   "driver_mro": [
+    "pymysql.err.OperationalError",
+    "pymysql.err.DatabaseError",
+    "pymysql.err.Error",
+    "pymysql.err.MySQLError"
+   ],
+   "args_types": [
+    "int",
+    "str"
+   ],
+   "driver_attrs": {
+    "sqlstate": "70100"
+   },
+   "sqlstate": "70100",
+   "vendor_code": 1969,
+   "message": "(1969, 'Query execution was interrupted (max_statement_time exceeded)')",
+   "password_in": {
+    "str(exc)": false,
+    "repr(exc)": false,
+    "repr(orig)": false,
+    "repr(orig.args)": false,
+    "traceback": false
+   },
+   "sql_text_in_str": true,
+   "parameters_block_in_str": false,
+   "bound_value_in_str": false,
+   "bound_value_in_driver_message": false,
+   "sa_has_statement_attr": true,
+   "str_exc_first_line": "(pymysql.err.OperationalError) (1969, 'Query execution was interrupted (max_statement_time exceeded)')",
+   "mechanism": "SET SESSION max_statement_time=0.3 (s)",
+   "statement": "select sleep(3)",
+   "checks": {
+    "select @@max_statement_time": [
+     [
+      "0.3"
+     ]
+    ]
+   },
+   "elapsed_s": 0.3
+  },
+  {
+   "dialect": "mariadb",
+   "case": "max_statement_time_select_from_table",
+   "status": "error",
+   "sa_exc": "sqlalchemy.exc.OperationalError",
+   "dbapi_error": true,
+   "driver_exc": "pymysql.err.OperationalError",
+   "driver_mro": [
+    "pymysql.err.OperationalError",
+    "pymysql.err.DatabaseError",
+    "pymysql.err.Error",
+    "pymysql.err.MySQLError"
+   ],
+   "args_types": [
+    "int",
+    "str"
+   ],
+   "driver_attrs": {
+    "sqlstate": "70100"
+   },
+   "sqlstate": "70100",
+   "vendor_code": 1969,
+   "message": "(1969, 'Query execution was interrupted (max_statement_time exceeded)')",
+   "password_in": {
+    "str(exc)": false,
+    "repr(exc)": false,
+    "repr(orig)": false,
+    "repr(orig.args)": false,
+    "traceback": false
+   },
+   "sql_text_in_str": true,
+   "parameters_block_in_str": false,
+   "bound_value_in_str": false,
+   "bound_value_in_driver_message": false,
+   "sa_has_statement_attr": true,
+   "str_exc_first_line": "(pymysql.err.OperationalError) (1969, 'Query execution was interrupted (max_statement_time exceeded)')",
+   "mechanism": "SET SESSION max_statement_time=0.3 (s)",
+   "statement": "select sleep(3) from scratch.orders",
+   "elapsed_s": 0.31
+  },
+  {
+   "dialect": "mariadb",
+   "case": "max_statement_time_dml",
+   "status": "error",
+   "sa_exc": "sqlalchemy.exc.OperationalError",
+   "dbapi_error": true,
+   "driver_exc": "pymysql.err.OperationalError",
+   "driver_mro": [
+    "pymysql.err.OperationalError",
+    "pymysql.err.DatabaseError",
+    "pymysql.err.Error",
+    "pymysql.err.MySQLError"
+   ],
+   "args_types": [
+    "int",
+    "str"
+   ],
+   "driver_attrs": {
+    "sqlstate": "70100"
+   },
+   "sqlstate": "70100",
+   "vendor_code": 1969,
+   "message": "(1969, 'Query execution was interrupted (max_statement_time exceeded)')",
+   "password_in": {
+    "str(exc)": false,
+    "repr(exc)": false,
+    "repr(orig)": false,
+    "repr(orig.args)": false,
+    "traceback": false
+   },
+   "sql_text_in_str": true,
+   "parameters_block_in_str": false,
+   "bound_value_in_str": false,
+   "bound_value_in_driver_message": false,
+   "sa_has_statement_attr": true,
+   "str_exc_first_line": "(pymysql.err.OperationalError) (1969, 'Query execution was interrupted (max_statement_time exceeded)')",
+   "mechanism": "SET SESSION max_statement_time=0.3 (s); non-SELECT",
+   "statement": "insert into scratch.t_probe select sleep(1)",
+   "elapsed_s": 0.3
+  },
+  {
+   "dialect": "mariadb",
+   "case": "wrong_variable_max_execution_time",
+   "status": "error",
+   "sa_exc": "sqlalchemy.exc.OperationalError",
+   "dbapi_error": true,
+   "driver_exc": "pymysql.err.OperationalError",
+   "driver_mro": [
+    "pymysql.err.OperationalError",
+    "pymysql.err.DatabaseError",
+    "pymysql.err.Error",
+    "pymysql.err.MySQLError"
+   ],
+   "args_types": [
+    "int",
+    "str"
+   ],
+   "driver_attrs": {
+    "sqlstate": "HY000"
+   },
+   "sqlstate": "HY000",
+   "vendor_code": 1193,
+   "message": "(1193, \"Unknown system variable 'MAX_EXECUTION_TIME'\")",
+   "password_in": {
+    "str(exc)": false,
+    "repr(exc)": false,
+    "repr(orig)": false,
+    "repr(orig.args)": false,
+    "traceback": false
+   },
+   "sql_text_in_str": true,
+   "parameters_block_in_str": false,
+   "bound_value_in_str": false,
+   "bound_value_in_driver_message": false,
+   "sa_has_statement_attr": true,
+   "str_exc_first_line": "(pymysql.err.OperationalError) (1193, \"Unknown system variable 'MAX_EXECUTION_TIME'\")",
+   "mechanism": "MySQL variable on MariaDB",
+   "statement": "select 1"
+  },
+  {
+   "dialect": "mariadb",
+   "case": "client_read_timeout_1s",
+   "status": "error",
+   "sa_exc": "sqlalchemy.exc.OperationalError",
+   "dbapi_error": true,
+   "driver_exc": "pymysql.err.OperationalError",
+   "driver_mro": [
+    "pymysql.err.OperationalError",
+    "pymysql.err.DatabaseError",
+    "pymysql.err.Error",
+    "pymysql.err.MySQLError"
+   ],
+   "args_types": [
+    "int",
+    "str"
+   ],
+   "driver_attrs": {},
+   "sqlstate": null,
+   "vendor_code": 2013,
+   "message": "(2013, 'Lost connection to MySQL server during query (timed out)')",
+   "password_in": {
+    "str(exc)": false,
+    "repr(exc)": false,
+    "repr(orig)": false,
+    "repr(orig.args)": false,
+    "traceback": false
+   },
+   "sql_text_in_str": true,
+   "parameters_block_in_str": false,
+   "bound_value_in_str": false,
+   "bound_value_in_driver_message": false,
+   "sa_has_statement_attr": true,
+   "str_exc_first_line": "(pymysql.err.OperationalError) (2013, 'Lost connection to MySQL server during query (timed out)')",
+   "mechanism": "PyMySQL read_timeout=1 (s) connect arg",
+   "statement": "select sleep(3)",
+   "elapsed_s": 1.0
+  },
+  {
+   "dialect": "mariadb",
+   "case": "guard_control_no_guard",
+   "status": "ok",
+   "value": "'write statement and commit accepted'",
+   "pre_statements": [],
+   "engine_kw": {},
+   "failed_at_step": null,
+   "persisted_row_count": 1
+  },
+  {
+   "dialect": "mariadb",
+   "case": "guard[SET SESSION TRANSACTION READ ONLY]_write",
+   "status": "error",
+   "sa_exc": "sqlalchemy.exc.OperationalError",
+   "dbapi_error": true,
+   "driver_exc": "pymysql.err.OperationalError",
+   "driver_mro": [
+    "pymysql.err.OperationalError",
+    "pymysql.err.DatabaseError",
+    "pymysql.err.Error",
+    "pymysql.err.MySQLError"
+   ],
+   "args_types": [
+    "int",
+    "str"
+   ],
+   "driver_attrs": {
+    "sqlstate": "25006"
+   },
+   "sqlstate": "25006",
+   "vendor_code": 1792,
+   "message": "(1792, 'Cannot execute statement in a READ ONLY transaction')",
+   "password_in": {
+    "str(exc)": false,
+    "repr(exc)": false,
+    "repr(orig)": false,
+    "repr(orig.args)": false,
+    "traceback": false
+   },
+   "sql_text_in_str": true,
+   "parameters_block_in_str": true,
+   "bound_value_in_str": false,
+   "bound_value_in_driver_message": false,
+   "sa_has_statement_attr": true,
+   "str_exc_first_line": "(pymysql.err.OperationalError) (1792, 'Cannot execute statement in a READ ONLY transaction')",
+   "pre_statements": [
+    "SET SESSION TRANSACTION READ ONLY"
+   ],
+   "engine_kw": {},
+   "failed_at_step": "write",
+   "persisted_row_count": 0
+  },
+  {
+   "dialect": "mariadb",
+   "case": "bypass[SET SESSION TRANSACTION READ ONLY -> SET SESSION TRANSACTION READ WRITE]",
+   "status": "ok",
+   "value": "'write statement and commit accepted'",
+   "pre_statements": [
+    "SET SESSION TRANSACTION READ ONLY",
+    "SET SESSION TRANSACTION READ WRITE"
+   ],
+   "engine_kw": {},
+   "failed_at_step": null,
+   "persisted_row_count": 1
+  },
+  {
+   "dialect": "mariadb",
+   "case": "bypass[SET SESSION TRANSACTION READ ONLY -> SET TRANSACTION READ WRITE]",
+   "status": "ok",
+   "value": "'write statement and commit accepted'",
+   "pre_statements": [
+    "SET SESSION TRANSACTION READ ONLY",
+    "SET TRANSACTION READ WRITE"
+   ],
+   "engine_kw": {},
+   "failed_at_step": null,
+   "persisted_row_count": 1
+  },
+  {
+   "dialect": "mariadb",
+   "case": "bypass[SET SESSION TRANSACTION READ ONLY -> START TRANSACTION READ WRITE]",
+   "status": "ok",
+   "value": "'write statement and commit accepted'",
+   "pre_statements": [
+    "SET SESSION TRANSACTION READ ONLY",
+    "START TRANSACTION READ WRITE"
+   ],
+   "engine_kw": {},
+   "failed_at_step": null,
+   "persisted_row_count": 1
+  },
+  {
+   "dialect": "mariadb",
+   "case": "bypass[SET SESSION TRANSACTION READ ONLY -> SET SESSION transaction_read_only=0]",
+   "status": "error",
+   "sa_exc": "sqlalchemy.exc.OperationalError",
+   "dbapi_error": true,
+   "driver_exc": "pymysql.err.OperationalError",
+   "driver_mro": [
+    "pymysql.err.OperationalError",
+    "pymysql.err.DatabaseError",
+    "pymysql.err.Error",
+    "pymysql.err.MySQLError"
+   ],
+   "args_types": [
+    "int",
+    "str"
+   ],
+   "driver_attrs": {
+    "sqlstate": "HY000"
+   },
+   "sqlstate": "HY000",
+   "vendor_code": 1193,
+   "message": "(1193, \"Unknown system variable 'transaction_read_only'\")",
+   "password_in": {
+    "str(exc)": false,
+    "repr(exc)": false,
+    "repr(orig)": false,
+    "repr(orig.args)": false,
+    "traceback": false
+   },
+   "sql_text_in_str": true,
+   "parameters_block_in_str": false,
+   "bound_value_in_str": false,
+   "bound_value_in_driver_message": false,
+   "sa_has_statement_attr": true,
+   "str_exc_first_line": "(pymysql.err.OperationalError) (1193, \"Unknown system variable 'transaction_read_only'\")",
+   "pre_statements": [
+    "SET SESSION TRANSACTION READ ONLY",
+    "SET SESSION transaction_read_only=0"
+   ],
+   "engine_kw": {},
+   "failed_at_step": "pre: SET SESSION transaction_read_only=0",
+   "persisted_row_count": 0
+  },
+  {
+   "dialect": "mariadb",
+   "case": "bypass[SET SESSION TRANSACTION READ ONLY -> SET SESSION tx_read_only=0]",
+   "status": "ok",
+   "value": "'write statement and commit accepted'",
+   "pre_statements": [
+    "SET SESSION TRANSACTION READ ONLY",
+    "SET SESSION tx_read_only=0"
+   ],
+   "engine_kw": {},
+   "failed_at_step": null,
+   "persisted_row_count": 1
+  },
+  {
+   "dialect": "mariadb",
+   "case": "bypass[SET SESSION TRANSACTION READ ONLY -> COMMIT then write]",
+   "status": "error",
+   "sa_exc": "sqlalchemy.exc.OperationalError",
+   "dbapi_error": true,
+   "driver_exc": "pymysql.err.OperationalError",
+   "driver_mro": [
+    "pymysql.err.OperationalError",
+    "pymysql.err.DatabaseError",
+    "pymysql.err.Error",
+    "pymysql.err.MySQLError"
+   ],
+   "args_types": [
+    "int",
+    "str"
+   ],
+   "driver_attrs": {
+    "sqlstate": "25006"
+   },
+   "sqlstate": "25006",
+   "vendor_code": 1792,
+   "message": "(1792, 'Cannot execute statement in a READ ONLY transaction')",
+   "password_in": {
+    "str(exc)": false,
+    "repr(exc)": false,
+    "repr(orig)": false,
+    "repr(orig.args)": false,
+    "traceback": false
+   },
+   "sql_text_in_str": true,
+   "parameters_block_in_str": true,
+   "bound_value_in_str": false,
+   "bound_value_in_driver_message": false,
+   "sa_has_statement_attr": true,
+   "str_exc_first_line": "(pymysql.err.OperationalError) (1792, 'Cannot execute statement in a READ ONLY transaction')",
+   "pre_statements": [
+    "SET SESSION TRANSACTION READ ONLY",
+    "COMMIT"
+   ],
+   "engine_kw": {},
+   "failed_at_step": "write",
+   "persisted_row_count": 0
+  },
+  {
+   "dialect": "mariadb",
+   "case": "guard[SET TRANSACTION READ ONLY]_write",
+   "status": "error",
+   "sa_exc": "sqlalchemy.exc.OperationalError",
+   "dbapi_error": true,
+   "driver_exc": "pymysql.err.OperationalError",
+   "driver_mro": [
+    "pymysql.err.OperationalError",
+    "pymysql.err.DatabaseError",
+    "pymysql.err.Error",
+    "pymysql.err.MySQLError"
+   ],
+   "args_types": [
+    "int",
+    "str"
+   ],
+   "driver_attrs": {
+    "sqlstate": "25006"
+   },
+   "sqlstate": "25006",
+   "vendor_code": 1792,
+   "message": "(1792, 'Cannot execute statement in a READ ONLY transaction')",
+   "password_in": {
+    "str(exc)": false,
+    "repr(exc)": false,
+    "repr(orig)": false,
+    "repr(orig.args)": false,
+    "traceback": false
+   },
+   "sql_text_in_str": true,
+   "parameters_block_in_str": true,
+   "bound_value_in_str": false,
+   "bound_value_in_driver_message": false,
+   "sa_has_statement_attr": true,
+   "str_exc_first_line": "(pymysql.err.OperationalError) (1792, 'Cannot execute statement in a READ ONLY transaction')",
+   "pre_statements": [
+    "SET TRANSACTION READ ONLY"
+   ],
+   "engine_kw": {},
+   "failed_at_step": "write",
+   "persisted_row_count": 0
+  },
+  {
+   "dialect": "mariadb",
+   "case": "bypass[SET TRANSACTION READ ONLY -> SET SESSION TRANSACTION READ WRITE]",
+   "status": "ok",
+   "value": "'write statement and commit accepted'",
+   "pre_statements": [
+    "SET TRANSACTION READ ONLY",
+    "SET SESSION TRANSACTION READ WRITE"
+   ],
+   "engine_kw": {},
+   "failed_at_step": null,
+   "persisted_row_count": 1
+  },
+  {
+   "dialect": "mariadb",
+   "case": "bypass[SET TRANSACTION READ ONLY -> SET TRANSACTION READ WRITE]",
+   "status": "ok",
+   "value": "'write statement and commit accepted'",
+   "pre_statements": [
+    "SET TRANSACTION READ ONLY",
+    "SET TRANSACTION READ WRITE"
+   ],
+   "engine_kw": {},
+   "failed_at_step": null,
+   "persisted_row_count": 1
+  },
+  {
+   "dialect": "mariadb",
+   "case": "bypass[SET TRANSACTION READ ONLY -> START TRANSACTION READ WRITE]",
+   "status": "ok",
+   "value": "'write statement and commit accepted'",
+   "pre_statements": [
+    "SET TRANSACTION READ ONLY",
+    "START TRANSACTION READ WRITE"
+   ],
+   "engine_kw": {},
+   "failed_at_step": null,
+   "persisted_row_count": 1
+  },
+  {
+   "dialect": "mariadb",
+   "case": "bypass[SET TRANSACTION READ ONLY -> SET SESSION transaction_read_only=0]",
+   "status": "error",
+   "sa_exc": "sqlalchemy.exc.OperationalError",
+   "dbapi_error": true,
+   "driver_exc": "pymysql.err.OperationalError",
+   "driver_mro": [
+    "pymysql.err.OperationalError",
+    "pymysql.err.DatabaseError",
+    "pymysql.err.Error",
+    "pymysql.err.MySQLError"
+   ],
+   "args_types": [
+    "int",
+    "str"
+   ],
+   "driver_attrs": {
+    "sqlstate": "HY000"
+   },
+   "sqlstate": "HY000",
+   "vendor_code": 1193,
+   "message": "(1193, \"Unknown system variable 'transaction_read_only'\")",
+   "password_in": {
+    "str(exc)": false,
+    "repr(exc)": false,
+    "repr(orig)": false,
+    "repr(orig.args)": false,
+    "traceback": false
+   },
+   "sql_text_in_str": true,
+   "parameters_block_in_str": false,
+   "bound_value_in_str": false,
+   "bound_value_in_driver_message": false,
+   "sa_has_statement_attr": true,
+   "str_exc_first_line": "(pymysql.err.OperationalError) (1193, \"Unknown system variable 'transaction_read_only'\")",
+   "pre_statements": [
+    "SET TRANSACTION READ ONLY",
+    "SET SESSION transaction_read_only=0"
+   ],
+   "engine_kw": {},
+   "failed_at_step": "pre: SET SESSION transaction_read_only=0",
+   "persisted_row_count": 0
+  },
+  {
+   "dialect": "mariadb",
+   "case": "bypass[SET TRANSACTION READ ONLY -> SET SESSION tx_read_only=0]",
+   "status": "ok",
+   "value": "'write statement and commit accepted'",
+   "pre_statements": [
+    "SET TRANSACTION READ ONLY",
+    "SET SESSION tx_read_only=0"
+   ],
+   "engine_kw": {},
+   "failed_at_step": null,
+   "persisted_row_count": 1
+  },
+  {
+   "dialect": "mariadb",
+   "case": "bypass[SET TRANSACTION READ ONLY -> COMMIT then write]",
+   "status": "ok",
+   "value": "'write statement and commit accepted'",
+   "pre_statements": [
+    "SET TRANSACTION READ ONLY",
+    "COMMIT"
+   ],
+   "engine_kw": {},
+   "failed_at_step": null,
+   "persisted_row_count": 1
+  },
+  {
+   "dialect": "mariadb",
+   "case": "guard[START TRANSACTION READ ONLY]_write",
+   "status": "error",
+   "sa_exc": "sqlalchemy.exc.OperationalError",
+   "dbapi_error": true,
+   "driver_exc": "pymysql.err.OperationalError",
+   "driver_mro": [
+    "pymysql.err.OperationalError",
+    "pymysql.err.DatabaseError",
+    "pymysql.err.Error",
+    "pymysql.err.MySQLError"
+   ],
+   "args_types": [
+    "int",
+    "str"
+   ],
+   "driver_attrs": {
+    "sqlstate": "25006"
+   },
+   "sqlstate": "25006",
+   "vendor_code": 1792,
+   "message": "(1792, 'Cannot execute statement in a READ ONLY transaction')",
+   "password_in": {
+    "str(exc)": false,
+    "repr(exc)": false,
+    "repr(orig)": false,
+    "repr(orig.args)": false,
+    "traceback": false
+   },
+   "sql_text_in_str": true,
+   "parameters_block_in_str": true,
+   "bound_value_in_str": false,
+   "bound_value_in_driver_message": false,
+   "sa_has_statement_attr": true,
+   "str_exc_first_line": "(pymysql.err.OperationalError) (1792, 'Cannot execute statement in a READ ONLY transaction')",
+   "pre_statements": [
+    "START TRANSACTION READ ONLY"
+   ],
+   "engine_kw": {},
+   "failed_at_step": "write",
+   "persisted_row_count": 0
+  },
+  {
+   "dialect": "mariadb",
+   "case": "bypass[START TRANSACTION READ ONLY -> SET SESSION TRANSACTION READ WRITE]",
+   "status": "error",
+   "sa_exc": "sqlalchemy.exc.OperationalError",
+   "dbapi_error": true,
+   "driver_exc": "pymysql.err.OperationalError",
+   "driver_mro": [
+    "pymysql.err.OperationalError",
+    "pymysql.err.DatabaseError",
+    "pymysql.err.Error",
+    "pymysql.err.MySQLError"
+   ],
+   "args_types": [
+    "int",
+    "str"
+   ],
+   "driver_attrs": {
+    "sqlstate": "25006"
+   },
+   "sqlstate": "25006",
+   "vendor_code": 1792,
+   "message": "(1792, 'Cannot execute statement in a READ ONLY transaction')",
+   "password_in": {
+    "str(exc)": false,
+    "repr(exc)": false,
+    "repr(orig)": false,
+    "repr(orig.args)": false,
+    "traceback": false
+   },
+   "sql_text_in_str": true,
+   "parameters_block_in_str": true,
+   "bound_value_in_str": false,
+   "bound_value_in_driver_message": false,
+   "sa_has_statement_attr": true,
+   "str_exc_first_line": "(pymysql.err.OperationalError) (1792, 'Cannot execute statement in a READ ONLY transaction')",
+   "pre_statements": [
+    "START TRANSACTION READ ONLY",
+    "SET SESSION TRANSACTION READ WRITE"
+   ],
+   "engine_kw": {},
+   "failed_at_step": "write",
+   "persisted_row_count": 0
+  },
+  {
+   "dialect": "mariadb",
+   "case": "bypass[START TRANSACTION READ ONLY -> SET TRANSACTION READ WRITE]",
+   "status": "error",
+   "sa_exc": "sqlalchemy.exc.OperationalError",
+   "dbapi_error": true,
+   "driver_exc": "pymysql.err.OperationalError",
+   "driver_mro": [
+    "pymysql.err.OperationalError",
+    "pymysql.err.DatabaseError",
+    "pymysql.err.Error",
+    "pymysql.err.MySQLError"
+   ],
+   "args_types": [
+    "int",
+    "str"
+   ],
+   "driver_attrs": {
+    "sqlstate": "25001"
+   },
+   "sqlstate": "25001",
+   "vendor_code": 1568,
+   "message": "(1568, \"Transaction characteristics can't be changed while a transaction is in progress\")",
+   "password_in": {
+    "str(exc)": false,
+    "repr(exc)": false,
+    "repr(orig)": false,
+    "repr(orig.args)": false,
+    "traceback": false
+   },
+   "sql_text_in_str": true,
+   "parameters_block_in_str": false,
+   "bound_value_in_str": false,
+   "bound_value_in_driver_message": false,
+   "sa_has_statement_attr": true,
+   "str_exc_first_line": "(pymysql.err.OperationalError) (1568, \"Transaction characteristics can't be changed while a transaction is in progress\")",
+   "pre_statements": [
+    "START TRANSACTION READ ONLY",
+    "SET TRANSACTION READ WRITE"
+   ],
+   "engine_kw": {},
+   "failed_at_step": "pre: SET TRANSACTION READ WRITE",
+   "persisted_row_count": 0
+  },
+  {
+   "dialect": "mariadb",
+   "case": "bypass[START TRANSACTION READ ONLY -> START TRANSACTION READ WRITE]",
+   "status": "ok",
+   "value": "'write statement and commit accepted'",
+   "pre_statements": [
+    "START TRANSACTION READ ONLY",
+    "START TRANSACTION READ WRITE"
+   ],
+   "engine_kw": {},
+   "failed_at_step": null,
+   "persisted_row_count": 1
+  },
+  {
+   "dialect": "mariadb",
+   "case": "bypass[START TRANSACTION READ ONLY -> SET SESSION transaction_read_only=0]",
+   "status": "error",
+   "sa_exc": "sqlalchemy.exc.OperationalError",
+   "dbapi_error": true,
+   "driver_exc": "pymysql.err.OperationalError",
+   "driver_mro": [
+    "pymysql.err.OperationalError",
+    "pymysql.err.DatabaseError",
+    "pymysql.err.Error",
+    "pymysql.err.MySQLError"
+   ],
+   "args_types": [
+    "int",
+    "str"
+   ],
+   "driver_attrs": {
+    "sqlstate": "HY000"
+   },
+   "sqlstate": "HY000",
+   "vendor_code": 1193,
+   "message": "(1193, \"Unknown system variable 'transaction_read_only'\")",
+   "password_in": {
+    "str(exc)": false,
+    "repr(exc)": false,
+    "repr(orig)": false,
+    "repr(orig.args)": false,
+    "traceback": false
+   },
+   "sql_text_in_str": true,
+   "parameters_block_in_str": false,
+   "bound_value_in_str": false,
+   "bound_value_in_driver_message": false,
+   "sa_has_statement_attr": true,
+   "str_exc_first_line": "(pymysql.err.OperationalError) (1193, \"Unknown system variable 'transaction_read_only'\")",
+   "pre_statements": [
+    "START TRANSACTION READ ONLY",
+    "SET SESSION transaction_read_only=0"
+   ],
+   "engine_kw": {},
+   "failed_at_step": "pre: SET SESSION transaction_read_only=0",
+   "persisted_row_count": 0
+  },
+  {
+   "dialect": "mariadb",
+   "case": "bypass[START TRANSACTION READ ONLY -> SET SESSION tx_read_only=0]",
+   "status": "error",
+   "sa_exc": "sqlalchemy.exc.OperationalError",
+   "dbapi_error": true,
+   "driver_exc": "pymysql.err.OperationalError",
+   "driver_mro": [
+    "pymysql.err.OperationalError",
+    "pymysql.err.DatabaseError",
+    "pymysql.err.Error",
+    "pymysql.err.MySQLError"
+   ],
+   "args_types": [
+    "int",
+    "str"
+   ],
+   "driver_attrs": {
+    "sqlstate": "25006"
+   },
+   "sqlstate": "25006",
+   "vendor_code": 1792,
+   "message": "(1792, 'Cannot execute statement in a READ ONLY transaction')",
+   "password_in": {
+    "str(exc)": false,
+    "repr(exc)": false,
+    "repr(orig)": false,
+    "repr(orig.args)": false,
+    "traceback": false
+   },
+   "sql_text_in_str": true,
+   "parameters_block_in_str": true,
+   "bound_value_in_str": false,
+   "bound_value_in_driver_message": false,
+   "sa_has_statement_attr": true,
+   "str_exc_first_line": "(pymysql.err.OperationalError) (1792, 'Cannot execute statement in a READ ONLY transaction')",
+   "pre_statements": [
+    "START TRANSACTION READ ONLY",
+    "SET SESSION tx_read_only=0"
+   ],
+   "engine_kw": {},
+   "failed_at_step": "write",
+   "persisted_row_count": 0
+  },
+  {
+   "dialect": "mariadb",
+   "case": "bypass[START TRANSACTION READ ONLY -> COMMIT then write]",
+   "status": "ok",
+   "value": "'write statement and commit accepted'",
+   "pre_statements": [
+    "START TRANSACTION READ ONLY",
+    "COMMIT"
+   ],
+   "engine_kw": {},
+   "failed_at_step": null,
+   "persisted_row_count": 1
+  },
+  {
+   "dialect": "mariadb",
+   "case": "connlevel[init_command=SET SESSION TRANSACTION READ ONLY]_write",
+   "status": "error",
+   "sa_exc": "sqlalchemy.exc.OperationalError",
+   "dbapi_error": true,
+   "driver_exc": "pymysql.err.OperationalError",
+   "driver_mro": [
+    "pymysql.err.OperationalError",
+    "pymysql.err.DatabaseError",
+    "pymysql.err.Error",
+    "pymysql.err.MySQLError"
+   ],
+   "args_types": [
+    "int",
+    "str"
+   ],
+   "driver_attrs": {
+    "sqlstate": "25006"
+   },
+   "sqlstate": "25006",
+   "vendor_code": 1792,
+   "message": "(1792, 'Cannot execute statement in a READ ONLY transaction')",
+   "password_in": {
+    "str(exc)": false,
+    "repr(exc)": false,
+    "repr(orig)": false,
+    "repr(orig.args)": false,
+    "traceback": false
+   },
+   "sql_text_in_str": true,
+   "parameters_block_in_str": true,
+   "bound_value_in_str": false,
+   "bound_value_in_driver_message": false,
+   "sa_has_statement_attr": true,
+   "str_exc_first_line": "(pymysql.err.OperationalError) (1792, 'Cannot execute statement in a READ ONLY transaction')",
+   "pre_statements": [],
+   "engine_kw": {
+    "connect_args": "{'init_command': 'SET SESSION TRANSACTION READ ONLY'}"
+   },
+   "failed_at_step": "write",
+   "persisted_row_count": 0
+  },
+  {
+   "dialect": "mariadb",
+   "case": "bypass[connlevel init_command=SET SESSION TRANSACTION READ ONLY -> SET SESSION TRANSACTION READ WRITE]",
+   "status": "ok",
+   "value": "'write statement and commit accepted'",
+   "pre_statements": [
+    "SET SESSION TRANSACTION READ WRITE"
+   ],
+   "engine_kw": {
+    "connect_args": "{'init_command': 'SET SESSION TRANSACTION READ ONLY'}"
+   },
+   "failed_at_step": null,
+   "persisted_row_count": 1
+  },
+  {
+   "dialect": "mariadb",
+   "case": "bypass[connlevel init_command=SET SESSION TRANSACTION READ ONLY -> SET TRANSACTION READ WRITE]",
+   "status": "ok",
+   "value": "'write statement and commit accepted'",
+   "pre_statements": [
+    "SET TRANSACTION READ WRITE"
+   ],
+   "engine_kw": {
+    "connect_args": "{'init_command': 'SET SESSION TRANSACTION READ ONLY'}"
+   },
+   "failed_at_step": null,
+   "persisted_row_count": 1
+  },
+  {
+   "dialect": "mariadb",
+   "case": "bypass[connlevel init_command=SET SESSION TRANSACTION READ ONLY -> START TRANSACTION READ WRITE]",
+   "status": "ok",
+   "value": "'write statement and commit accepted'",
+   "pre_statements": [
+    "START TRANSACTION READ WRITE"
+   ],
+   "engine_kw": {
+    "connect_args": "{'init_command': 'SET SESSION TRANSACTION READ ONLY'}"
+   },
+   "failed_at_step": null,
+   "persisted_row_count": 1
+  },
+  {
+   "dialect": "mariadb",
+   "case": "bypass[connlevel init_command=SET SESSION TRANSACTION READ ONLY -> SET SESSION transaction_read_only=0]",
+   "status": "error",
+   "sa_exc": "sqlalchemy.exc.OperationalError",
+   "dbapi_error": true,
+   "driver_exc": "pymysql.err.OperationalError",
+   "driver_mro": [
+    "pymysql.err.OperationalError",
+    "pymysql.err.DatabaseError",
+    "pymysql.err.Error",
+    "pymysql.err.MySQLError"
+   ],
+   "args_types": [
+    "int",
+    "str"
+   ],
+   "driver_attrs": {
+    "sqlstate": "HY000"
+   },
+   "sqlstate": "HY000",
+   "vendor_code": 1193,
+   "message": "(1193, \"Unknown system variable 'transaction_read_only'\")",
+   "password_in": {
+    "str(exc)": false,
+    "repr(exc)": false,
+    "repr(orig)": false,
+    "repr(orig.args)": false,
+    "traceback": false
+   },
+   "sql_text_in_str": true,
+   "parameters_block_in_str": false,
+   "bound_value_in_str": false,
+   "bound_value_in_driver_message": false,
+   "sa_has_statement_attr": true,
+   "str_exc_first_line": "(pymysql.err.OperationalError) (1193, \"Unknown system variable 'transaction_read_only'\")",
+   "pre_statements": [
+    "SET SESSION transaction_read_only=0"
+   ],
+   "engine_kw": {
+    "connect_args": "{'init_command': 'SET SESSION TRANSACTION READ ONLY'}"
+   },
+   "failed_at_step": "pre: SET SESSION transaction_read_only=0",
+   "persisted_row_count": 0
+  },
+  {
+   "dialect": "mariadb",
+   "case": "bypass[connlevel init_command=SET SESSION TRANSACTION READ ONLY -> SET SESSION tx_read_only=0]",
+   "status": "ok",
+   "value": "'write statement and commit accepted'",
+   "pre_statements": [
+    "SET SESSION tx_read_only=0"
+   ],
+   "engine_kw": {
+    "connect_args": "{'init_command': 'SET SESSION TRANSACTION READ ONLY'}"
+   },
+   "failed_at_step": null,
+   "persisted_row_count": 1
+  },
+  {
+   "dialect": "mariadb",
+   "case": "types_roundtrip",
+   "status": "ok",
+   "value": "{'1': {'id': ['int', 1], 'note': ['str', 'café € 日'], 'amount': ['Decimal', '12.50'], 'created_at': ['datetime', '2026-10-29 12:34:56.789000'], 'ref': ['str', '123e4567-e89b-12d3-a456-426614174000'], 'ref_bin': ['bytes', 'bytes:123e4567e89b12d3a456426614174000'], 'payload': ['bytes', 'bytes:deadbeef...[+339]",
+   "data": {
+    "1": {
+     "id": [
+      "int",
+      1
+     ],
+     "note": [
+      "str",
+      "café € 日"
+     ],
+     "amount": [
+      "Decimal",
+      "12.50"
+     ],
+     "created_at": [
+      "datetime",
+      "2026-10-29 12:34:56.789000"
+     ],
+     "ref": [
+      "str",
+      "123e4567-e89b-12d3-a456-426614174000"
+     ],
+     "ref_bin": [
+      "bytes",
+      "bytes:123e4567e89b12d3a456426614174000"
+     ],
+     "payload": [
+      "bytes",
+      "bytes:deadbeef"
+     ],
+     "doc": [
+      "str",
+      "{\"a\": 1, \"b\": [1, 2]}"
+     ],
+     "nothing": [
+      "NoneType",
+      null
+     ]
+    },
+    "2": {
+     "id": [
+      "int",
+      2
+     ],
+     "note": [
+      "str",
+      "plain"
+     ],
+     "amount": [
+      "Decimal",
+      "0.00"
+     ],
+     "created_at": [
+      "NoneType",
+      null
+     ],
+     "ref": [
+      "NoneType",
+      null
+     ],
+     "ref_bin": [
+      "NoneType",
+      null
+     ],
+     "payload": [
+      "NoneType",
+      null
+     ],
+     "doc": [
+      "NoneType",
+      null
+     ],
+     "nothing": [
+      "NoneType",
+      null
+     ]
+    }
+   }
+  },
+  {
+   "dialect": "mariadb",
+   "case": "text_trap_compile_client_side",
+   "status": "ok",
+   "paramstyle": "pyformat",
+   "compiled": {
+    "colon_cast  select :a::int": {
+     "bind_names": [],
+     "compiled": "select :a::int"
+    },
+    "json literal select '{\"a\":1}'": {
+     "bind_names": [
+      "1"
+     ],
+     "compiled": "select '{\"a\"%(1)s}'"
+    },
+    "escaped     select '{\"a\"\\:1}'": {
+     "bind_names": [],
+     "compiled": "select '{\"a\":1}'"
+    },
+    "percent     like '%b%'": {
+     "bind_names": [],
+     "compiled": "select 'abc' like '%%b%%'"
+    },
+    "CAST(:a AS ..)": {
+     "bind_names": [
+      "a"
+     ],
+     "compiled": "select CAST(%(a)s AS signed)"
+    }
+   }
+  },
+  {
+   "dialect": "mariadb",
+   "case": "text_trap_colon_cast",
+   "status": "error",
+   "sa_exc": "sqlalchemy.exc.ProgrammingError",
+   "dbapi_error": true,
+   "driver_exc": "pymysql.err.ProgrammingError",
+   "driver_mro": [
+    "pymysql.err.ProgrammingError",
+    "pymysql.err.DatabaseError",
+    "pymysql.err.Error",
+    "pymysql.err.MySQLError"
+   ],
+   "args_types": [
+    "int",
+    "str"
+   ],
+   "driver_attrs": {
+    "sqlstate": "42000"
+   },
+   "sqlstate": "42000",
+   "vendor_code": 1064,
+   "message": "(1064, \"You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near ':a::int' at line 1\")",
+   "password_in": {
+    "str(exc)": false,
+    "repr(exc)": false,
+    "repr(orig)": false,
+    "repr(orig.args)": false,
+    "traceback": false
+   },
+   "sql_text_in_str": true,
+   "parameters_block_in_str": false,
+   "bound_value_in_str": false,
+   "bound_value_in_driver_message": false,
+   "sa_has_statement_attr": true,
+   "str_exc_first_line": "(pymysql.err.ProgrammingError) (1064, \"You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near ':a::int' at line 1\")"
+  },
+  {
+   "dialect": "mariadb",
+   "case": "text_trap_json_colon_literal",
+   "status": "error",
+   "sa_exc": "sqlalchemy.exc.StatementError",
+   "dbapi_error": false,
+   "driver_exc": "sqlalchemy.exc.InvalidRequestError",
+   "driver_mro": [
+    "sqlalchemy.exc.InvalidRequestError",
+    "sqlalchemy.exc.SQLAlchemyError",
+    "sqlalchemy.exc.HasDescriptionCode"
+   ],
+   "args_types": [
+    "str"
+   ],
+   "driver_attrs": {
+    "code": "cd3x"
+   },
+   "sqlstate": null,
+   "vendor_code": null,
+   "message": "A value is required for bind parameter '1' (Background on this error at: https://sqlalche.me/e/21/cd3x)",
+   "password_in": {
+    "str(exc)": false,
+    "repr(exc)": false,
+    "repr(orig)": false,
+    "repr(orig.args)": false,
+    "traceback": false
+   },
+   "sql_text_in_str": true,
+   "parameters_block_in_str": true,
+   "bound_value_in_str": false,
+   "bound_value_in_driver_message": false,
+   "sa_has_statement_attr": true,
+   "str_exc_first_line": "(sqlalchemy.exc.InvalidRequestError) A value is required for bind parameter '1'"
+  },
+  {
+   "dialect": "mariadb",
+   "case": "text_trap_json_colon_escaped",
+   "status": "ok",
+   "value": "[('{\"a\":1}',)]"
+  },
+  {
+   "dialect": "mariadb",
+   "case": "text_percent_in_text",
+   "status": "ok",
+   "value": "[(1,)]"
+  },
+  {
+   "dialect": "mariadb",
+   "case": "text_cast_bind",
+   "status": "ok",
+   "value": "[(10,)]"
+  },
+  {
+   "dialect": "mariadb",
+   "case": "driver_sql_percent_no_params",
+   "status": "error",
+   "sa_exc": null,
+   "dbapi_error": false,
+   "driver_exc": "builtins.ValueError",
+   "driver_mro": [],
+   "args_types": [
+    "str"
+   ],
+   "note": "NOT a SQLAlchemy exception: escaped the driver/SQLAlchemy raw",
+   "driver_attrs": {},
+   "sqlstate": null,
+   "vendor_code": null,
+   "message": "unsupported format character 'b' (0x62) at index 20",
+   "password_in": {
+    "str(exc)": false,
+    "repr(exc)": false,
+    "repr(orig)": false,
+    "repr(orig.args)": false,
+    "traceback": false
+   },
+   "sql_text_in_str": false,
+   "parameters_block_in_str": false,
+   "bound_value_in_str": false,
+   "bound_value_in_driver_message": false,
+   "sa_has_statement_attr": false,
+   "str_exc_first_line": "unsupported format character 'b' (0x62) at index 20"
+  }
+ ]
+}

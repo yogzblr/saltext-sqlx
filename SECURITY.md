@@ -8,19 +8,42 @@ and the module's limits. The module is a convenience and a second line of defenc
 
 ## 2. Verified fact: the in-session read-only guard is bypassable
 
-On PostgreSQL 16 (psycopg 3.3.6, SQLAlchemy 2.0.55), after `SET TRANSACTION READ ONLY`:
+Observed on three databases (task T1, 2026-10-29; full tables in `docs/WIRE_SHAPES.md` section 3). The same results were
+obtained with SQLAlchemy 2.0.55 and 2.1.6. Test account `rw` (DML rights), a guard statement, then caller SQL through the
+same connection, then `INSERT` and `COMMIT`; "persisted" was read back on a second connection.
+
+**PostgreSQL 16.15** (psycopg 3.3.6), after `SET TRANSACTION READ ONLY`:
 
 | Caller SQL sequence | Result |
 |---|---|
 | `INSERT` | refused, SQLSTATE 25006 |
-| `SET TRANSACTION READ WRITE` then `INSERT` | **write succeeded** |
-| `COMMIT` then `INSERT` | **write succeeded** |
-| connection option `default_transaction_read_only=on`, then `SET TRANSACTION READ WRITE`, then `INSERT` | **write succeeded** |
+| `SET TRANSACTION READ WRITE` then `INSERT` | **write succeeded and persisted** |
+| `COMMIT` then `INSERT` | **write succeeded and persisted** |
+| connection option `default_transaction_read_only=on`, then `SET TRANSACTION READ WRITE`, then `INSERT` | **write succeeded and persisted** |
+
+**MySQL 8.0.46 and MariaDB 10.11.14** (PyMySQL 1.2.3). Every guard refused a plain `INSERT` (error 1792, SQLSTATE 25006).
+Bypasses (W = write succeeded and persisted, R = refused; MySQL / MariaDB where they differ):
+
+| Guard statement | `SET SESSION TRANSACTION READ WRITE` | `SET TRANSACTION READ WRITE` | `START TRANSACTION READ WRITE` | `SET SESSION transaction_read_only=0` | `SET SESSION tx_read_only=0` | `COMMIT` then write |
+|---|---|---|---|---|---|---|
+| `SET SESSION TRANSACTION READ ONLY` (the `init_command` variant gave the same result in the first five columns; `COMMIT` not tested for it) | W | W | W | W / R (variable unknown, 1193) | R (unknown, 1193) / W | R |
+| `SET TRANSACTION READ ONLY` (next transaction only) | W | W | W | W / R (1193) | R (1193) / W | W |
+| `START TRANSACTION READ ONLY` | R | R (error 1568) | **W** | R (1792) / R (1193) | R (1193) / R (1792) | **W** |
+
+Every guard tested on MySQL and MariaDB is therefore bypassable by a statement a caller can send through `query`.
+`START TRANSACTION READ ONLY` resisted the most variants and still fell to `START TRANSACTION READ WRITE` and to
+`COMMIT` followed by a write.
+
+**The database role did hold** on PostgreSQL, MySQL and MariaDB: account `ro` was refused by the database for INSERT, UPDATE, DELETE
+and CREATE TABLE, and for SELECT in a schema it was not granted (PostgreSQL 42501; MySQL and MariaDB 1142). Account `rw`
+used through a transaction that is rolled back left no row behind.
+
+**Oracle and SQL Server: NOT RUN.** No server could be started, so neither `SET TRANSACTION READ ONLY` on Oracle nor the
+role behaviour on either was observed. Treat them as unprotected by the guard until observed.
 
 Therefore **every profile used by `query` must connect as a role that has only read privileges** (SELECT on the needed
 schemas; no INSERT/UPDATE/DELETE/DDL; no EXECUTE on write-capable functions; no superuser; on Oracle no `ANY` system privileges such as `SELECT ANY TABLE`
 beyond what is needed, and no `EXECUTE` on write-capable packages). `read_only: true` stays on as a backstop and as documentation of intent.
-The module's behaviour on other databases is unverified (T1).
 
 ## 3. Threats and controls
 

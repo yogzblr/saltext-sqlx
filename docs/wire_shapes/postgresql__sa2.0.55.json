@@ -1,0 +1,1202 @@
+{
+ "meta": {
+  "dialect": "postgresql",
+  "python": "3.13.16",
+  "sqlalchemy": "2.0.55",
+  "drivers": {
+   "psycopg": "3.3.6"
+  },
+  "server_reachable": true,
+  "not_run_reason": null,
+  "generated": "2026-10-29T02:46:51+00:00"
+ },
+ "results": [
+  {
+   "dialect": "postgresql",
+   "case": "ping",
+   "status": "ok",
+   "value": "{'select_ping': 1, 'version': 'PostgreSQL 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1) on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0, 64-bit', 'sa_dialect': 'postgresql', 'sa_driver': 'psycopg', 'is_mariadb': None, 'server_version_info': [16, 15], 'default_isolation': 'REA...[+13]",
+   "data": {
+    "select_ping": 1,
+    "version": "PostgreSQL 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1) on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0, 64-bit",
+    "sa_dialect": "postgresql",
+    "sa_driver": "psycopg",
+    "is_mariadb": null,
+    "server_version_info": [
+     16,
+     15
+    ],
+    "default_isolation": "READ COMMITTED"
+   }
+  },
+  {
+   "dialect": "postgresql",
+   "case": "wrong_password",
+   "status": "error",
+   "sa_exc": "sqlalchemy.exc.OperationalError",
+   "dbapi_error": true,
+   "driver_exc": "psycopg.OperationalError",
+   "driver_mro": [
+    "psycopg.OperationalError",
+    "psycopg.DatabaseError",
+    "psycopg.Error"
+   ],
+   "args_types": [
+    "str"
+   ],
+   "diag_fields": {},
+   "driver_attrs": {},
+   "sqlstate": null,
+   "vendor_code": null,
+   "message": "connection failed: connection to server at \"127.0.0.1\", port 54329 failed: FATAL:  password authentication failed for user \"rw\"",
+   "message_str_form": "connection failed: connection to server at \"127.0.0.1\", port 54329 failed: FATAL:  password authentication failed for user \"rw\"",
+   "password_in": {
+    "str(exc)": false,
+    "repr(exc)": false,
+    "repr(orig)": false,
+    "repr(orig.args)": false,
+    "traceback": false
+   },
+   "sql_text_in_str": false,
+   "parameters_block_in_str": false,
+   "bound_value_in_str": false,
+   "bound_value_in_driver_message": false,
+   "sa_has_statement_attr": false,
+   "str_exc_first_line": "(psycopg.OperationalError) connection failed: connection to server at \"127.0.0.1\", port 54329 failed: FATAL:  password authentication failed for user \"rw\""
+  },
+  {
+   "dialect": "postgresql",
+   "case": "unreachable_port",
+   "status": "error",
+   "sa_exc": "sqlalchemy.exc.OperationalError",
+   "dbapi_error": true,
+   "driver_exc": "psycopg.OperationalError",
+   "driver_mro": [
+    "psycopg.OperationalError",
+    "psycopg.DatabaseError",
+    "psycopg.Error"
+   ],
+   "args_types": [
+    "str"
+   ],
+   "diag_fields": {},
+   "driver_attrs": {},
+   "sqlstate": null,
+   "vendor_code": null,
+   "message": "connection failed: connection to server at \"127.0.0.1\", port 1 failed: Connection refused\n\tIs the server running on that host and accepting TCP/IP connections?",
+   "message_str_form": "connection failed: connection to server at \"127.0.0.1\", port 1 failed: Connection refused\n\tIs the server running on that host and accepting TCP/IP connections?",
+   "password_in": {
+    "str(exc)": false,
+    "repr(exc)": false,
+    "repr(orig)": false,
+    "repr(orig.args)": false,
+    "traceback": false
+   },
+   "sql_text_in_str": false,
+   "parameters_block_in_str": false,
+   "bound_value_in_str": false,
+   "bound_value_in_driver_message": false,
+   "sa_has_statement_attr": false,
+   "str_exc_first_line": "(psycopg.OperationalError) connection failed: connection to server at \"127.0.0.1\", port 1 failed: Connection refused"
+  },
+  {
+   "dialect": "postgresql",
+   "case": "unknown_database",
+   "status": "error",
+   "sa_exc": "sqlalchemy.exc.OperationalError",
+   "dbapi_error": true,
+   "driver_exc": "psycopg.OperationalError",
+   "driver_mro": [
+    "psycopg.OperationalError",
+    "psycopg.DatabaseError",
+    "psycopg.Error"
+   ],
+   "args_types": [
+    "str"
+   ],
+   "diag_fields": {},
+   "driver_attrs": {},
+   "sqlstate": null,
+   "vendor_code": null,
+   "message": "connection failed: connection to server at \"127.0.0.1\", port 54329 failed: FATAL:  database \"nope\" does not exist",
+   "message_str_form": "connection failed: connection to server at \"127.0.0.1\", port 54329 failed: FATAL:  database \"nope\" does not exist",
+   "password_in": {
+    "str(exc)": false,
+    "repr(exc)": false,
+    "repr(orig)": false,
+    "repr(orig.args)": false,
+    "traceback": false
+   },
+   "sql_text_in_str": false,
+   "parameters_block_in_str": false,
+   "bound_value_in_str": false,
+   "bound_value_in_driver_message": false,
+   "sa_has_statement_attr": false,
+   "str_exc_first_line": "(psycopg.OperationalError) connection failed: connection to server at \"127.0.0.1\", port 54329 failed: FATAL:  database \"nope\" does not exist"
+  },
+  {
+   "dialect": "postgresql",
+   "case": "connect_timeout_blackhole",
+   "status": "error",
+   "sa_exc": "sqlalchemy.exc.OperationalError",
+   "dbapi_error": true,
+   "driver_exc": "psycopg.OperationalError",
+   "driver_mro": [
+    "psycopg.OperationalError",
+    "psycopg.DatabaseError",
+    "psycopg.Error"
+   ],
+   "args_types": [
+    "str"
+   ],
+   "diag_fields": {},
+   "driver_attrs": {},
+   "sqlstate": null,
+   "vendor_code": null,
+   "message": "connection failed: connection to server at \"192.0.2.1\", port 54329 failed: server closed the connection unexpectedly\n\tThis probably means the server terminated abnormally\n\tbefore or while processing the request.",
+   "message_str_form": "connection failed: connection to server at \"192.0.2.1\", port 54329 failed: server closed the connection unexpectedly\n\tThis probably means the server terminated abnormally\n\tbefore or while processing the request.",
+   "password_in": {
+    "str(exc)": false,
+    "repr(exc)": false,
+    "repr(orig)": false,
+    "repr(orig.args)": false,
+    "traceback": false
+   },
+   "sql_text_in_str": false,
+   "parameters_block_in_str": false,
+   "bound_value_in_str": false,
+   "bound_value_in_driver_message": false,
+   "sa_has_statement_attr": false,
+   "str_exc_first_line": "(psycopg.OperationalError) connection failed: connection to server at \"192.0.2.1\", port 54329 failed: server closed the connection unexpectedly",
+   "note": "192.0.2.1 (TEST-NET-1), connect timeout 2 s; result depends on the sandbox network"
+  },
+  {
+   "dialect": "postgresql",
+   "case": "syntax_error",
+   "status": "error",
+   "sa_exc": "sqlalchemy.exc.ProgrammingError",
+   "dbapi_error": true,
+   "driver_exc": "psycopg.errors.SyntaxError",
+   "driver_mro": [
+    "psycopg.errors.SyntaxError",
+    "psycopg.ProgrammingError",
+    "psycopg.DatabaseError",
+    "psycopg.Error"
+   ],
+   "args_types": [
+    "str"
+   ],
+   "diag_fields": {
+    "message_primary": "syntax error at or near \"selec\"",
+    "severity": "ERROR",
+    "severity_nonlocalized": "ERROR",
+    "source_file": "scan.l",
+    "source_function": "scanner_yyerror",
+    "source_line": "1244",
+    "sqlstate": "42601",
+    "statement_position": "1"
+   },
+   "driver_attrs": {
+    "sqlstate": "42601"
+   },
+   "sqlstate": "42601",
+   "vendor_code": null,
+   "message": "syntax error at or near \"selec\"",
+   "message_str_form": "syntax error at or near \"selec\"\nLINE 1: selec 1\n        ^",
+   "password_in": {
+    "str(exc)": false,
+    "repr(exc)": false,
+    "repr(orig)": false,
+    "repr(orig.args)": false,
+    "traceback": false
+   },
+   "sql_text_in_str": true,
+   "parameters_block_in_str": false,
+   "bound_value_in_str": false,
+   "bound_value_in_driver_message": false,
+   "sa_has_statement_attr": true,
+   "str_exc_first_line": "(psycopg.errors.SyntaxError) syntax error at or near \"selec\""
+  },
+  {
+   "dialect": "postgresql",
+   "case": "missing_table",
+   "status": "error",
+   "sa_exc": "sqlalchemy.exc.ProgrammingError",
+   "dbapi_error": true,
+   "driver_exc": "psycopg.errors.UndefinedTable",
+   "driver_mro": [
+    "psycopg.errors.UndefinedTable",
+    "psycopg.ProgrammingError",
+    "psycopg.DatabaseError",
+    "psycopg.Error"
+   ],
+   "args_types": [
+    "str"
+   ],
+   "diag_fields": {
+    "message_primary": "relation \"nope\" does not exist",
+    "severity": "ERROR",
+    "severity_nonlocalized": "ERROR",
+    "source_file": "parse_relation.c",
+    "source_function": "parserOpenTable",
+    "source_line": "1449",
+    "sqlstate": "42P01",
+    "statement_position": "15"
+   },
+   "driver_attrs": {
+    "sqlstate": "42P01"
+   },
+   "sqlstate": "42P01",
+   "vendor_code": null,
+   "message": "relation \"nope\" does not exist",
+   "message_str_form": "relation \"nope\" does not exist\nLINE 1: select * from nope\n                      ^",
+   "password_in": {
+    "str(exc)": false,
+    "repr(exc)": false,
+    "repr(orig)": false,
+    "repr(orig.args)": false,
+    "traceback": false
+   },
+   "sql_text_in_str": true,
+   "parameters_block_in_str": false,
+   "bound_value_in_str": false,
+   "bound_value_in_driver_message": false,
+   "sa_has_statement_attr": true,
+   "str_exc_first_line": "(psycopg.errors.UndefinedTable) relation \"nope\" does not exist"
+  },
+  {
+   "dialect": "postgresql",
+   "case": "missing_column",
+   "status": "error",
+   "sa_exc": "sqlalchemy.exc.ProgrammingError",
+   "dbapi_error": true,
+   "driver_exc": "psycopg.errors.UndefinedColumn",
+   "driver_mro": [
+    "psycopg.errors.UndefinedColumn",
+    "psycopg.ProgrammingError",
+    "psycopg.DatabaseError",
+    "psycopg.Error"
+   ],
+   "args_types": [
+    "str"
+   ],
+   "diag_fields": {
+    "message_hint": "Perhaps you meant to reference the column \"orders.note\".",
+    "message_primary": "column \"nope\" does not exist",
+    "severity": "ERROR",
+    "severity_nonlocalized": "ERROR",
+    "source_file": "parse_relation.c",
+    "source_function": "errorMissingColumn",
+    "source_line": "3729",
+    "sqlstate": "42703",
+    "statement_position": "8"
+   },
+   "driver_attrs": {
+    "sqlstate": "42703"
+   },
+   "sqlstate": "42703",
+   "vendor_code": null,
+   "message": "column \"nope\" does not exist",
+   "message_str_form": "column \"nope\" does not exist\nLINE 1: select nope from scratch.orders\n               ^\nHINT:  Perhaps you meant to reference the column \"orders.note\".",
+   "password_in": {
+    "str(exc)": false,
+    "repr(exc)": false,
+    "repr(orig)": false,
+    "repr(orig.args)": false,
+    "traceback": false
+   },
+   "sql_text_in_str": true,
+   "parameters_block_in_str": false,
+   "bound_value_in_str": false,
+   "bound_value_in_driver_message": false,
+   "sa_has_statement_attr": true,
+   "str_exc_first_line": "(psycopg.errors.UndefinedColumn) column \"nope\" does not exist"
+  },
+  {
+   "dialect": "postgresql",
+   "case": "division_by_zero",
+   "status": "error",
+   "sa_exc": "sqlalchemy.exc.DataError",
+   "dbapi_error": true,
+   "driver_exc": "psycopg.errors.DivisionByZero",
+   "driver_mro": [
+    "psycopg.errors.DivisionByZero",
+    "psycopg.DataError",
+    "psycopg.DatabaseError",
+    "psycopg.Error"
+   ],
+   "args_types": [
+    "str"
+   ],
+   "diag_fields": {
+    "message_primary": "division by zero",
+    "severity": "ERROR",
+    "severity_nonlocalized": "ERROR",
+    "source_file": "int.c",
+    "source_function": "int4div",
+    "source_line": "870",
+    "sqlstate": "22012"
+   },
+   "driver_attrs": {
+    "sqlstate": "22012"
+   },
+   "sqlstate": "22012",
+   "vendor_code": null,
+   "message": "division by zero",
+   "message_str_form": "division by zero",
+   "password_in": {
+    "str(exc)": false,
+    "repr(exc)": false,
+    "repr(orig)": false,
+    "repr(orig.args)": false,
+    "traceback": false
+   },
+   "sql_text_in_str": true,
+   "parameters_block_in_str": false,
+   "bound_value_in_str": false,
+   "bound_value_in_driver_message": false,
+   "sa_has_statement_attr": true,
+   "str_exc_first_line": "(psycopg.errors.DivisionByZero) division by zero"
+  },
+  {
+   "dialect": "postgresql",
+   "case": "division_by_zero_dml",
+   "status": "error",
+   "sa_exc": "sqlalchemy.exc.DataError",
+   "dbapi_error": true,
+   "driver_exc": "psycopg.errors.DivisionByZero",
+   "driver_mro": [
+    "psycopg.errors.DivisionByZero",
+    "psycopg.DataError",
+    "psycopg.DatabaseError",
+    "psycopg.Error"
+   ],
+   "args_types": [
+    "str"
+   ],
+   "diag_fields": {
+    "message_primary": "division by zero",
+    "severity": "ERROR",
+    "severity_nonlocalized": "ERROR",
+    "source_file": "int.c",
+    "source_function": "int4div",
+    "source_line": "870",
+    "sqlstate": "22012"
+   },
+   "driver_attrs": {
+    "sqlstate": "22012"
+   },
+   "sqlstate": "22012",
+   "vendor_code": null,
+   "message": "division by zero",
+   "message_str_form": "division by zero",
+   "password_in": {
+    "str(exc)": false,
+    "repr(exc)": false,
+    "repr(orig)": false,
+    "repr(orig.args)": false,
+    "traceback": false
+   },
+   "sql_text_in_str": true,
+   "parameters_block_in_str": false,
+   "bound_value_in_str": false,
+   "bound_value_in_driver_message": false,
+   "sa_has_statement_attr": true,
+   "str_exc_first_line": "(psycopg.errors.DivisionByZero) division by zero"
+  },
+  {
+   "dialect": "postgresql",
+   "case": "unique_violation",
+   "status": "error",
+   "sa_exc": "sqlalchemy.exc.IntegrityError",
+   "dbapi_error": true,
+   "driver_exc": "psycopg.errors.UniqueViolation",
+   "driver_mro": [
+    "psycopg.errors.UniqueViolation",
+    "psycopg.IntegrityError",
+    "psycopg.DatabaseError",
+    "psycopg.Error"
+   ],
+   "args_types": [
+    "str"
+   ],
+   "diag_fields": {
+    "constraint_name": "uniq_pkey",
+    "message_detail": "Key (email)=(a@example.com) already exists.",
+    "message_primary": "duplicate key value violates unique constraint \"uniq_pkey\"",
+    "schema_name": "scratch",
+    "severity": "ERROR",
+    "severity_nonlocalized": "ERROR",
+    "source_file": "nbtinsert.c",
+    "source_function": "_bt_check_unique",
+    "source_line": "666",
+    "sqlstate": "23505",
+    "table_name": "uniq"
+   },
+   "driver_attrs": {
+    "sqlstate": "23505"
+   },
+   "sqlstate": "23505",
+   "vendor_code": null,
+   "message": "duplicate key value violates unique constraint \"uniq_pkey\"",
+   "message_str_form": "duplicate key value violates unique constraint \"uniq_pkey\"\nDETAIL:  Key (email)=(a@example.com) already exists.",
+   "password_in": {
+    "str(exc)": false,
+    "repr(exc)": false,
+    "repr(orig)": false,
+    "repr(orig.args)": false,
+    "traceback": false
+   },
+   "sql_text_in_str": true,
+   "parameters_block_in_str": false,
+   "bound_value_in_str": false,
+   "bound_value_in_driver_message": false,
+   "sa_has_statement_attr": true,
+   "str_exc_first_line": "(psycopg.errors.UniqueViolation) duplicate key value violates unique constraint \"uniq_pkey\""
+  },
+  {
+   "dialect": "postgresql",
+   "case": "permission_denied_insert",
+   "status": "error",
+   "sa_exc": "sqlalchemy.exc.ProgrammingError",
+   "dbapi_error": true,
+   "driver_exc": "psycopg.errors.InsufficientPrivilege",
+   "driver_mro": [
+    "psycopg.errors.InsufficientPrivilege",
+    "psycopg.ProgrammingError",
+    "psycopg.DatabaseError",
+    "psycopg.Error"
+   ],
+   "args_types": [
+    "str"
+   ],
+   "diag_fields": {
+    "message_primary": "permission denied for table orders",
+    "severity": "ERROR",
+    "severity_nonlocalized": "ERROR",
+    "source_file": "aclchk.c",
+    "source_function": "aclcheck_error",
+    "source_line": "2812",
+    "sqlstate": "42501"
+   },
+   "driver_attrs": {
+    "sqlstate": "42501"
+   },
+   "sqlstate": "42501",
+   "vendor_code": null,
+   "message": "permission denied for table orders",
+   "message_str_form": "permission denied for table orders",
+   "password_in": {
+    "str(exc)": false,
+    "repr(exc)": false,
+    "repr(orig)": false,
+    "repr(orig.args)": false,
+    "traceback": false
+   },
+   "sql_text_in_str": true,
+   "parameters_block_in_str": false,
+   "bound_value_in_str": false,
+   "bound_value_in_driver_message": false,
+   "sa_has_statement_attr": true,
+   "str_exc_first_line": "(psycopg.errors.InsufficientPrivilege) permission denied for table orders"
+  },
+  {
+   "dialect": "postgresql",
+   "case": "permission_denied_select",
+   "status": "error",
+   "sa_exc": "sqlalchemy.exc.ProgrammingError",
+   "dbapi_error": true,
+   "driver_exc": "psycopg.errors.InsufficientPrivilege",
+   "driver_mro": [
+    "psycopg.errors.InsufficientPrivilege",
+    "psycopg.ProgrammingError",
+    "psycopg.DatabaseError",
+    "psycopg.Error"
+   ],
+   "args_types": [
+    "str"
+   ],
+   "diag_fields": {
+    "message_primary": "permission denied for schema private",
+    "severity": "ERROR",
+    "severity_nonlocalized": "ERROR",
+    "source_file": "aclchk.c",
+    "source_function": "aclcheck_error",
+    "source_line": "2812",
+    "sqlstate": "42501",
+    "statement_position": "15"
+   },
+   "driver_attrs": {
+    "sqlstate": "42501"
+   },
+   "sqlstate": "42501",
+   "vendor_code": null,
+   "message": "permission denied for schema private",
+   "message_str_form": "permission denied for schema private\nLINE 1: select * from private.secrets\n                      ^",
+   "password_in": {
+    "str(exc)": false,
+    "repr(exc)": false,
+    "repr(orig)": false,
+    "repr(orig.args)": false,
+    "traceback": false
+   },
+   "sql_text_in_str": true,
+   "parameters_block_in_str": false,
+   "bound_value_in_str": false,
+   "bound_value_in_driver_message": false,
+   "sa_has_statement_attr": true,
+   "str_exc_first_line": "(psycopg.errors.InsufficientPrivilege) permission denied for schema private"
+  },
+  {
+   "dialect": "postgresql",
+   "case": "ro_update",
+   "status": "error",
+   "sa_exc": "sqlalchemy.exc.ProgrammingError",
+   "dbapi_error": true,
+   "driver_exc": "psycopg.errors.InsufficientPrivilege",
+   "driver_mro": [
+    "psycopg.errors.InsufficientPrivilege",
+    "psycopg.ProgrammingError",
+    "psycopg.DatabaseError",
+    "psycopg.Error"
+   ],
+   "args_types": [
+    "str"
+   ],
+   "diag_fields": {
+    "message_primary": "permission denied for table orders",
+    "severity": "ERROR",
+    "severity_nonlocalized": "ERROR",
+    "source_file": "aclchk.c",
+    "source_function": "aclcheck_error",
+    "source_line": "2812",
+    "sqlstate": "42501"
+   },
+   "driver_attrs": {
+    "sqlstate": "42501"
+   },
+   "sqlstate": "42501",
+   "vendor_code": null,
+   "message": "permission denied for table orders",
+   "message_str_form": "permission denied for table orders",
+   "password_in": {
+    "str(exc)": false,
+    "repr(exc)": false,
+    "repr(orig)": false,
+    "repr(orig.args)": false,
+    "traceback": false
+   },
+   "sql_text_in_str": true,
+   "parameters_block_in_str": false,
+   "bound_value_in_str": false,
+   "bound_value_in_driver_message": false,
+   "sa_has_statement_attr": true,
+   "str_exc_first_line": "(psycopg.errors.InsufficientPrivilege) permission denied for table orders"
+  },
+  {
+   "dialect": "postgresql",
+   "case": "ro_delete",
+   "status": "error",
+   "sa_exc": "sqlalchemy.exc.ProgrammingError",
+   "dbapi_error": true,
+   "driver_exc": "psycopg.errors.InsufficientPrivilege",
+   "driver_mro": [
+    "psycopg.errors.InsufficientPrivilege",
+    "psycopg.ProgrammingError",
+    "psycopg.DatabaseError",
+    "psycopg.Error"
+   ],
+   "args_types": [
+    "str"
+   ],
+   "diag_fields": {
+    "message_primary": "permission denied for table orders",
+    "severity": "ERROR",
+    "severity_nonlocalized": "ERROR",
+    "source_file": "aclchk.c",
+    "source_function": "aclcheck_error",
+    "source_line": "2812",
+    "sqlstate": "42501"
+   },
+   "driver_attrs": {
+    "sqlstate": "42501"
+   },
+   "sqlstate": "42501",
+   "vendor_code": null,
+   "message": "permission denied for table orders",
+   "message_str_form": "permission denied for table orders",
+   "password_in": {
+    "str(exc)": false,
+    "repr(exc)": false,
+    "repr(orig)": false,
+    "repr(orig.args)": false,
+    "traceback": false
+   },
+   "sql_text_in_str": true,
+   "parameters_block_in_str": false,
+   "bound_value_in_str": false,
+   "bound_value_in_driver_message": false,
+   "sa_has_statement_attr": true,
+   "str_exc_first_line": "(psycopg.errors.InsufficientPrivilege) permission denied for table orders"
+  },
+  {
+   "dialect": "postgresql",
+   "case": "ro_ddl",
+   "status": "error",
+   "sa_exc": "sqlalchemy.exc.ProgrammingError",
+   "dbapi_error": true,
+   "driver_exc": "psycopg.errors.InsufficientPrivilege",
+   "driver_mro": [
+    "psycopg.errors.InsufficientPrivilege",
+    "psycopg.ProgrammingError",
+    "psycopg.DatabaseError",
+    "psycopg.Error"
+   ],
+   "args_types": [
+    "str"
+   ],
+   "diag_fields": {
+    "message_primary": "permission denied for schema scratch",
+    "severity": "ERROR",
+    "severity_nonlocalized": "ERROR",
+    "source_file": "aclchk.c",
+    "source_function": "aclcheck_error",
+    "source_line": "2812",
+    "sqlstate": "42501",
+    "statement_position": "14"
+   },
+   "driver_attrs": {
+    "sqlstate": "42501"
+   },
+   "sqlstate": "42501",
+   "vendor_code": null,
+   "message": "permission denied for schema scratch",
+   "message_str_form": "permission denied for schema scratch\nLINE 1: create table scratch.ddl_probe (i int)\n                     ^",
+   "password_in": {
+    "str(exc)": false,
+    "repr(exc)": false,
+    "repr(orig)": false,
+    "repr(orig.args)": false,
+    "traceback": false
+   },
+   "sql_text_in_str": true,
+   "parameters_block_in_str": false,
+   "bound_value_in_str": false,
+   "bound_value_in_driver_message": false,
+   "sa_has_statement_attr": true,
+   "str_exc_first_line": "(psycopg.errors.InsufficientPrivilege) permission denied for schema scratch"
+  },
+  {
+   "dialect": "postgresql",
+   "case": "bad_cast_bound_value",
+   "status": "error",
+   "sa_exc": "sqlalchemy.exc.DataError",
+   "dbapi_error": true,
+   "driver_exc": "psycopg.errors.InvalidTextRepresentation",
+   "driver_mro": [
+    "psycopg.errors.InvalidTextRepresentation",
+    "psycopg.DataError",
+    "psycopg.DatabaseError",
+    "psycopg.Error"
+   ],
+   "args_types": [
+    "str"
+   ],
+   "diag_fields": {
+    "context": "unnamed portal parameter $1 = '...'",
+    "message_primary": "invalid input syntax for type integer: \"zz_secret_bound_value\"",
+    "severity": "ERROR",
+    "severity_nonlocalized": "ERROR",
+    "source_file": "numutils.c",
+    "source_function": "pg_strtoint32_safe",
+    "source_line": "617",
+    "sqlstate": "22P02"
+   },
+   "driver_attrs": {
+    "sqlstate": "22P02"
+   },
+   "sqlstate": "22P02",
+   "vendor_code": null,
+   "message": "invalid input syntax for type integer: \"zz_secret_bound_value\"",
+   "message_str_form": "invalid input syntax for type integer: \"zz_secret_bound_value\"\nCONTEXT:  unnamed portal parameter $1 = '...'",
+   "password_in": {
+    "str(exc)": false,
+    "repr(exc)": false,
+    "repr(orig)": false,
+    "repr(orig.args)": false,
+    "traceback": false
+   },
+   "sql_text_in_str": true,
+   "parameters_block_in_str": true,
+   "bound_value_in_str": true,
+   "bound_value_in_driver_message": true,
+   "sa_has_statement_attr": true,
+   "str_exc_first_line": "(psycopg.errors.InvalidTextRepresentation) invalid input syntax for type integer: \"zz_secret_bound_value\""
+  },
+  {
+   "dialect": "postgresql",
+   "case": "rw_write_then_rollback",
+   "status": "ok",
+   "value": "{'rows_after_rollback': 0}"
+  },
+  {
+   "dialect": "postgresql",
+   "case": "statement_timeout",
+   "status": "error",
+   "sa_exc": "sqlalchemy.exc.OperationalError",
+   "dbapi_error": true,
+   "driver_exc": "psycopg.errors.QueryCanceled",
+   "driver_mro": [
+    "psycopg.errors.QueryCanceled",
+    "psycopg.OperationalError",
+    "psycopg.DatabaseError",
+    "psycopg.Error"
+   ],
+   "args_types": [
+    "str"
+   ],
+   "diag_fields": {
+    "message_primary": "canceling statement due to statement timeout",
+    "severity": "ERROR",
+    "severity_nonlocalized": "ERROR",
+    "source_file": "postgres.c",
+    "source_function": "ProcessInterrupts",
+    "source_line": "3418",
+    "sqlstate": "57014"
+   },
+   "driver_attrs": {
+    "sqlstate": "57014"
+   },
+   "sqlstate": "57014",
+   "vendor_code": null,
+   "message": "canceling statement due to statement timeout",
+   "message_str_form": "canceling statement due to statement timeout",
+   "password_in": {
+    "str(exc)": false,
+    "repr(exc)": false,
+    "repr(orig)": false,
+    "repr(orig.args)": false,
+    "traceback": false
+   },
+   "sql_text_in_str": true,
+   "parameters_block_in_str": false,
+   "bound_value_in_str": false,
+   "bound_value_in_driver_message": false,
+   "sa_has_statement_attr": true,
+   "str_exc_first_line": "(psycopg.errors.QueryCanceled) canceling statement due to statement timeout",
+   "mechanism": "SET statement_timeout = 300 (ms)",
+   "statement": "select pg_sleep(3)",
+   "checks": {
+    "show statement_timeout": [
+     [
+      "300ms"
+     ]
+    ]
+   },
+   "elapsed_s": 0.3
+  },
+  {
+   "dialect": "postgresql",
+   "case": "guard_control_no_guard",
+   "status": "ok",
+   "value": "'write statement and commit accepted'",
+   "pre_statements": [],
+   "engine_kw": {},
+   "failed_at_step": null,
+   "persisted_row_count": 1
+  },
+  {
+   "dialect": "postgresql",
+   "case": "guard[SET TRANSACTION READ ONLY]_write",
+   "status": "error",
+   "sa_exc": "sqlalchemy.exc.InternalError",
+   "dbapi_error": true,
+   "driver_exc": "psycopg.errors.ReadOnlySqlTransaction",
+   "driver_mro": [
+    "psycopg.errors.ReadOnlySqlTransaction",
+    "psycopg.InternalError",
+    "psycopg.DatabaseError",
+    "psycopg.Error"
+   ],
+   "args_types": [
+    "str"
+   ],
+   "diag_fields": {
+    "message_primary": "cannot execute INSERT in a read-only transaction",
+    "severity": "ERROR",
+    "severity_nonlocalized": "ERROR",
+    "source_file": "utility.c",
+    "source_function": "PreventCommandIfReadOnly",
+    "source_line": "414",
+    "sqlstate": "25006"
+   },
+   "driver_attrs": {
+    "sqlstate": "25006"
+   },
+   "sqlstate": "25006",
+   "vendor_code": null,
+   "message": "cannot execute INSERT in a read-only transaction",
+   "message_str_form": "cannot execute INSERT in a read-only transaction",
+   "password_in": {
+    "str(exc)": false,
+    "repr(exc)": false,
+    "repr(orig)": false,
+    "repr(orig.args)": false,
+    "traceback": false
+   },
+   "sql_text_in_str": true,
+   "parameters_block_in_str": true,
+   "bound_value_in_str": false,
+   "bound_value_in_driver_message": false,
+   "sa_has_statement_attr": true,
+   "str_exc_first_line": "(psycopg.errors.ReadOnlySqlTransaction) cannot execute INSERT in a read-only transaction",
+   "pre_statements": [
+    "SET TRANSACTION READ ONLY"
+   ],
+   "engine_kw": {},
+   "failed_at_step": "write",
+   "persisted_row_count": 0
+  },
+  {
+   "dialect": "postgresql",
+   "case": "bypass[SET TRANSACTION READ ONLY -> SET TRANSACTION READ WRITE]",
+   "status": "ok",
+   "value": "'write statement and commit accepted'",
+   "pre_statements": [
+    "SET TRANSACTION READ ONLY",
+    "SET TRANSACTION READ WRITE"
+   ],
+   "engine_kw": {},
+   "failed_at_step": null,
+   "persisted_row_count": 1
+  },
+  {
+   "dialect": "postgresql",
+   "case": "bypass[SET TRANSACTION READ ONLY -> COMMIT then write]",
+   "status": "ok",
+   "value": "'write statement and commit accepted'",
+   "pre_statements": [
+    "SET TRANSACTION READ ONLY",
+    "COMMIT"
+   ],
+   "engine_kw": {},
+   "failed_at_step": null,
+   "persisted_row_count": 1
+  },
+  {
+   "dialect": "postgresql",
+   "case": "connlevel[default_transaction_read_only=on]_write",
+   "status": "error",
+   "sa_exc": "sqlalchemy.exc.InternalError",
+   "dbapi_error": true,
+   "driver_exc": "psycopg.errors.ReadOnlySqlTransaction",
+   "driver_mro": [
+    "psycopg.errors.ReadOnlySqlTransaction",
+    "psycopg.InternalError",
+    "psycopg.DatabaseError",
+    "psycopg.Error"
+   ],
+   "args_types": [
+    "str"
+   ],
+   "diag_fields": {
+    "message_primary": "cannot execute INSERT in a read-only transaction",
+    "severity": "ERROR",
+    "severity_nonlocalized": "ERROR",
+    "source_file": "utility.c",
+    "source_function": "PreventCommandIfReadOnly",
+    "source_line": "414",
+    "sqlstate": "25006"
+   },
+   "driver_attrs": {
+    "sqlstate": "25006"
+   },
+   "sqlstate": "25006",
+   "vendor_code": null,
+   "message": "cannot execute INSERT in a read-only transaction",
+   "message_str_form": "cannot execute INSERT in a read-only transaction",
+   "password_in": {
+    "str(exc)": false,
+    "repr(exc)": false,
+    "repr(orig)": false,
+    "repr(orig.args)": false,
+    "traceback": false
+   },
+   "sql_text_in_str": true,
+   "parameters_block_in_str": true,
+   "bound_value_in_str": false,
+   "bound_value_in_driver_message": false,
+   "sa_has_statement_attr": true,
+   "str_exc_first_line": "(psycopg.errors.ReadOnlySqlTransaction) cannot execute INSERT in a read-only transaction",
+   "pre_statements": [],
+   "engine_kw": {
+    "connect_args": "{'options': '-c default_transaction_read_only=on'}"
+   },
+   "failed_at_step": "write",
+   "persisted_row_count": 0
+  },
+  {
+   "dialect": "postgresql",
+   "case": "bypass[connlevel default_transaction_read_only=on -> SET TRANSACTION READ WRITE]",
+   "status": "ok",
+   "value": "'write statement and commit accepted'",
+   "pre_statements": [
+    "SET TRANSACTION READ WRITE"
+   ],
+   "engine_kw": {
+    "connect_args": "{'options': '-c default_transaction_read_only=on'}"
+   },
+   "failed_at_step": null,
+   "persisted_row_count": 1
+  },
+  {
+   "dialect": "postgresql",
+   "case": "types_roundtrip",
+   "status": "ok",
+   "value": "{'1': {'id': ['int', 1], 'note': ['str', 'café € 日'], 'amount': ['Decimal', '12.50'], 'created_at': ['datetime', '2026-10-29 12:34:56.789000'], 'ref': ['UUID', '123e4567-e89b-12d3-a456-426614174000'], 'payload': ['bytes', 'bytes:deadbeef'], 'doc': ['dict', {'a': 1, 'b': [1, 2]}], 'nothing': ['NoneTy...[+244]",
+   "data": {
+    "1": {
+     "id": [
+      "int",
+      1
+     ],
+     "note": [
+      "str",
+      "café € 日"
+     ],
+     "amount": [
+      "Decimal",
+      "12.50"
+     ],
+     "created_at": [
+      "datetime",
+      "2026-10-29 12:34:56.789000"
+     ],
+     "ref": [
+      "UUID",
+      "123e4567-e89b-12d3-a456-426614174000"
+     ],
+     "payload": [
+      "bytes",
+      "bytes:deadbeef"
+     ],
+     "doc": [
+      "dict",
+      {
+       "a": 1,
+       "b": [
+        1,
+        2
+       ]
+      }
+     ],
+     "nothing": [
+      "NoneType",
+      null
+     ]
+    },
+    "2": {
+     "id": [
+      "int",
+      2
+     ],
+     "note": [
+      "str",
+      "plain"
+     ],
+     "amount": [
+      "Decimal",
+      "0.00"
+     ],
+     "created_at": [
+      "NoneType",
+      null
+     ],
+     "ref": [
+      "NoneType",
+      null
+     ],
+     "payload": [
+      "NoneType",
+      null
+     ],
+     "doc": [
+      "NoneType",
+      null
+     ],
+     "nothing": [
+      "NoneType",
+      null
+     ]
+    }
+   }
+  },
+  {
+   "dialect": "postgresql",
+   "case": "text_trap_compile_client_side",
+   "status": "ok",
+   "paramstyle": "pyformat",
+   "compiled": {
+    "colon_cast  select :a::int": {
+     "bind_names": [],
+     "compiled": "select :a::int"
+    },
+    "json literal select '{\"a\":1}'": {
+     "bind_names": [
+      "1"
+     ],
+     "compiled": "select '{\"a\"%(1)s}'"
+    },
+    "escaped     select '{\"a\"\\:1}'": {
+     "bind_names": [],
+     "compiled": "select '{\"a\":1}'"
+    },
+    "percent     like '%b%'": {
+     "bind_names": [],
+     "compiled": "select 'abc' like '%%b%%'"
+    },
+    "CAST(:a AS ..)": {
+     "bind_names": [
+      "a"
+     ],
+     "compiled": "select CAST(%(a)s AS int)"
+    }
+   }
+  },
+  {
+   "dialect": "postgresql",
+   "case": "text_trap_colon_cast",
+   "status": "error",
+   "sa_exc": "sqlalchemy.exc.ProgrammingError",
+   "dbapi_error": true,
+   "driver_exc": "psycopg.errors.SyntaxError",
+   "driver_mro": [
+    "psycopg.errors.SyntaxError",
+    "psycopg.ProgrammingError",
+    "psycopg.DatabaseError",
+    "psycopg.Error"
+   ],
+   "args_types": [
+    "str"
+   ],
+   "diag_fields": {
+    "message_primary": "syntax error at or near \":\"",
+    "severity": "ERROR",
+    "severity_nonlocalized": "ERROR",
+    "source_file": "scan.l",
+    "source_function": "scanner_yyerror",
+    "source_line": "1244",
+    "sqlstate": "42601",
+    "statement_position": "8"
+   },
+   "driver_attrs": {
+    "sqlstate": "42601"
+   },
+   "sqlstate": "42601",
+   "vendor_code": null,
+   "message": "syntax error at or near \":\"",
+   "message_str_form": "syntax error at or near \":\"\nLINE 1: select :a::int\n               ^",
+   "password_in": {
+    "str(exc)": false,
+    "repr(exc)": false,
+    "repr(orig)": false,
+    "repr(orig.args)": false,
+    "traceback": false
+   },
+   "sql_text_in_str": true,
+   "parameters_block_in_str": false,
+   "bound_value_in_str": false,
+   "bound_value_in_driver_message": false,
+   "sa_has_statement_attr": true,
+   "str_exc_first_line": "(psycopg.errors.SyntaxError) syntax error at or near \":\""
+  },
+  {
+   "dialect": "postgresql",
+   "case": "text_trap_json_colon_literal",
+   "status": "error",
+   "sa_exc": "sqlalchemy.exc.StatementError",
+   "dbapi_error": false,
+   "driver_exc": "sqlalchemy.exc.InvalidRequestError",
+   "driver_mro": [
+    "sqlalchemy.exc.InvalidRequestError",
+    "sqlalchemy.exc.SQLAlchemyError",
+    "sqlalchemy.exc.HasDescriptionCode"
+   ],
+   "args_types": [
+    "str"
+   ],
+   "driver_attrs": {
+    "code": "cd3x"
+   },
+   "sqlstate": null,
+   "vendor_code": null,
+   "message": "A value is required for bind parameter '1' (Background on this error at: https://sqlalche.me/e/20/cd3x)",
+   "password_in": {
+    "str(exc)": false,
+    "repr(exc)": false,
+    "repr(orig)": false,
+    "repr(orig.args)": false,
+    "traceback": false
+   },
+   "sql_text_in_str": true,
+   "parameters_block_in_str": true,
+   "bound_value_in_str": false,
+   "bound_value_in_driver_message": false,
+   "sa_has_statement_attr": true,
+   "str_exc_first_line": "(sqlalchemy.exc.InvalidRequestError) A value is required for bind parameter '1'"
+  },
+  {
+   "dialect": "postgresql",
+   "case": "text_trap_json_colon_escaped",
+   "status": "ok",
+   "value": "[({'a': 1},)]"
+  },
+  {
+   "dialect": "postgresql",
+   "case": "text_percent_in_text",
+   "status": "ok",
+   "value": "[(True,)]"
+  },
+  {
+   "dialect": "postgresql",
+   "case": "text_cast_bind",
+   "status": "ok",
+   "value": "[(10,)]"
+  },
+  {
+   "dialect": "postgresql",
+   "case": "driver_sql_percent_no_params",
+   "status": "error",
+   "sa_exc": "sqlalchemy.exc.ProgrammingError",
+   "dbapi_error": true,
+   "driver_exc": "psycopg.ProgrammingError",
+   "driver_mro": [
+    "psycopg.ProgrammingError",
+    "psycopg.DatabaseError",
+    "psycopg.Error"
+   ],
+   "args_types": [
+    "str"
+   ],
+   "diag_fields": {},
+   "driver_attrs": {},
+   "sqlstate": null,
+   "vendor_code": null,
+   "message": "only '%s', '%b', '%t' are allowed as placeholders, got '%''",
+   "message_str_form": "only '%s', '%b', '%t' are allowed as placeholders, got '%''",
+   "password_in": {
+    "str(exc)": false,
+    "repr(exc)": false,
+    "repr(orig)": false,
+    "repr(orig.args)": false,
+    "traceback": false
+   },
+   "sql_text_in_str": true,
+   "parameters_block_in_str": false,
+   "bound_value_in_str": false,
+   "bound_value_in_driver_message": false,
+   "sa_has_statement_attr": true,
+   "str_exc_first_line": "(psycopg.ProgrammingError) only '%s', '%b', '%t' are allowed as placeholders, got '%''"
+  }
+ ]
+}
