@@ -135,3 +135,4 @@ src/saltext/sqlx/version.py
 
 # Ignore CI generated artifacts
 artifacts/
+!/tests/unit/lib/
