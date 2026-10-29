@@ -234,6 +234,9 @@ def test_observed_rows(dialect, rec, expected):
     assert code == expected
     case = rec["case"]
     assert message
+    if expected == "E_INTERNAL":
+        assert message == type(getattr(exc, "orig", exc)).__name__  # class name only
+        return
     assert SQL_TEXT not in message
     assert SECRET not in message
     assert "[SQL:" not in message
@@ -269,11 +272,12 @@ def test_observed_rows_raise_for_format(dialect, rec, expected):
         assert leak not in text
 
 
-@pytest.mark.parametrize(("dialect", "rec", "expected"), OBSERVED)
+@pytest.mark.parametrize(
+    ("dialect", "rec", "expected"),
+    [p for p in OBSERVED if (p.values[0], p.values[1]["case"]) in LEAKS],
+)
 def test_leaks_survive_when_error_detail_is_true(dialect, rec, expected):
-    leak = LEAKS.get((dialect, rec["case"]))
-    if not leak:
-        pytest.skip("no value echoed by the server in this row")
+    leak = LEAKS[(dialect, rec["case"])]
     code, message = errors.translate(_build_exc(dialect, rec), dialect, error_detail=True)
     assert code == expected
     assert leak in message
@@ -491,8 +495,7 @@ def test_mysql_scrub_values_unless_error_detail(raw, must_not_contain, must_cont
 
 def test_mysql_nonstring_message_and_missing_args():
     odd = type("OperationalError", (Exception,), {})(1045)  # no message element
-    code, _ = errors.translate(_wrap(odd, sa_exc.OperationalError), "mysql")
-    assert code == "E_INTERNAL"
+    assert errors.translate(_wrap(odd, sa_exc.OperationalError), "mysql") == ("E_AUTH_FAILED", "OperationalError")
     odd2 = type("OperationalError", (Exception,), {})("not-a-code", "text")
     assert errors.translate(_wrap(odd2, sa_exc.OperationalError), "mysql") == ("E_INTERNAL", "OperationalError")
     odd3 = type("OperationalError", (Exception,), {})(1045, 12345)
