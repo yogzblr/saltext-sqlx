@@ -529,3 +529,10 @@ def test_mysql_profile_may_lower_but_not_raise_read_timeout(where):
 @pytest.mark.parametrize("dialect", ["postgresql", "oracle", "mssql"])
 def test_only_the_mysql_family_gets_read_timeout(dialect):
     assert "read_timeout" not in dialects.adapter(dialect).connect_args(make(dialect))
+
+
+def test_postgresql_withheld_password_blocks_the_libpq_environment_and_passfile():
+    args = dialects.adapter("postgresql").connect_args(make("postgresql", password_dropped=True))
+    assert args["password"] == "" and args["passfile"].startswith("/nonexistent/")
+    plain = dialects.adapter("postgresql").connect_args(make("postgresql"))
+    assert "password" not in plain and "passfile" not in plain

@@ -529,6 +529,13 @@ def build_profile(call, name, config, resolver=None):
     profile = profiles.validate_profile(label, merged, config.get("_policy"))
     profile["call_overrides"] = sorted(supplied)
     profile["password_from_call"] = "password" in supplied
+    # The driver must not fall back to the minion's own environment or password file for the target the caller chose
+    # (libpq reads $PGPASSWORD and ~/.pgpass); ``dialects.PostgreSQL`` honours this marker.
+    profile["password_dropped"] = (
+        "password" not in supplied
+        and not policy.inherit_password
+        and (call.adhoc or _retargeted(raw, supplied))
+    )
     return profile
 
 

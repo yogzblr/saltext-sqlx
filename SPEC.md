@@ -166,7 +166,7 @@ Messages name the key only, never the host.
 | Field | Rule |
 |---|---|
 | any field | must be listed in the effective `allow_call_params` (global, narrowed by the profile's own list) |
-| `host`, `port`, `dialect`, `username` | `host`/`port`: checks above. A call that changes `host`, `port`, `username` or `dialect` relative to the base profile does **not** inherit the profile's `password` (the connection is made without one) unless the call supplies `password` or `inherit_password` is true |
+| `host`, `port`, `dialect`, `username` | `host`/`port`: checks above. A call that changes `host`, `port`, `username` or `dialect` relative to the base profile does **not** inherit the profile's `password` (the connection is made without one) unless the call supplies `password` or `inherit_password` is true. For PostgreSQL the adapter also passes an explicitly empty `password` and an unreadable `passfile`, so libpq does not answer the target's password request from the minion's `$PGPASSWORD` or `~/.pgpass` (observed: without this the fake server received `$PGPASSWORD`). Ad-hoc connections without a `password` get the same treatment |
 | `database`, `driver` | text; `driver` must be one of the dialect's drivers (profile validation); `dialect` change drops the base `driver` |
 | `password` | must start with `sdb://` (resolved on the minion through `sdb.get`, `[E_SECRET]` if it fails) unless `allow_call_literal_password: true`; a literal with the policy off is `[E_POLICY]` naming the key only |
 | `read_only` | may only be `true`; `false` is refused; non-boolean is `[E_OPTION_INVALID]` |
@@ -201,7 +201,7 @@ Differences from `postgres.psql_query`, all deliberate:
 
 | Aspect | `postgres.psql_query` | `sqlx.psql_query` |
 |---|---|---|
-| mechanism | runs the `psql` binary as `runas` (OS user) | SQLAlchemy and the profile's driver; no `psql`, no OS user, no `~/.pgpass`, no `PG*` environment fallback for the password |
+| mechanism | runs the `psql` binary as `runas` (OS user) | SQLAlchemy and the profile's driver; no `psql`, no OS user. For a retargeted connection without its own password libpq's `$PGPASSWORD` and `~/.pgpass` are switched off (see section 3.2); an unchanged profile keeps libpq's normal behaviour |
 | `runas` | OS user to run `psql` as | any non-`None` value is `[E_OPTION_INVALID] runas is not supported; sqlx does not use psql or an OS user` |
 | failure | returns `[]`/`False`/the `psql` stderr as data | raises `[E_...]` with the real database error (`CommandExecutionError`, or `SaltInvocationError` for argument/policy errors); never returns an empty list for a failure |
 | `write=True` | allows DML | goes through the `execute` path: needs `allow_execute: true` on the profile and the verb filter; returns one row `{"rows_affected": "<n>"}`; never bypasses them. `write=False` runs in a transaction that is rolled back |

@@ -308,3 +308,31 @@ def test_the_audit_line_names_override_keys_and_the_target_only(cfg, caplog, fak
     text = "\n".join(r.getMessage() + repr(vars(r)) for r in caplog.records)
     for secret in SECRETS:
         assert secret not in text, secret
+
+
+def test_the_minions_own_libpq_environment_is_not_offered_to_a_retargeted_target(
+    cfg, fake, monkeypatch, tmp_path
+):
+    """$PGPASSWORD and ~/.pgpass would otherwise answer the password request of a server the caller chose."""
+    passfile = tmp_path / "pgpass"
+    passfile.write_text(f"{HOST}:*:*:*:PGPASSFILE-PW-8d2f\n")
+    passfile.chmod(0o600)
+    monkeypatch.setenv("PGPASSWORD", "PGPASSWORD-ENV-PW-61ce")
+    monkeypatch.setenv("PGPASSFILE", str(passfile))
+    with pytest.raises((CommandExecutionError, SaltInvocationError)):
+        mod.ping(profile="base", host=HOST, port=fake.port)
+    assert fake.accepted >= 1
+    for leaked in (b"PGPASSWORD-ENV-PW-61ce", b"PGPASSFILE-PW-8d2f", BASE_PW.encode()):
+        assert leaked not in fake.seen()
+
+
+def test_control_the_environment_is_used_when_the_target_is_not_retargeted(
+    cfg, fake, monkeypatch
+):
+    """The guard is limited to retargeted calls: a profile without a password keeps libpq's normal behaviour."""
+    cfg["profiles"]["base"].pop("password")
+    cfg["profiles"]["base"]["port"] = fake.port
+    monkeypatch.setenv("PGPASSWORD", "PGPASSWORD-ENV-PW-61ce")
+    with pytest.raises((CommandExecutionError, SaltInvocationError)):
+        mod.ping(profile="base", database="other")
+    assert b"PGPASSWORD-ENV-PW-61ce" in fake.seen()

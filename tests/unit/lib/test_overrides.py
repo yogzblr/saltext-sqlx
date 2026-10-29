@@ -1063,3 +1063,20 @@ def test_target_is_host_and_port():
 def test_overridden_names_helper():
     assert overrides.overridden({"call_overrides": ["a", "b"]}) == "a,b"
     assert overrides.overridden({}) == "-"
+
+
+def test_password_dropped_marker_follows_retargeting():
+    base = {"profile": "pg"}
+    assert go(cfg(), dict(base, database="z"))["password_dropped"] is False
+    assert go(cfg(), dict(base, host="10.1.1.1"))["password_dropped"] is True
+    assert go(cfg(), dict(base, host="10.1.1.1", password="sdb://v/p"))["password_dropped"] is False
+    assert go(cfg(inherit_password=True), dict(base, host="10.1.1.1"))["password_dropped"] is False
+
+
+def test_adhoc_connection_without_password_is_marked_dropped():
+    config = cfg(allow=("dialect", "host", "database", "username"), allow_adhoc_connection=True)
+    prof = go(
+        config,
+        {"dialect": "postgresql", "host": "10.1.1.1", "database": "d", "username": "u"},
+    )
+    assert prof["password_dropped"] is True
