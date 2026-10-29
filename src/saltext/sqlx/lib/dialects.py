@@ -205,7 +205,12 @@ class PostgreSQL(Adapter):
         # statement"). With the default (simple protocol when there are no parameters) ``COMMIT; INSERT ...`` or
         # ``SET statement_timeout = 0; ...`` ran as written, which defeated the read-only guard, the time cap, the
         # ``execute`` verb filter and ``dry_run`` (T11 defect D1). Module-owned: not settable from a profile.
-        return {"connect_timeout": profile["connect_timeout_s"], "prepare_threshold": 0}
+        args = {"connect_timeout": profile["connect_timeout_s"], "prepare_threshold": 0}
+        if profile.get("password_dropped"):
+            # A call retargeted the connection and the profile's password was withheld: an explicitly empty password
+            # stops libpq from using $PGPASSWORD, and an unreadable passfile from using ~/.pgpass (SPEC section 3.2).
+            args.update(password="", passfile="/nonexistent/sqlx-no-passfile")
+        return args
 
     def _set_timeout(self, conn, ms):
         conn.exec_driver_sql(f"SET statement_timeout = {int(ms)}")

@@ -55,8 +55,8 @@ beyond what is needed, and no `EXECUTE` on write-capable packages). `read_only: 
 | Caller uses `execute` without permission | `allow_execute` false by default; verb filter; `dry_run`; separate profile/role with write rights |
 | Verb filter bypass (comments, CTEs, functions) | Filter is best-effort only; the **role** limits what `execute` can do, so give the write profile minimal grants. A leading `/*!`, `/*M!` or nested comment is refused; a second statement after `;` is refused by the driver on every dialect (extended protocol on PostgreSQL, no multi-statements on MySQL/MariaDB) |
 | Statement lifts its own time cap, or a huge result exhausts minion memory | `statement_timeout` / `MAX_EXECUTION_TIME` / `max_statement_time` plus the PyMySQL `read_timeout` backstop; results are streamed so memory is bounded by `limit` / `max_bytes` (one very large value still costs about 2.7x its size on PostgreSQL, so give the role no access to such columns or select `left(col, n)`) |
-| Caller points the minion at an arbitrary host (SSRF, credential relay) | Profiles only; call arguments cannot set host, port, driver, URL or `connect_args` (D1) |
-| Secrets in the Salt job cache | `password` is `sdb://` only in production; `allow_inline_secrets` is not provided. The call never carries a secret. Salt stores job args and returns on the master and event bus |
+| Caller points the minion at an arbitrary host (SSRF, credential relay) | By default profiles only: call arguments cannot set host, port, driver, URL or `connect_args` (D1). With the opt-in call-time parameters enabled, see the table "Call-time connection parameters" below |
+| Secrets in the Salt job cache | `password` is `sdb://` only in production; `allow_inline_secrets` is not provided. The call never carries a secret (unless the operator enables a literal `password` from the call, which is refused by default, see below). Salt stores job args and returns on the master and event bus |
 | SQL text and results in the job cache | They are stored by Salt. Prefer `params` for values, keep `row_limit` small, set `keep_jobs`, consider an external job cache disabled for this function. Treat results as data in the master's job cache for DPDP and sovereignty purposes |
 | Error text leaking data | The module never adds the SQL text, `params`, the URL or a secret to a message, and never uses `str()` of the SQLAlchemy exception (it appends `[SQL: ...]` and `[parameters: ...]` with bound values; observed). `DETAIL` lines (for example `Key (email)=(x) already exists`) are excluded unless `error_detail: true`. **Limit, observed:** the server's own primary message can still echo a bound value (PostgreSQL 22P02, MySQL/MariaDB 1366) and, on MySQL/MariaDB, a row value (`Duplicate entry '...'`, 1062), which `error_detail: false` cannot remove. Keep secrets out of `params` and out of unique keys that the caller can probe |
 | Driver option abuse (`ssl_context`, callables, local file read via `local_infile`, `allowLoadLocalInfile`) | Per-driver `connect_args` allowlist; reject anything not listed |
@@ -69,6 +69,27 @@ beyond what is needed, and no `EXECUTE` on write-capable packages). `read_only: 
 | Credential in logs/URLs | Build URLs with `URL.create`; never log a URL or password; masking filter (`secrets.MaskingFilter`, `secrets.mask`). Observed (T1): the account password did not appear in `str`, `repr`, `repr(orig)`, `repr(orig.args)` or the formatted traceback of any case on PostgreSQL, MySQL and MariaDB, nor in the Oracle and SQL Server connection-failure rows. Not examined: successful-connect logging and driver debug output. Oracle and SQL Server server-side cases: **NOT RUN** (owner task T1b) |
 | Unreviewed LGPL code paths | LGPL drivers (psycopg, pymssql) are accepted as unmodified pip dependencies (owner decision 2026-10-29); do not vendor or patch them |
 | Supply chain on an air-gapped host | Mirror wheels for each driver for Salt's Python version; pin versions; check hashes |
+
+### Call-time connection parameters (opt-in, SPEC section 3.2, D1)
+
+Off by default. Enabled only by `sqlx:_policy:allow_call_params` (explicit field names) in minion config or pillar; the policy
+is never read from a call. Turning it on moves part of the trust from the minion's configuration to **whoever may publish a job
+for `sqlx.*`**, so set `allowed_hosts` tightly and constrain the kwargs in `external_auth` (section 4).
+
+| Threat | Control | State |
+|---|---|---|
+| SSRF: caller makes the minion connect to an internal or metadata endpoint | `allowed_hosts` (exact names, globs, IPs, CIDR) is **required** when `host` is overridable; a host outside it is `[E_POLICY]` before any socket; a name is resolved and **every** address must be allowed; `0.0.0.0/8`, loopback, `169.254.0.0/16` (metadata), multicast and the IPv6 equivalents are refused unless an IP/CIDR entry lies inside that range; host text with `@`, `/`, `#`, whitespace or NUL is refused; `allowed_ports`, `allowed_dialects` | verified: unit, `tests/security/test_call_params_surface.py` (counting sockets), functional (listener sees 0 connections), integration through the real minion |
+| DNS rebinding / TOCTOU: the name resolves differently at check time and connect time | the driver resolves again when it connects | **residual, not mitigated.** Prefer IP/CIDR entries over names in `allowed_hosts` |
+| Credential relay: caller aims a profile at a server it controls to collect the profile's password | the base profile's `password` is **not** sent when `host`, `port`, `username` or `dialect` is changed (unless the call supplies its own `password` or `inherit_password: true`, which the operator should not set); on PostgreSQL libpq is also told not to use `$PGPASSWORD` or `~/.pgpass` for that connection (found during testing: it otherwise answered the target's password request from the minion's environment); MySQL/Oracle/SQL Server drivers have no such environment fallback that was checked (**UNVERIFIED** for Oracle/SQL Server); `password` from a call must be an `sdb://` reference | verified with a fake PostgreSQL server that requests a cleartext password: the profile's password never arrives; the `sdb` value arrives only when the caller asked for it |
+| Caller reads another secret: `password=sdb://vault/other` resolves any sdb key the minion can read | the caller can send a secret only to a host in `allowed_hosts`. **Limit:** any sdb URI the minion can resolve is usable, so scope the sdb backend, and do not list hosts the caller does not control as targets for it. Not mitigated by this extension | **open by design**; restrict `password` out of `allow_call_params` if callers must not choose credentials |
+| Secrets in the job cache, event bus, minion debug log | a literal `password` is `[E_POLICY]` unless `allow_call_literal_password: true` (leaks into the job cache and event bus; do not enable). Messages name the key only. The extension never logs a password or `sdb://` reference; the audit line has override key **names** and `host:port` | verified: every error path with three secret forms, `tests/security`; integration: the resolved value is in no cache file, log or event; the **reference** and any literal the caller typed are in the job load, the event bus and Salt's own minion debug log (`Command details`), which the extension cannot prevent |
+| Caller raises limits or removes safety | `row_limit`, `allow_execute`, `execute_verbs`, `error_detail`, `_policy` are not call keywords; `max_bytes`/`limit`/`timeout_ms`, `statement_timeout_ms`, `connect_timeout_s` only lower; `read_only` only `true`; `execute` still needs `allow_execute` on the base profile; an ad-hoc connection can never execute | verified: unit, functional (PostgreSQL, MySQL, MariaDB), integration |
+| TLS weakening or file read through a call | `ssl_mode` may only tighten; `ssl_certs_dir` must resolve under `ssl_certs_dir_root` (same code as for profiles: realpath, `..`, key modes); `query`/`connect_args` go through the per-driver allowlist and cannot set TLS-owned keys; verification is never relaxed when the host is changed (`verify-full` checks the new host name) | verified on the TLS servers of `tests-support/tls` (PostgreSQL, MySQL, MariaDB): `tests/functional/test_call_params_tls.py` |
+| Trusting a client-chosen CA directory | the root is minion configuration; a call can only choose a directory **under** it. Anything under the root is trusted: keep only trust anchors the operator accepts there | by design |
+| Oracle and SQL Server overrides | same code path | **UNVERIFIED against a server:** unit tests only (host/port/dialect gates, merge rules); `ssl_certs_dir` for mssql is refused |
+
+Not covered: the decision of *who* may call. `external_auth` must constrain the kwargs (next section); the minion policy is
+the control for everything eauth omits.
 
 ## 4. Authorization in Salt
 
@@ -99,11 +120,39 @@ cautions from that run: an entry such as `- sqlx.ping` without `kwargs` is unres
 `profile` regex too if that matters; and Python's `$` also matches before a trailing newline, so `^(ro)$` lets `profile="ro\n"`
 through to the module, which then refuses it as an unknown profile (use `\Z` if you want the regex alone to decide).
 
+### Call-time parameters and `external_auth`
+
+With call-time parameters enabled, a `profile` regex alone no longer pins where a job connects. Verified through a real
+master, `LocalClient` and `salt-api` (`tests/integration/params_path`, `file` eauth):
+
+```yaml
+external_auth:
+  pam:
+    sre_ops:
+      - 'db-minion-*':
+          - sqlx.ping:
+              kwargs: {profile: '^orders_pg$', host: '^db1\.corp\.example$'}
+          - sqlx.query:
+              kwargs: {profile: '^orders_pg$', host: '^db1\.corp\.example$'}
+```
+
+* A `kwargs` rule requires every key it names to be **present** in the call (`k not in kwargs` refuses) and matches
+  `re.match(rule, str(value))`: anchor with `^...$` (the shape tested; `\Z` instead of `$` also rejects a trailing newline, see above). So the rule above refuses `host=192.0.2.9` and
+  `host=db1.corp.example.evil.example` (HTTP 401 / `AuthorizationError`) and also refuses a call that leaves `host` out, even
+  when it carries `connection={"host": ...}`. If a job may legitimately omit `host`, add a second function entry.
+* A call that gives `host` flat (to satisfy the rule) **and** inside `connection` is `[E_OPTION_INVALID]` on the minion, so
+  `connection` cannot smuggle a second host. A rule on `connection` itself would match the Python `repr` of the dict; do not
+  rely on it, pin the flat keywords and keep `connection` out of the policy field list where possible.
+* **Keys that a rule does not name are unrestricted by eauth** (verified: a user whose rule pins only `profile` can send
+  `host=192.0.2.9` through eauth; the minion policy then refuses it with `[E_POLICY]`). Pin `host`, `port`, `username`,
+  `password`, `dialect`, `database` and `connection` for every user and function that matters, and treat the minion-side
+  `allowed_hosts` and `allow_call_params` as the control that holds when a rule is incomplete.
+
 ## 5. Audit
 
 Log one line per call at INFO: function, profile, dialect, statement SHA-256 prefix (first 12 hex), row count or
 `rows_affected`, elapsed ms, outcome code. Never log the SQL text, params, rows or secrets. Include the Salt `__pub_user`
-when present so actions are attributable.
+when present so actions are attributable. With call-time parameters the line also carries `overrides=<field names>` (names only, `-` when none) and `target=<host>:<port>` actually used; never a value, a password or an `sdb://` reference.
 
 ## 6. Pre-release checklist
 

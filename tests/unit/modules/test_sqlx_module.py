@@ -194,6 +194,7 @@ def test_public_functions_are_exactly_spec_section_4():
         if not n.startswith("_") and callable(v) and getattr(v, "__module__", None) == mod.__name__
     }
     assert public == {
+        "psql_query",
         "query",
         "execute",
         "check_query_result",
