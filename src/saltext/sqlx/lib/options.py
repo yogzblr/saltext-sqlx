@@ -19,6 +19,9 @@ HARD_MAX_BYTES = 8 * 1024 * 1024
 HARD_MAX_CONNECT_TIMEOUT_S = 60
 HARD_MAX_RETRY_TIMEOUT_S = 10
 
+#: Operators of ``check_query_result`` that ignore ``expected``, so the key may be left out.
+NULL_OPERATORS = ("is_null", "is_not_null")
+
 #: Defaults from SPEC section 6.
 DEFAULT_ROWS = 500
 DEFAULT_TIMEOUT_MS = 30_000
@@ -33,6 +36,7 @@ _PARAMS = "params"  # dict with str keys, or None
 _POS_INT = "pos_int"  # int >= 1, or None
 _NONNEG_INT = "nonneg_int"  # int >= 0
 _NONNEG_NUM = "nonneg_num"  # int or float >= 0
+_POS_NUM = "pos_num"  # int or float > 0
 _BOOL = "bool"
 _ANY = "any"
 
@@ -57,12 +61,12 @@ _SCHEMA = {
         "profile": (_NAME, True, None),
         "sql": (_TEXT, True, None),
         "operator": (_TEXT, True, None),
-        "expected": (_ANY, True, None),
+        "expected": (_ANY, False, None),  # required unless the operator is in NULL_OPERATORS
         "params": (_PARAMS, False, None),
         "row": (_NONNEG_INT, False, 0),
         "column": (_NONNEG_INT, False, 0),
         "retry_timeout_s": (_NONNEG_NUM, False, 0),
-        "retry_pause_s": (_NONNEG_NUM, False, 1),
+        "retry_pause_s": (_POS_NUM, False, 1),
     },
     "check_row_count": {
         "profile": (_NAME, True, None),
@@ -71,7 +75,7 @@ _SCHEMA = {
         "expected": (_ANY, True, None),
         "params": (_PARAMS, False, None),
         "retry_timeout_s": (_NONNEG_NUM, False, 0),
-        "retry_pause_s": (_NONNEG_NUM, False, 1),
+        "retry_pause_s": (_POS_NUM, False, 1),
     },
     "ping": {
         "profile": (_NAME, True, None),
@@ -92,6 +96,7 @@ _KIND_DESCRIPTION = {
     _POS_INT: "an integer >= 1",
     _NONNEG_INT: "an integer >= 0",
     _NONNEG_NUM: "a number >= 0",
+    _POS_NUM: "a number > 0",
     _BOOL: "a boolean",
 }
 
@@ -121,6 +126,8 @@ def _valid(kind, value):
         return _is_int(value) and value >= 0
     if kind == _NONNEG_NUM:
         return _is_num(value) and value >= 0 and not math.isnan(value)
+    if kind == _POS_NUM:
+        return _is_num(value) and value > 0 and math.isfinite(value)
     if kind == _BOOL:
         return isinstance(value, bool)
     return True  # _ANY
@@ -157,6 +164,9 @@ def validate(function, kwargs):
         if not _valid(kind, value):
             _fail("E_OPTION_INVALID", f"option '{key}' must be {_KIND_DESCRIPTION[kind]}")
         out[key] = value
+    if function == "check_query_result" and "expected" not in given:
+        if out["operator"] not in NULL_OPERATORS:
+            _fail("E_OPTION_INVALID", "option 'expected' is required for sqlx.check_query_result")
     return out
 
 
