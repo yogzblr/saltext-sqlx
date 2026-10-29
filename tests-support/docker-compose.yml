@@ -1,0 +1,51 @@
+# UNTESTED. T1 ran in an environment where Docker Hub, MCR and the Oracle registry were blocked by egress policy
+# (HTTP 403), so no image below was ever pulled. Tags and flags come from the vendors' documentation, not from a run.
+# The native/ scripts are the tested path for PostgreSQL, MySQL and MariaDB. See NOTES.md.
+# Ports match env.sh. Start: docker compose -f tests-support/docker-compose.yml up -d --wait
+name: sqlx-testdbs
+services:
+  postgresql:
+    image: postgres:16            # Debian image: default locale en_US.utf8, so the database is UTF8; flag is explicit anyway
+    environment:
+      POSTGRES_PASSWORD: admin_pw
+      POSTGRES_DB: sqlx_test
+      POSTGRES_INITDB_ARGS: "-E UTF8"
+    ports: ["54329:5432"]
+    volumes: ["./seed/postgresql.sql:/docker-entrypoint-initdb.d/10-seed.sql:ro"]
+    healthcheck: {test: ["CMD-SHELL", "pg_isready -U postgres -d sqlx_test"], interval: 3s, retries: 30}
+  mysql:
+    image: mysql:8.0
+    environment: {MYSQL_ROOT_PASSWORD: admin_pw}
+    command: ["--character-set-server=utf8mb4"]
+    ports: ["33061:3306"]
+    volumes: ["./seed/mysql.sql:/docker-entrypoint-initdb.d/10-seed.sql:ro"]
+    healthcheck: {test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -padmin_pw"], interval: 3s, retries: 40}
+  mariadb:
+    image: mariadb:10.11          # same major as the natively tested server (10.11.14)
+    environment: {MARIADB_ROOT_PASSWORD: admin_pw}
+    command: ["--character-set-server=utf8mb4"]
+    ports: ["33062:3306"]
+    volumes: ["./seed/mariadb.sql:/docker-entrypoint-initdb.d/10-seed.sql:ro"]
+    healthcheck: {test: ["CMD-SHELL", "healthcheck.sh --connect --innodb_initialized"], interval: 3s, retries: 40}
+  oracle:
+    image: gvenzl/oracle-free:23-slim
+    environment: {ORACLE_PASSWORD: admin_pw}
+    ports: ["15211:1521"]
+    # Assumption (unverified): scripts in this directory run as SYS against the default PDB FREEPDB1.
+    volumes: ["./seed/oracle.sql:/container-entrypoint-initdb.d/10-seed.sql:ro"]
+    healthcheck: {test: ["CMD", "healthcheck.sh"], interval: 5s, retries: 60, start_period: 60s}
+  mssql:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      ACCEPT_EULA: "Y"            # accepting the vendor EULA is the operator's decision; remove to refuse
+      MSSQL_SA_PASSWORD: "Sa_pw_12345!"
+    ports: ["14331:1433"]
+    volumes: ["./seed/mssql.sql:/seed/mssql.sql:ro"]
+    healthcheck: {test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P 'Sa_pw_12345!' -Q 'select 1'"], interval: 5s, retries: 40, start_period: 20s}
+  mssql-seed:                     # SQL Server has no init directory; run the seed once after it is healthy
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    depends_on: {mssql: {condition: service_healthy}}
+    environment: {ACCEPT_EULA: "Y"}
+    volumes: ["./seed/mssql.sql:/seed/mssql.sql:ro"]
+    entrypoint: ["/opt/mssql-tools18/bin/sqlcmd", "-C", "-S", "mssql", "-U", "sa", "-P", "Sa_pw_12345!", "-b", "-i", "/seed/mssql.sql"]
+    restart: "no"
