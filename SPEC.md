@@ -26,8 +26,10 @@ error path (section 8), so every database fails the same, readable way.
 
 ## 3. Profiles
 
-Profiles live under `sqlx:profiles:<name>` in minion config or pillar. **Callers choose a profile; they do not supply
-connection details** (D1).
+Profiles live under `sqlx:profiles:<name>` in minion config or pillar. **By default callers choose a profile and do not
+supply connection details** (D1: profile-only by default). An operator can opt in to call-time connection parameters
+under a policy that lives only in minion config or pillar (section 3.2); with nothing configured the behaviour is exactly
+the profile-only one.
 
 ```yaml
 sqlx:
@@ -116,6 +118,97 @@ Mapping to the drivers (`tls.py`; the file arguments are the real paths found ab
 Call arguments may **lower** `row_limit` (`limit`), `statement_timeout_ms` (`timeout_ms`) and `max_bytes`, never raise them.
 A call value above the profile value or the hard maximum is **clamped silently** to the lowest of call, profile and hard
 maximum (`options.apply_caps`); it is not an error (D9).
+
+### 3.2 Call-time connection parameters (`lib/overrides.py`, decision D1)
+
+**Off by default.** Without `sqlx:_policy:allow_call_params` (absent, `null` or `[]`) every connection keyword below is
+`[E_OPTION_UNKNOWN]` exactly as before, `psql_query`'s connection arguments are `[E_POLICY]`, and no code path of this
+section runs. The policy is read by the module from `__salt__["config.get"]("sqlx")` and passed into `lib/` (no Salt
+dunders there); it is never taken from the call, and a call that names `_policy` is `[E_OPTION_UNKNOWN]`.
+
+**Call keywords** (on `query`, `execute`, `check_query_result`, `check_row_count`, `ping`, `table_list`, and the
+equivalents on `psql_query`): `connection` (an object) and the flat keywords `dialect`, `driver`, `host`, `port`, `database`,
+`username`, `password`, `ssl_mode`, `ssl_certs_dir`, `ssl_files`, `query`, `connect_args`, `connect_timeout_s`,
+`statement_timeout_ms`, `read_only`. Flat keywords and `connection` are merged; a key present in both (with a non-null
+value) is `[E_OPTION_INVALID]`. An unknown key inside `connection` is `[E_OPTION_UNKNOWN]`; `connection` that is not an object is
+`[E_OPTION_INVALID]`. `port` must be an integer (a quoted `"5432"` is refused, never coerced). `profile` stays and means
+"the base profile to overlay"; when it is absent `sqlx:default_profile` is used. `profile` may be omitted altogether only when
+`allow_adhoc_connection` is true and the call supplies `dialect`, `host`, `database` and `username`; otherwise
+`[E_PROFILE_UNKNOWN]`/`[E_OPTION_INVALID]`/`[E_POLICY]` as before. `mariadb` is accepted as a `dialect` value and means `mysql` (D10).
+
+**Policy** (`sqlx:_policy`, minion config or pillar):
+
+| Key | Meaning |
+|---|---|
+| `allow_call_params` | list of field names (from the keyword list above) a caller may set. Default `[]` = feature off. `"*"` and unknown names are refused (`[E_POLICY]`, the module fails closed). A profile may carry its own `allow_call_params`; it can only **narrow** the global list (the intersection is used) |
+| `allowed_hosts` | **required** (non-empty) when `host` is in `allow_call_params` or `allow_adhoc_connection` is true. Entries: exact names, `fnmatch` globs (`*.corp.example`), IP addresses, CIDR ranges. An entry made only of `*`/`?` is refused (`[E_POLICY]`); `0.0.0.0/0` is accepted as a CIDR but cannot lift the denied ranges below |
+| `allowed_ports` | optional list of ports or `"low-high"` ranges; a call port outside it is `[E_POLICY]` |
+| `allowed_dialects` | optional list; a call (or ad-hoc) dialect outside it is `[E_POLICY]` |
+| `allow_adhoc_connection` | default `false`; see above. An ad-hoc connection can never execute (it has no profile, so no `allow_execute`) |
+| `allow_call_literal_password` | default `false`; see "Secrets" |
+| `inherit_password` | default `false`; see "Credential relay". **Deviation from the owner's design, recorded in section 12 (D14)** |
+
+**Host checks** (run before any secret is resolved or socket opened, only for a `host` that came from the call; the base
+profile's own host is operator configuration and is not checked): the text must be a plain host name or IP (`[A-Za-z0-9._:-]`,
+no `@`, `/`, `#`, whitespace, NUL); then (1) an IP literal must be inside a CIDR/IP entry (or be matched by a name entry);
+(2) a name matching a name/glob entry is allowed, any other name is resolved (`getaddrinfo`) **only if the list contains a CIDR
+or IP** and is allowed only if every resolved address is inside the list (a name that does not resolve and is not listed is
+`[E_POLICY]`; a listed name that does not resolve is `[E_CONNECT]`); (3) whatever allowed it, every resolved address is
+checked against the denied ranges `0.0.0.0/8`, `127.0.0.0/8`, `169.254.0.0/16` (the cloud metadata address
+`169.254.169.254` is inside it), `224.0.0.0/4`, `::`, `::1`, `fe80::/10`, `ff00::/8`, `fd00:ec2::254`; a denied address is allowed
+only by an IP/CIDR entry that lies **inside** that range (for loopback: `127.0.0.1` or `127.0.0.0/8` in the list, never a name,
+a glob, or `0.0.0.0/0`). IPv4-mapped IPv6 is unwrapped; a scope id is dropped. The driver resolves the name again when it
+connects, so a DNS record that changes between the check and the connect is a residual risk (SECURITY section 3).
+Messages name the key only, never the host.
+
+**Per-field rules** (every row is `[E_POLICY]` unless another code is named):
+
+| Field | Rule |
+|---|---|
+| any field | must be listed in the effective `allow_call_params` (global, narrowed by the profile's own list) |
+| `host`, `port`, `dialect`, `username` | `host`/`port`: checks above. A call that changes `host`, `port`, `username` or `dialect` relative to the base profile does **not** inherit the profile's `password` (the connection is made without one) unless the call supplies `password` or `inherit_password` is true |
+| `database`, `driver` | text; `driver` must be one of the dialect's drivers (profile validation); `dialect` change drops the base `driver` |
+| `password` | must start with `sdb://` (resolved on the minion through `sdb.get`, `[E_SECRET]` if it fails) unless `allow_call_literal_password: true`; a literal with the policy off is `[E_POLICY]` naming the key only |
+| `read_only` | may only be `true`; `false` is refused; non-boolean is `[E_OPTION_INVALID]` |
+| `statement_timeout_ms`, `connect_timeout_s` | may only **lower** the profile value (clamped to the lowest of call, profile, hard maximum) |
+| `ssl_mode` | may only tighten: `verify-full` > `verify-ca`; weakening relative to the base profile's `ssl_mode` (default `verify-full` when it has a certificate directory) is refused; `ssl_mode` without a certificate directory is rejected by TLS validation (`[E_PROFILE_INVALID]`) |
+| `ssl_certs_dir`, `ssl_files` | go through `lib/tls.py` unchanged: absolute, no `..`, realpath under `sqlx:_policy:ssl_certs_dir_root` (`[E_POLICY]` otherwise), plain file names, key mode, file types |
+| `query`, `connect_args` | merged over the profile's own entries; every key must be in the per-driver allowlist (section 7, default deny) and may not be a TLS-owned key (`[E_POLICY]`/`[E_PROFILE_INVALID]`) |
+
+**Hard rules no policy relaxes.** A call can never set `row_limit`, `allow_execute`, `execute_verbs`, `error_detail` or `_policy`:
+they are not in the schema and are `[E_OPTION_UNKNOWN]` (the profile-only keys stay profile-only). The existing call options
+`limit`, `timeout_ms` and `max_bytes` can only lower the cap (D9). `read_only` can be turned on, never off. Caps can only be
+lowered. `execute` still needs `allow_execute: true` on the **base profile** and the verb filter.
+
+**Secrets and audit.** A resolved password is never in a message, log record, return or audit line. The audit line (SECURITY
+section 5) gains `overrides=<comma list of field names>` (`-` when none) and `target=<host>:<port>` (the one actually used;
+`-` when the call was refused before a profile was built). A literal `password` that the policy allows is added to the log
+masking filter. Salt stores the job load (and prints it at debug level in the minion log) before the extension sees it, so a
+`password=sdb://...` reference, or a literal, is in the master job cache and on the event bus: this is why a literal is refused
+by default (verified: `tests/integration/params_path`).
+
+### 4.7 `sqlx.psql_query(query, user=None, host=None, port=None, maintenance_db=None, password=None, runas=None, write=False, profile=None)`
+
+Look-alike of Salt 3008 `postgres.psql_query(query, user=None, host=None, port=None, maintenance_db=None, password=None,
+runas=None, write=False)` (the same first eight parameters in the same order; `profile` is added). Mapping: `query` -> `sql`,
+`user` -> `username`, `maintenance_db` -> `database`, `host`, `port`, `password` as in section 3.2. `profile` defaults to
+`sqlx:default_profile` and must name a postgresql profile (`[E_OPTION_INVALID]` otherwise). Other keywords of `query`/`execute`
+(`params`, `limit`, `timeout_ms`, `max_bytes`, `dry_run`, and the flat connection keywords) are accepted. Using `user`, `host`,
+`port`, `maintenance_db` or `password` needs the policy (`[E_POLICY]` when the feature is off or the field is not listed);
+the call with only `query` (and a profile) always works.
+
+Differences from `postgres.psql_query`, all deliberate:
+
+| Aspect | `postgres.psql_query` | `sqlx.psql_query` |
+|---|---|---|
+| mechanism | runs the `psql` binary as `runas` (OS user) | SQLAlchemy and the profile's driver; no `psql`, no OS user, no `~/.pgpass`, no `PG*` environment fallback for the password |
+| `runas` | OS user to run `psql` as | any non-`None` value is `[E_OPTION_INVALID] runas is not supported; sqlx does not use psql or an OS user` |
+| failure | returns `[]`/`False`/the `psql` stderr as data | raises `[E_...]` with the real database error (`CommandExecutionError`, or `SaltInvocationError` for argument/policy errors); never returns an empty list for a failure |
+| `write=True` | allows DML | goes through the `execute` path: needs `allow_execute: true` on the profile and the verb filter; returns one row `{"rows_affected": "<n>"}`; never bypasses them. `write=False` runs in a transaction that is rolled back |
+| result | list of dicts, column -> str or `None` | the same shape: values are text, `NULL` is `None`, booleans are `t`/`f`, JSON values are compact JSON text; a trailing `;` is removed like Salt does. Rows beyond the row or byte cap are dropped without a flag (use `sqlx.query` to see `truncated`) |
+| `password` | literal | an `sdb://` reference unless `allow_call_literal_password` |
+| `host`/`port`/`user`/`maintenance_db` | free | policy-gated (section 3.2), not free |
+| multi-statement | `psql -c` may run several | single statement; the read-only guard is bypassable on PostgreSQL (SECURITY section 2) |
 
 ## 4. Functions
 
@@ -512,7 +605,7 @@ curl -sS -k https://salt-api.example:8000/run -H 'Content-Type: application/json
 
 | ID | Decision | Assumption |
 |---|---|---|
-| D1 | Allow ad-hoc connection details in the call? | No. Profile only. |
+| D1 | Allow connection details in the call? | **Profile only by default; opt-in call-time parameters under policy** (owner decision 2026-10-29, section 3.2). Off unless `sqlx:_policy:allow_call_params` lists field names; ad-hoc connections need `allow_adhoc_connection`. |
 | D2 | Default for `execute(dry_run)` | `false` (matches Robot); consider `true` for agent use. |
 | D3 | Rewrite SQL to escape literal colons? | No; document `\:`. |
 | D4 | Support SQLAlchemy 2.1.x | Pin `<2.1` until tested. |
@@ -535,3 +628,4 @@ curl -sS -k https://salt-api.example:8000/run -H 'Content-Type: application/json
 |---|---|---|
 | D12 | **Decided (owner) and implemented**: a TLS certificate directory so that profiles can use database TLS with verification and mutual TLS. | Profile keys `ssl_certs_dir`, `ssl_mode` (`verify-full` default, `verify-ca`), `ssl_files` (`ca`, `cert`, `key` as plain file names); default names `ca.pem`/`ca.crt`, `client.pem`/`client.crt`, `client.key`; the directory must resolve under `sqlx:_policy:ssl_certs_dir_root` (minion config or pillar), else `[E_POLICY]`; key files with group/world access are refused. Full rules and the per-driver mapping are in section 3.1. **Verified on real servers** (throw-away PKI, `tests-support/tls`): PostgreSQL 16.15 (libpq 18.0.6, psycopg 3.3.6), MySQL 8.0.46 and MariaDB 10.11.14 (PyMySQL 1.2.3): verify-full with and without a client certificate, mutual TLS, wrong CA, hostname not in the SANs, expired client and server certificate, client certificate from another CA, client certificate required but missing, plain connection to a TLS-only server, vanished or corrupt key file; error shapes in `docs/WIRE_SHAPES.md` section 12. **NOT verified**: Oracle (argument mapping only, `UNVERIFIED(T1b)`), SQL Server (refused as unsupported), `verify-ca` on Oracle, certificate revocation (no CRL support), encrypted private keys (there is no passphrase key; not tested), TLS 1.2-only or cipher policy (driver defaults). Open: whether the policy should also require the directory itself not to be group/world-writable (not checked today). |
 | D13 | `MaskingFilter.add_secret` (called by `sqlx_mod._run` for every resolved password) only ever adds: the set of registered secrets gains one entry per distinct password and is never emptied for the life of the minion process (a memory and hygiene issue; retired passwords stay in memory and keep being masked). Clear or replace the registered secret after each call? | Not decided; today it is never cleared. Clearing after the call keeps the set small and drops stale passwords, but a log record emitted after the call (by another thread, or a late handler) would then no longer be masked by value; the key-based masking (`password|secret|token`) would still apply. Stricter is to keep it, so keep it until decided. |
+| D14 | Should a call that retargets the connection (`host`, `port`, `username` or `dialect` differs from the base profile) keep the base profile's password? (Added with section 3.2.) | **No** (deviation from the owner's design, which did not mention it): the password is dropped unless the call supplies `password` or `sqlx:_policy:inherit_password: true`. Reason: otherwise `profile=prod host=<listed but attacker-influenced name>` sends the production password to another server (credential relay). Costs one extra argument for legitimate retargeting. |
