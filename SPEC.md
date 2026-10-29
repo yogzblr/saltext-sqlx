@@ -217,7 +217,8 @@ Labels. **observed**: seen on a real server by task T1 on 2026-10-29, evidence i
 section n). **unverified**: not run; kept from vendor documentation and must not be relied on until a server is available.
 Servers actually run: PostgreSQL 16.15, MySQL 8.0.46, MariaDB 10.11.14, with SQLAlchemy 2.0.55 and 2.1.6, psycopg 3.3.6,
 PyMySQL 1.2.3. Oracle and SQL Server could not be started in the T1 environment (registries blocked), so their rows are
-unverified except where stated.
+unverified except where stated. They must be run by the owner on a machine with registry access, using
+`tests-support/up.sh` and `scripts/probes/` (task T1b in `TASKS.md`).
 
 | dialect | driver (pip extra) | URL | Licence (package metadata) | timeout mechanism | in-session read-only |
 |---|---|---|---|---|---|
