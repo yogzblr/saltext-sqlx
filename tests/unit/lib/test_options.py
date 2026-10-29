@@ -1,4 +1,5 @@
 """Unit tests for saltext.sqlx.lib.options (TEST_PLAN section 3)."""
+
 import json
 
 import pytest

@@ -7,6 +7,9 @@ hard maxima of SPEC section 6: a call can only lower a cap, never raise it.
 Failures raise ``SaltInvocationError`` whose message starts with ``[E_...]``. Messages name keys only; they never
 contain values, SQL text or parameters. This module has no Salt dunders.
 """
+
+import math
+
 from salt.exceptions import SaltInvocationError
 
 #: Hard maxima from SPEC section 6. Profiles and calls can only go lower.
@@ -117,7 +120,7 @@ def _valid(kind, value):
     if kind == _NONNEG_INT:
         return _is_int(value) and value >= 0
     if kind == _NONNEG_NUM:
-        return _is_num(value) and value >= 0 and value == value  # excludes NaN
+        return _is_num(value) and value >= 0 and not math.isnan(value)
     if kind == _BOOL:
         return isinstance(value, bool)
     return True  # _ANY
