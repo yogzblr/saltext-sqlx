@@ -8,3 +8,131 @@ This product may include a number of subcomponents with separate copyright
 notices and license terms. Your use of these subcomponents is subject to the
 terms and conditions of the subcomponent's license, as noted in the LICENSE
 file.
+
+
+Third-party dependency licences
+================================
+
+This section lists the licences of the packages that saltext.sqlx imports or installs, taken from the REAL package
+metadata (importlib.metadata: License-Expression, License field and Classifier entries) of the T11 test environment
+(CPython 3.13, Salt 3008.5, SQLAlchemy 2.0.55, every extra installed). Nothing here was copied from documentation.
+
+Declared dependencies (pyproject.toml):
+
+  Package            Declared as            Licence (package metadata)
+  salt               salt>=3006             Apache Software License | Apache Software License 2.0  [3008.5]
+  SQLAlchemy         SQLAlchemy>=2.0,<2.1   MIT  [2.0.55]
+  psycopg            extra postgres         LGPL-3.0-only  [3.3.6]
+  PyMySQL            extra mysql            MIT  [1.2.3]
+  oracledb           extra oracle           UPL-1.0 OR Apache-2.0  [26.1.0]
+  pymssql            extra mssql            GNU Lesser General Public License v2.1 (licence text in metadata)  [2.4.6]
+
+  psycopg[binary] also installs psycopg-binary (LGPL-3.0-only, the compiled wheel of the same project).
+
+LGPL notice. psycopg, psycopg-binary (PostgreSQL driver) and pymssql (SQL Server driver) are licensed under the GNU
+Lesser General Public License. The project owner accepted them on 2026-10-29 on one condition: they are used as
+unmodified pip packages. saltext.sqlx imports them lazily through their public API, does not copy, vendor, patch or
+statically link any of their code, and each can be replaced by the user with another build of the same package. Any
+other LGPL package, and any GPL or AGPL package (for example mysqlclient, which is why PyMySQL is the MySQL driver),
+fails tests/security/test_licences.py. No GPL package is present.
+
+Notes on entries that are not plain permissive licences:
+  certifi        MPL-2.0 (file-level copyleft; used unmodified; required by salt and requests)
+  tempora        the package metadata declares no licence at all (no field, classifier or licence file); it is
+                 required by portend, which CherryPy requires, which Salt requires (not by saltext.sqlx itself)
+
+Full dependency closure of saltext.sqlx[postgres,mysql,oracle,mssql] as resolved in that environment
+(regenerate with `python tests/security/licences.py --notice`; check with `python tests/security/licences.py --check`):
+
+| Package | Version | Licence (package metadata) | Class |
+|---|---|---|---|
+| aiohappyeyeballs | 2.7.1 | Python Software Foundation License / PSF-2.0 | permissive |
+| aiohttp | 3.14.5 | Apache-2.0 AND MIT | permissive |
+| aiosignal | 1.4.0 | Apache Software License / Apache 2.0 | permissive |
+| annotated-doc | 0.0.5 | MIT | permissive |
+| apache-libcloud | 3.9.1 | Apache Software License / Apache License (2.0) | permissive |
+| attrs | 26.1.0 | MIT | permissive |
+| certifi | 2026.10.23 | Mozilla Public License 2.0 (MPL 2.0) / MPL-2.0 | weak |
+| cffi | 2.1.1 | MIT-0 | permissive |
+| charset-normalizer | 3.5.2 | MIT | permissive |
+| cheroot | 11.1.2 | BSD License | permissive |
+| CherryPy | 18.10.0 | Freely Distributable / BSD License | permissive |
+| croniter | 6.2.4 | MIT / MIT License | permissive |
+| cryptography | 50.0.2 | Apache-2.0 OR BSD-3-Clause | permissive |
+| distlib | 0.4.4 | Python Software Foundation License / PSF-2.0 | permissive |
+| distro | 1.9.0 | Apache Software License / Apache License, Version 2.0 | permissive |
+| filelock | 4.2.4 | MIT / MIT License | permissive |
+| frozenlist | 1.8.0 | Apache-2.0 | permissive |
+| gitdb | 4.0.12 | BSD License / BSD License | permissive |
+| GitPython | 3.2.1 | BSD-3-Clause | permissive |
+| googleapis-common-protos | 1.76.0 | Apache-2.0 | permissive |
+| greenlet | 3.5.6 | MIT AND PSF-2.0 | permissive |
+| idna | 3.20 | BSD-3-Clause | permissive |
+| importlib_metadata | 10.1.0 | Apache-2.0 | permissive |
+| jaraco.collections | 5.2.1 | MIT | permissive |
+| jaraco.context | 6.1.2 | MIT | permissive |
+| jaraco.functools | 4.6.0 | MIT | permissive |
+| jaraco.text | 4.3.0 | MIT | permissive |
+| Jinja2 | 3.1.6 | BSD License | permissive |
+| jmespath | 1.1.0 | MIT License / MIT | permissive |
+| looseversion | 1.3.0 | Python Software Foundation License / PYTHON SOFTWARE FOUNDATION LICENSE VERSION 2 ----------------------------------- | permissive |
+| markdown-it-py | 4.2.0 | MIT License | permissive |
+| MarkupSafe | 3.0.4 | BSD-3-Clause | permissive |
+| mdurl | 0.1.2 | MIT License | permissive |
+| more-itertools | 11.2.1 | MIT | permissive |
+| msgpack | 1.2.4 | Apache-2.0 | permissive |
+| multidict | 7.2.1 | Apache-2.0 | permissive |
+| opentelemetry-api | 1.45.1 | Apache-2.0 | permissive |
+| opentelemetry-exporter-http-transport | 0.66b1 | Apache-2.0 | permissive |
+| opentelemetry-exporter-otlp-common | 0.66b1 | Apache-2.0 | permissive |
+| opentelemetry-exporter-otlp-proto-common | 1.45.1 | Apache-2.0 | permissive |
+| opentelemetry-exporter-otlp-proto-http | 1.45.1 | Apache-2.0 | permissive |
+| opentelemetry-exporter-prometheus | 0.66b1 | Apache-2.0 | permissive |
+| opentelemetry-proto | 1.45.1 | Apache-2.0 | permissive |
+| opentelemetry-sdk | 1.45.1 | Apache-2.0 | permissive |
+| opentelemetry-semantic-conventions | 0.66b1 | Apache-2.0 | permissive |
+| oracledb | 26.1.0 | UPL-1.0 OR Apache-2.0 | permissive |
+| packaging | 26.3 | Apache-2.0 OR BSD-2-Clause | permissive |
+| platformdirs | 4.14.0 | MIT | permissive |
+| portend | 3.2.1 | MIT | permissive |
+| prometheus_client | 0.26.0 | Apache-2.0 AND BSD-2-Clause | permissive |
+| propcache | 0.5.4 | Apache-2.0 | permissive |
+| protobuf | 7.36.2 | 3-Clause BSD License | permissive |
+| psutil | 7.2.2 | BSD-3-Clause | permissive |
+| psycopg | 3.3.6 | LGPL-3.0-only | lgpl |
+| psycopg-binary | 3.3.6 | LGPL-3.0-only | lgpl |
+| pyasn1 | 0.6.5 | BSD-2-Clause | permissive |
+| pycparser | 3.12 | BSD-3-Clause | permissive |
+| pycryptodomex | 3.24.1 | BSD License / Public Domain / BSD, Public Domain | permissive |
+| Pygments | 2.21.0 | BSD-2-Clause | permissive |
+| pymssql | 2.4.6 | GNU LESSER GENERAL PUBLIC LICENSE Version 2.1, February 1999 Copyright (C) 1991, | lgpl |
+| PyMySQL | 1.2.3 | MIT | permissive |
+| pyOpenSSL | 26.4.0 | Apache Software License / Apache License, Version 2.0 | permissive |
+| python-dateutil | 3.0.0 | BSD License / Apache Software License / Dual License | permissive |
+| python-discovery | 1.6.7 | MIT | permissive |
+| python-gnupg | 0.5.7 | BSD License / BSD | permissive |
+| PyYAML | 6.0.3 | MIT License / MIT | permissive |
+| pyzmq | 27.2.0 | BSD-3-Clause | permissive |
+| requests | 2.34.2 | Apache Software License / Apache-2.0 | permissive |
+| rich | 15.0.0 | MIT License / MIT | permissive |
+| salt | 3008.5 | Apache Software License / Apache Software License 2.0 | permissive |
+| setproctitle | 1.3.8 | BSD-3-Clause | permissive |
+| setuptools | 84.2.1 | MIT | permissive |
+| shellingham | 1.5.4 | ISC License (ISCL) / ISC License | permissive |
+| six | 1.17.0 | MIT License / MIT | permissive |
+| smmap | 5.0.3 | BSD License / BSD-3-Clause | permissive |
+| SQLAlchemy | 2.0.55 | MIT | permissive |
+| tempora | 5.13.0 | none declared in package metadata | unknown |
+| timelib | 0.3.0 | zlib/php | permissive |
+| tornado | 6.6 | Apache Software License / Apache-2.0 | permissive |
+| truststore | 0.10.5 | MIT | permissive |
+| typer | 0.27.3 | MIT | permissive |
+| typer-slim | 0.24.0 | MIT | permissive |
+| typing_extensions | 4.16.0 | PSF-2.0 | permissive |
+| tzdata | 2026.6 | Apache-2.0 | permissive |
+| urllib3 | 2.8.0 | MIT | permissive |
+| virtualenv | 21.15.1 | MIT | permissive |
+| xxhash | 4.0.2 | BSD-2-Clause | permissive |
+| yarl | 1.25.1 | Apache-2.0 | permissive |
+| zc.lockfile | 4.0 | Zope Public License / ZPL-2.1 | permissive |
+| zipp | 4.1.2 | MIT | permissive |
