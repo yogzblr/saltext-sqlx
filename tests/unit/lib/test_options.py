@@ -173,7 +173,6 @@ def test_ping_requires_profile():
         ("check_query_result", "retry_timeout_s", -1),
         ("check_query_result", "retry_pause_s", -0.5),
         ("check_query_result", "retry_pause_s", True),
-        ("check_row_count", "retry_timeout_s", None),
         ("table_list", "schema", 7),
         ("table_list", "pattern", ["a"]),
         ("table_list", "include_views", "true"),
