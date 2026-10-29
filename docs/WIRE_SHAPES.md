@@ -468,7 +468,7 @@ certificate` error; without it libpq would have looked in `~/.postgresql/` and `
 | key file removed after validation | raw `FileNotFoundError` `(2, 'No such file or directory')` | `E_CONNECT` | `a TLS file given to the driver (CA, client certificate or key) could not be opened: No such file or directory` (no file name) |
 
 PyMySQL does not check key file modes: a 0644 key connected successfully on both servers, so the mode rule is enforced by the
-module alone (`[E_POLICY]` at profile load). PyMySQL with no TLS arguments at all negotiates TLS opportunistically (a
+module alone (`[E_POLICY]` at profile load). PyMySQL with no TLS arguments at all negotiates TLS opportunistically (on MySQL a
 `REQUIRE SSL` account connected that way). How SQLAlchemy 2.0.55 passes the arguments: URL-query `ssl_ca`, `ssl_cert`, `ssl_key`
 are moved into PyMySQL's `ssl` dict and `ssl_verify_cert` / `ssl_verify_identity` stay keywords; PyMySQL 1.2.3 rebuilds its TLS
 context from the keywords whenever any `ssl_*` keyword is set and then drops the dict, so the CA would be lost. The module
