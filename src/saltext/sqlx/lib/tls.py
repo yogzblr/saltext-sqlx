@@ -23,7 +23,15 @@ import stat
 
 from salt.exceptions import SaltInvocationError
 
-__all__ = ["POLICY_KEY", "SSL_MODES", "connect_args", "key_mode_ok", "query_args", "scrub", "validate"]
+__all__ = [
+    "POLICY_KEY",
+    "SSL_MODES",
+    "connect_args",
+    "key_mode_ok",
+    "query_args",
+    "scrub",
+    "validate",
+]
 
 POLICY_KEY = "ssl_certs_dir_root"
 SSL_MODES = ("verify-full", "verify-ca")
@@ -31,7 +39,11 @@ _WEAK_MODES = ("disable", "prefer", "allow")
 _DEFAULT_MODE = "verify-full"
 
 #: role -> candidate default file names (first is the documented one; the second is the unambiguous fallback)
-_DEFAULTS = {"ca": ("ca.pem", "ca.crt"), "cert": ("client.pem", "client.crt"), "key": ("client.key",)}
+_DEFAULTS = {
+    "ca": ("ca.pem", "ca.crt"),
+    "cert": ("client.pem", "client.crt"),
+    "key": ("client.key",),
+}
 _ROLES = tuple(_DEFAULTS)
 _LABELS = {"ca": "CA", "cert": "client certificate", "key": "private key"}
 
@@ -112,7 +124,10 @@ def _ssl_files(name, raw, dialect):
     if unknown:
         _invalid(name, f"unknown 'ssl_files' key(s): {', '.join(unknown)} (allowed: ca, cert, key)")
     if files and dialect == "oracle":
-        _invalid(name, f"'ssl_files' is not used for oracle (the wallet directory holds {_ORACLE_WALLET})")
+        _invalid(
+            name,
+            f"'ssl_files' is not used for oracle (the wallet directory holds {_ORACLE_WALLET})",
+        )
     return {role: _plain_name(name, role, value) for role, value in files.items()}
 
 
@@ -221,7 +236,9 @@ def _files(name, directory, root, wanted, dialect):
             shown[role], paths[role] = _default(name, directory, root, role)
     if paths["ca"] is None:
         _invalid(name, f"CA file '{shown['ca']}' not found in ssl_certs_dir")
-    if bool(paths["cert"]) != bool(paths["key"]) or bool(wanted.get("cert")) != bool(wanted.get("key")):
+    if bool(paths["cert"]) != bool(paths["key"]) or bool(wanted.get("cert")) != bool(
+        wanted.get("key")
+    ):
         _invalid(
             name,
             f"client certificate '{shown['cert']}' and private key '{shown['key']}' must both exist "

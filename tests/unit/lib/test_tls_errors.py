@@ -25,7 +25,10 @@ class _MyError(Exception):
 
 
 PG_CASES = [
-    ("SSL error: certificate verify failed", "E_CONNECT"),  # unknown CA / expired server certificate
+    (
+        "SSL error: certificate verify failed",
+        "E_CONNECT",
+    ),  # unknown CA / expired server certificate
     (
         'server certificate for "localhost" (and 1 other name) does not match host name "127.0.0.2"',
         "E_CONNECT",
@@ -43,7 +46,10 @@ PG_CASES = [
     ('could not load private key file "/x/client.key": key values mismatch', "E_CONNECT"),
     ('could not load private key file "/x/client.key": unsupported', "E_CONNECT"),
     ('certificate present, but not private key file "/x/client.key"', "E_CONNECT"),
-    ('private key file "/x/client.key" has group or world access; file must have permissions u=rw', "E_CONNECT"),
+    (
+        'private key file "/x/client.key" has group or world access; file must have permissions u=rw',
+        "E_CONNECT",
+    ),
     ('root certificate file "/x/ca.pem" does not exist\nEither provide the file', "E_CONNECT"),
 ]
 
@@ -52,16 +58,41 @@ PG_CASES = [
 def test_postgresql_tls_failures(text, code):
     result = errors.describe(pg(text), "postgresql")
     assert result.code == code, result
-    assert "SSL" in result.message or "certificate" in result.message or "key file" in result.message or "encryption" in result.message
+    assert (
+        "SSL" in result.message
+        or "certificate" in result.message
+        or "key file" in result.message
+        or "encryption" in result.message
+    )
 
 
 MY_CASES = [
-    (2003, "Can't connect to MySQL server on 'localhost' ([SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: self-signed certificate in certificate chain (_ssl.c:1032))", "E_CONNECT"),
-    (2003, "Can't connect to MySQL server on '127.0.0.2' ([SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: IP address mismatch, certificate is not valid for '127.0.0.2'. (_ssl.c:1032))", "E_CONNECT"),
-    (2013, "Lost connection to MySQL server during query ([SSL: SSLV3_ALERT_CERTIFICATE_EXPIRED] sslv3 alert certificate expired (_ssl.c:2660))", "E_CONNECT"),
-    (2013, "Lost connection to MySQL server during query ([SSL: TLSV1_ALERT_UNKNOWN_CA] tlsv1 alert unknown ca (_ssl.c:2660))", "E_CONNECT"),
+    (
+        2003,
+        "Can't connect to MySQL server on 'localhost' ([SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: self-signed certificate in certificate chain (_ssl.c:1032))",
+        "E_CONNECT",
+    ),
+    (
+        2003,
+        "Can't connect to MySQL server on '127.0.0.2' ([SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: IP address mismatch, certificate is not valid for '127.0.0.2'. (_ssl.c:1032))",
+        "E_CONNECT",
+    ),
+    (
+        2013,
+        "Lost connection to MySQL server during query ([SSL: SSLV3_ALERT_CERTIFICATE_EXPIRED] sslv3 alert certificate expired (_ssl.c:2660))",
+        "E_CONNECT",
+    ),
+    (
+        2013,
+        "Lost connection to MySQL server during query ([SSL: TLSV1_ALERT_UNKNOWN_CA] tlsv1 alert unknown ca (_ssl.c:2660))",
+        "E_CONNECT",
+    ),
     (1045, "Access denied for user 'tls_cert'@'localhost' (using password: YES)", "E_AUTH_FAILED"),
-    (3159, "Connections using insecure transport are prohibited while --require_secure_transport=ON.", "E_CONNECT"),
+    (
+        3159,
+        "Connections using insecure transport are prohibited while --require_secure_transport=ON.",
+        "E_CONNECT",
+    ),
 ]
 
 
@@ -80,13 +111,24 @@ def _dbapi(vendor, text):
 
 def test_mysql_family_raw_ssl_errors_are_connect_errors():
     """PyMySQL raises ssl.SSLError itself when the client certificate or key cannot be loaded (observed)."""
-    for args in ((524297, "[SSL] PEM lib (_ssl.c:4129)"), (116, "[X509: KEY_VALUES_MISMATCH] key values mismatch (_ssl.c:4129)")):
+    for args in (
+        (524297, "[SSL] PEM lib (_ssl.c:4129)"),
+        (116, "[X509: KEY_VALUES_MISMATCH] key values mismatch (_ssl.c:4129)"),
+    ):
         for dialect in ("mysql", "mariadb"):
             result = errors.describe(ssl.SSLError(*args), dialect)
-            assert result.code == "E_CONNECT" and args[1].split(" (")[0] in result.message
+            assert (
+                result.code == "E_CONNECT" and args[1].split(" (", maxsplit=1)[0] in result.message
+            )
 
 
-@pytest.mark.parametrize("exc", [FileNotFoundError(2, "No such file or directory", "/secret/dir/client.key"), PermissionError(13, "Permission denied", "/secret/dir/client.key")])
+@pytest.mark.parametrize(
+    "exc",
+    [
+        FileNotFoundError(2, "No such file or directory", "/secret/dir/client.key"),
+        PermissionError(13, "Permission denied", "/secret/dir/client.key"),
+    ],
+)
 def test_mysql_family_unreadable_tls_file_names_no_path(exc):
     result = errors.describe(exc, "mysql")
     assert result.code == "E_CONNECT"

@@ -23,9 +23,19 @@ SERVERS = {
 
 def run(dialect, port, family, directory, who="cert", host="localhost", query=None, user=None):
     cert_user = user or "tls_cert"
-    users = {"cert": (cert_user, None if family == "pg" else "tls_cert_pw"), "pw": ("tls_pw", "tls_pw_pw")}
+    users = {
+        "cert": (cert_user, None if family == "pg" else "tls_cert_pw"),
+        "pw": ("tls_pw", "tls_pw_pw"),
+    }
     name, password = users[who]
-    raw = {"dialect": dialect, "host": host, "port": port, "database": "tlsdb", "username": name, "connect_timeout_s": 5}
+    raw = {
+        "dialect": dialect,
+        "host": host,
+        "port": port,
+        "database": "tlsdb",
+        "username": name,
+        "connect_timeout_s": 5,
+    }
     if password:
         raw["password"] = password
     if directory:
@@ -57,13 +67,23 @@ def main():
                 kw["query"] = {"sslmode": "disable"} if family == "pg" else {"ssl_disabled": True}
             print(f"- {case}:\n    {run(dialect, port, family, **kw)}")
         if family == "pg":
-            print(f"- client certificate CN does not match the user:\n    {run(dialect, port, family, 'good', user='tls_mismatch')}")
+            print(
+                f"- client certificate CN does not match the user:\n    {run(dialect, port, family, 'good', user='tls_mismatch')}"
+            )
         which = "postgresql" if family == "pg" else ("mysql" if port == 33071 else "mariadb")
-        subprocess.run(["bash", str(HERE / "swap_server_cert.sh"), "expired", which], check=True, capture_output=True)
+        subprocess.run(
+            ["bash", str(HERE / "swap_server_cert.sh"), "expired", which],
+            check=True,
+            capture_output=True,
+        )
         try:
             print(f"- expired SERVER certificate:\n    {run(dialect, port, family, 'good')}")
         finally:
-            subprocess.run(["bash", str(HERE / "swap_server_cert.sh"), "good", which], check=True, capture_output=True)
+            subprocess.run(
+                ["bash", str(HERE / "swap_server_cert.sh"), "good", which],
+                check=True,
+                capture_output=True,
+            )
 
 
 if __name__ == "__main__":

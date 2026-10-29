@@ -171,7 +171,7 @@ def test_policy_must_be_a_mapping(root, pol):
 
 
 @pytest.mark.parametrize("bad", ["", "relative/dir", "certs", 5, None, ["/x"], "/a\x00b"])
-def test_directory_must_be_a_nonempty_absolute_string(root, policy, bad):
+def test_directory_must_be_a_nonempty_absolute_string(policy, bad):
     fails("E_PROFILE_INVALID", dict(BASE, ssl_certs_dir=bad), policy)
 
 
@@ -190,13 +190,13 @@ def test_dotdot_in_the_given_path_is_refused(root, policy):
     fails("E_PROFILE_INVALID", prof(f"{root}/a/../b"), policy)
 
 
-def test_directory_outside_root_is_policy_error(root, policy, tmp_path):
+def test_directory_outside_root_is_policy_error(policy, tmp_path):
     outside = make_dir(tmp_path, "elsewhere")
     text = fails("E_POLICY", prof(outside), policy, absent=(str(tmp_path),))
     assert "ssl_certs_dir_root" in text
 
 
-def test_sibling_with_common_prefix_is_outside(root, policy, tmp_path):
+def test_sibling_with_common_prefix_is_outside(policy, tmp_path):
     sibling = tmp_path / "certs-evil"
     sibling.mkdir()
     make_dir(sibling, "d")
@@ -271,7 +271,19 @@ def test_a_directory_named_like_a_file_is_refused(root, policy):
 # -- ssl_files --------------------------------------------------------------------------------------------------------
 @pytest.mark.parametrize(
     "name",
-    ["sub/ca.pem", "/etc/passwd", "../ca.pem", "..", ".", "", "a\\b.pem", "a\x00.pem", 5, None, ["x"]],
+    [
+        "sub/ca.pem",
+        "/etc/passwd",
+        "../ca.pem",
+        "..",
+        ".",
+        "",
+        "a\\b.pem",
+        "a\x00.pem",
+        5,
+        None,
+        ["x"],
+    ],
 )
 def test_ssl_files_values_are_plain_names(root, policy, name):
     path = make_dir(root)
@@ -316,7 +328,9 @@ def test_explicit_cert_without_key_name(root, policy):
 
 def test_explicit_names_that_do_not_exist(root, policy):
     path = make_dir(root)
-    text = fails("E_PROFILE_INVALID", prof(path, ssl_files={"cert": "a.pem", "key": "a.key"}), policy)
+    text = fails(
+        "E_PROFILE_INVALID", prof(path, ssl_files={"cert": "a.pem", "key": "a.key"}), policy
+    )
     assert "a.pem" in text
 
 
@@ -408,8 +422,12 @@ def test_non_tls_query_keys_are_left_alone(root, policy):
 
 def test_path_options_stay_forbidden_in_profile_query(root, policy):
     """The module produces the path options; a profile may never carry them (allowlist is default-deny)."""
-    fails("E_PROFILE_INVALID", prof(make_dir(root), query={"sslrootcert": "/etc/ssl/x.pem"}), policy)
-    without_dir = profiles.validate_profile("p", dict(BASE, query={"sslrootcert": "/etc/ssl/x.pem"}))
+    fails(
+        "E_PROFILE_INVALID", prof(make_dir(root), query={"sslrootcert": "/etc/ssl/x.pem"}), policy
+    )
+    without_dir = profiles.validate_profile(
+        "p", dict(BASE, query={"sslrootcert": "/etc/ssl/x.pem"})
+    )
     adapter = dialects.adapter("postgresql")
     with pytest.raises(SaltInvocationError) as exc:
         adapter.url(without_dir, "pw")
@@ -457,7 +475,7 @@ def test_postgresql_mapping_mtls(root, policy):
         "sslcert": f"{real}/client.pem",
         "sslkey": f"{real}/client.key",
     }
-    assert tls.connect_args("postgresql", p) == {}
+    assert not tls.connect_args("postgresql", p)
 
 
 def test_postgresql_mapping_server_auth_only_disables_default_client_cert(root, policy):
@@ -478,7 +496,7 @@ def test_mysql_mapping(root, policy, mode, identity):
         "ssl_verify_cert": True,
         "ssl_verify_identity": identity,
     }
-    assert tls.query_args("mysql", p) == {}
+    assert not tls.query_args("mysql", p)
 
 
 def test_mysql_mapping_without_client_cert(root, policy):
@@ -495,13 +513,13 @@ def test_oracle_mapping_is_unverified_but_exact(root, policy, mode, match):
         "wallet_location": p["tls"]["dir"],
         "ssl_server_dn_match": match,
     }
-    assert tls.query_args("oracle", p) == {}
+    assert not tls.query_args("oracle", p)
 
 
 def test_mapping_is_empty_without_tls_and_mssql_never_maps():
     plain = profiles.validate_profile("p", dict(BASE))
     for dialect in ("postgresql", "mysql", "oracle", "mssql"):
-        assert tls.query_args(dialect, plain) == {} and tls.connect_args(dialect, plain) == {}
+        assert not tls.query_args(dialect, plain) and not tls.connect_args(dialect, plain)
 
 
 def test_adapters_apply_the_mapping(root, policy):
@@ -536,7 +554,7 @@ def test_load_profile_uses_policy_from_the_sqlx_mapping(root, policy):
     assert str(exc.value).startswith("[E_POLICY]")
 
 
-def test_policy_section_is_not_a_profile(root, policy):
+def test_policy_section_is_not_a_profile(policy):
     config = {"_policy": policy, "profiles": {}}
     with pytest.raises(SaltInvocationError) as exc:
         profiles.load_profile("_policy", config)

@@ -31,20 +31,47 @@ HERE = pathlib.Path(__file__).resolve().parents[2] / "tests-support" / "tls"
 POLICY = {"ssl_certs_dir_root": str(PKI)}
 
 SERVERS = {
-    "postgresql": {"dialect": "postgresql", "port": 54339, "pw": ("tls_pw", "tls_pw_pw"), "cert": ("tls_cert", None)},
-    "mysql": {"dialect": "mysql", "port": 33071, "pw": ("tls_pw", "tls_pw_pw"), "cert": ("tls_cert", "tls_cert_pw")},
-    "mariadb": {"dialect": "mysql", "port": 33072, "pw": ("tls_pw", "tls_pw_pw"), "cert": ("tls_cert", "tls_cert_pw")},
+    "postgresql": {
+        "dialect": "postgresql",
+        "port": 54339,
+        "pw": ("tls_pw", "tls_pw_pw"),
+        "cert": ("tls_cert", None),
+    },
+    "mysql": {
+        "dialect": "mysql",
+        "port": 33071,
+        "pw": ("tls_pw", "tls_pw_pw"),
+        "cert": ("tls_cert", "tls_cert_pw"),
+    },
+    "mariadb": {
+        "dialect": "mysql",
+        "port": 33072,
+        "pw": ("tls_pw", "tls_pw_pw"),
+        "cert": ("tls_cert", "tls_cert_pw"),
+    },
 }
 
 # fragments of the real driver messages (docs/WIRE_SHAPES.md section 11), per server
-UNKNOWN_CA = {"postgresql": "certificate verify failed", "mysql": "certificate verify failed", "mariadb": "certificate verify failed"}
+UNKNOWN_CA = {
+    "postgresql": "certificate verify failed",
+    "mysql": "certificate verify failed",
+    "mariadb": "certificate verify failed",
+}
 HOSTNAME = {
     "postgresql": 'does not match host name "127.0.0.2"',
     "mysql": "IP address mismatch",
     "mariadb": "IP address mismatch",
 }
-EXPIRED_CLIENT = {"postgresql": "alert certificate expired", "mysql": "CERTIFICATE_EXPIRED", "mariadb": "CERTIFICATE_EXPIRED"}
-CLIENT_CA_UNKNOWN = {"postgresql": "alert unknown ca", "mysql": "UNKNOWN_CA", "mariadb": "UNKNOWN_CA"}
+EXPIRED_CLIENT = {
+    "postgresql": "alert certificate expired",
+    "mysql": "CERTIFICATE_EXPIRED",
+    "mariadb": "CERTIFICATE_EXPIRED",
+}
+CLIENT_CA_UNKNOWN = {
+    "postgresql": "alert unknown ca",
+    "mysql": "UNKNOWN_CA",
+    "mariadb": "UNKNOWN_CA",
+}
 
 
 def _reachable(port):
@@ -58,7 +85,9 @@ def _reachable(port):
 @pytest.fixture(scope="module", params=sorted(SERVERS))
 def srv(request):
     info = dict(SERVERS[request.param], key=request.param)
-    reason = _reachable(info["port"]) or (None if (PKI / "good" / "client.key").exists() else f"no PKI in {PKI}")
+    reason = _reachable(info["port"]) or (
+        None if (PKI / "good" / "client.key").exists() else f"no PKI in {PKI}"
+    )
     if reason:
         pytest.skip(reason)
     return info
@@ -122,8 +151,12 @@ def test_fallback_file_names(srv):
     assert lib_ping(srv, directory="alt-names")["ok"] is True
 
 
-def test_explicit_ssl_files(srv, tmp_path):
-    out = lib_ping(srv, directory="alt-names", ssl_files={"ca": "ca.crt", "cert": "client.crt", "key": "client.key"})
+def test_explicit_ssl_files(srv):
+    out = lib_ping(
+        srv,
+        directory="alt-names",
+        ssl_files={"ca": "ca.crt", "cert": "client.crt", "key": "client.key"},
+    )
     assert out["ok"] is True
 
 
@@ -145,7 +178,9 @@ def test_client_certificate_from_another_ca_is_refused(srv):
 
 
 def test_certificate_user_without_a_client_certificate_is_refused(srv):
-    fragment = "requires a valid client certificate" if srv["key"] == "postgresql" else "Access denied"
+    fragment = (
+        "requires a valid client certificate" if srv["key"] == "postgresql" else "Access denied"
+    )
     expect_failure(srv, "E_AUTH_FAILED", fragment, directory="ca-only", who="cert")
 
 
@@ -195,7 +230,9 @@ def test_garbage_key_is_a_clean_error_without_key_material(srv, tmp_path):
     d.mkdir(parents=True)
     for name in ("ca.pem", "client.pem"):
         (d / name).write_bytes((PKI / "good" / name).read_bytes())
-    (d / "client.key").write_text("-----BEGIN PRIVATE KEY-----\nSECRETSECRET\n-----END PRIVATE KEY-----\n")
+    (d / "client.key").write_text(
+        "-----BEGIN PRIVATE KEY-----\nSECRETSECRET\n-----END PRIVATE KEY-----\n"
+    )
     (d / "client.key").chmod(0o600)
     raw = make_raw(srv, directory=None, ssl_certs_dir=str(d))
     profile = profiles.validate_profile("t", raw, {"ssl_certs_dir_root": str(root)})
@@ -230,7 +267,9 @@ def salt(srv, monkeypatch):
 def test_module_ping_and_query_over_mutual_tls(salt):
     assert mod.ping("tls_mtls")["ok"] is True
     if salt["dialect"] == "postgresql":
-        out = mod.query("tls_mtls", "SELECT ssl, client_dn FROM pg_stat_ssl WHERE pid = pg_backend_pid()")
+        out = mod.query(
+            "tls_mtls", "SELECT ssl, client_dn FROM pg_stat_ssl WHERE pid = pg_backend_pid()"
+        )
         assert out["rows"][0][0] is True and "tls_cert" in out["rows"][0][1]
     else:
         out = mod.query("tls_mtls", "SHOW SESSION STATUS LIKE 'Ssl_cipher'")
@@ -248,7 +287,8 @@ def test_module_query_over_server_auth_tls(salt):
         assert out["rows"] == [[True]]
 
 
-def test_module_failure_keeps_code_and_real_message(salt):
+@pytest.mark.usefixtures("salt")
+def test_module_failure_keeps_code_and_real_message():
     with pytest.raises(CommandExecutionError) as exc:
         mod.query("tls_wrong_ca", "SELECT 1")
     text = str(exc.value)
@@ -290,13 +330,28 @@ def test_salt_call_local_with_a_tls_profile(srv, tmp_path):
     (conf / "minion").write_text(yaml.safe_dump(cfg))
     salt_call = pathlib.Path(sys.executable).with_name("salt-call")
     base = [str(salt_call), "--local", "-c", str(conf), "--out=json", "--log-level=quiet"]
-    ok = subprocess.run(base + ["sqlx.ping", "profile=mtls"], capture_output=True, text=True, timeout=120, check=False)
+    ok = subprocess.run(
+        base + ["sqlx.ping", "profile=mtls"],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
     assert ok.returncode == 0, ok.stdout + ok.stderr
     result = json.loads(ok.stdout)["local"]
     assert result["ok"] is True and result["dialect"] == srv["dialect"]
-    bad = subprocess.run(base + ["sqlx.ping", "profile=wrong_ca"], capture_output=True, text=True, timeout=120, check=False)
+    bad = subprocess.run(
+        base + ["sqlx.ping", "profile=wrong_ca"],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
     assert bad.returncode != 0
-    assert "[E_CONNECT]" in bad.stdout + bad.stderr and "certificate verify failed" in bad.stdout + bad.stderr
+    assert (
+        "[E_CONNECT]" in bad.stdout + bad.stderr
+        and "certificate verify failed" in bad.stdout + bad.stderr
+    )
     assert str(PKI) not in bad.stdout + bad.stderr
 
 
@@ -304,14 +359,23 @@ def test_salt_call_local_with_a_tls_profile(srv, tmp_path):
 @pytest.fixture
 def expired_server(srv):
     which = srv["key"]
-    subprocess.run(["bash", str(HERE / "swap_server_cert.sh"), "expired", which], check=True, capture_output=True)
+    subprocess.run(
+        ["bash", str(HERE / "swap_server_cert.sh"), "expired", which],
+        check=True,
+        capture_output=True,
+    )
     try:
         yield
     finally:
-        subprocess.run(["bash", str(HERE / "swap_server_cert.sh"), "good", which], check=True, capture_output=True)
+        subprocess.run(
+            ["bash", str(HERE / "swap_server_cert.sh"), "good", which],
+            check=True,
+            capture_output=True,
+        )
 
 
-def test_expired_server_certificate_is_refused(srv, expired_server):
+@pytest.mark.usefixtures("expired_server")
+def test_expired_server_certificate_is_refused(srv):
     expect_failure(srv, "E_CONNECT", "certificate verify failed", directory="good")
 
 
