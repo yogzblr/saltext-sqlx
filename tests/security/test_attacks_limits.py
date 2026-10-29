@@ -264,12 +264,6 @@ def test_table_list_pattern_cannot_pin_the_cpu(request, server):
 
 def test_retry_loop_has_no_floor_on_the_pause(request, server, salt):
     """D10: ``retry_pause_s=1e-9`` is valid; a caller turns a 2 s retry window into a connection flood."""
-    defect(
-        request,
-        server,
-        "D10",
-        "check_row_count opens a new connection every few milliseconds when retry_pause_s is tiny",
-    )
     out = salt.check_row_count(
         "ro", "SELECT 1 WHERE 1 = 0", ">=", expected=1, retry_timeout_s=1, retry_pause_s=1e-9
     )

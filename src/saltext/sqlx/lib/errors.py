@@ -142,6 +142,7 @@ _PG_TEXT = (
     ("private key file", "E_CONNECT"),  # could not load / has group or world access
     ("root certificate file", "E_CONNECT"),
 )
+_PG_VALUE_TAIL = re.compile(r":\s*'.*'\s*$", re.DOTALL)
 _PG_DB_MISSING = re.compile(r'database ".*" does not exist')
 _PG_INVALID_INPUT = re.compile(r'(invalid input (?:syntax|value) for [^:]*): ".*"', re.DOTALL)
 
@@ -169,6 +170,11 @@ def _pg(orig, error_detail):
     for needle, code in _PG_TEXT:
         if needle in text:
             return code, None, _HINT_PERCENT if code == "E_OPTION_INVALID" else text
+    if any(c.__name__ == "DataError" for c in type(orig).__mro__):
+        # Raised by psycopg itself, not the server, so there is no SQLSTATE: a value Python cannot hold, such as
+        # 'infinity' or a year after 9999 ("timestamp too large (after year 10K): 'infinity'"). Observed on 16.15.
+        # The value after the colon is data from the table and is dropped unless ``error_detail`` is set.
+        return "E_SQL_DATA", None, text if error_detail else _PG_VALUE_TAIL.sub("", text)
     if _PG_DB_MISSING.search(text):
         return "E_CONNECT", None, text
     return None, None, None
@@ -315,6 +321,9 @@ def _raw(exc, dialect):
     elif isinstance(exc, AttributeError) and dialect in _MYSQL_FAMILY:
         if "is_auth_switch_request" in text:  # first connect after FLUSH PRIVILEGES (WS 6)
             return Translation("E_CONNECT", None, _MSG_AUTH_SWITCH)
+    elif isinstance(exc, OverflowError):
+        # A number or date the driver cannot represent (for example a year or an interval beyond Python's range).
+        return Translation("E_SQL_DATA", None, "a value in the result is out of range for the driver")
     elif isinstance(exc, ValueError) and "unsupported format character" in text:  # WS 5
         return Translation("E_OPTION_INVALID", None, _HINT_PERCENT)
     return None

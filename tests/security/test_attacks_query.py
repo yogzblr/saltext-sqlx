@@ -487,8 +487,6 @@ def test_documented_dblink_when_installed_writes_outside_the_transaction_and_rea
 # ---- NUL byte -----------------------------------------------------------------------------------------------------------
 def test_nul_byte_in_sql_is_refused_not_silently_truncated(request, server, salt):
     """D9: psycopg/libpq stop reading the statement at NUL, so the server runs a prefix of what was hashed and filtered."""
-    if server.key == "postgresql":
-        defect(request, server, "D9", "a NUL byte silently truncates the statement on PostgreSQL")
     outcome = harness.attempt(lambda: salt.query("ro", "SELECT 1 AS a \x00 , 2 AS b"))
     observe("query-write", f"{server.key} NUL byte in SQL", harness.describe(outcome))
     assert outcome[0] == "ERR"

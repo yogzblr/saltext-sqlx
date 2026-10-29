@@ -332,3 +332,41 @@ def test_apply_caps_does_not_mutate_and_ping_is_untouched():
     out = options.apply_caps(opts, PROFILE_CAPS)
     assert out == opts and out is not opts
     assert "limit" not in out
+
+
+# ---- T11 D8, D9, D10 ------------------------------------------------------------------------
+def test_unknown_option_names_are_escaped_bounded_and_counted():
+    """D8: key names come from the caller; no raw newline, bidi control or 100 000-character name is echoed."""
+    kwargs = dict(MINIMAL["query"])
+    kwargs.update({"a\r\nINFO forged": 1, "‮evil": 1, "k" * 100_000: 1})
+    msg = _fails("E_OPTION_UNKNOWN", "query", kwargs)
+    assert "\n" not in msg and "\r" not in msg and "‮" not in msg
+    assert "\\r\\nINFO" in msg and len(msg) < 400
+
+
+def test_unknown_option_names_show_at_most_five_and_count_the_rest():
+    kwargs = dict(MINIMAL["query"], **{f"k{i}": 1 for i in range(9)})
+    msg = _fails("E_OPTION_UNKNOWN", "query", kwargs)
+    assert "'k0'" in msg and "'k4'" in msg and "'k5'" not in msg and msg.endswith("and 4 more")
+
+
+@pytest.mark.parametrize("func", ["query", "execute", "check_query_result", "check_row_count"])
+def test_nul_in_sql_is_refused(func):
+    msg = _fails("E_OPTION_INVALID", func, dict(MINIMAL[func], sql="select 1\x00; drop table x"))
+    assert "sql" in msg and "drop" not in msg
+
+
+def test_nul_in_other_text_options_is_refused_but_not_in_expected_or_params():
+    _fails("E_OPTION_INVALID", "table_list", {"profile": "p", "pattern": "a\x00b"})
+    _fails("E_OPTION_INVALID", "query", dict(MINIMAL["query"], profile="p\x00"))
+    out = options.validate(
+        "check_query_result", dict(MINIMAL["check_query_result"], expected="a\x00b")
+    )
+    assert out["expected"] == "a\x00b"
+
+
+@pytest.mark.parametrize("pause,expected", [(1e-9, 0.05), (0.001, 0.05), (0.05, 0.05), (2, 2)])
+@pytest.mark.parametrize("func", ["check_query_result", "check_row_count"])
+def test_retry_pause_has_a_floor(func, pause, expected):
+    opts = options.validate(func, dict(MINIMAL[func], retry_pause_s=pause))
+    assert options.apply_caps(opts, PROFILE_CAPS)["retry_pause_s"] == expected

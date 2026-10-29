@@ -591,3 +591,20 @@ def test_bool_is_not_ordered_against_numbers():
     assert check_value(True, ">", 0)["ok"] is False
     assert check_value(5, "<", True)["ok"] is False
     assert check_value(True, "==", True)["ok"] is True
+
+
+@pytest.mark.parametrize(
+    "expected,echoed",
+    [
+        (float("nan"), "NaN"),
+        (float("inf"), "Infinity"),
+        (float("-inf"), "-Infinity"),
+        (5, 5),
+        ("x", "x"),
+    ],
+)
+def test_expected_is_echoed_as_strict_json(expected, echoed):
+    """T11 D6: a NaN ``expected`` must not reach the return value as a float."""
+    result = checks.check_query_result(lambda: _result([[1]]), "==", expected)
+    assert result["expected"] == echoed
+    json.dumps(result, allow_nan=False)

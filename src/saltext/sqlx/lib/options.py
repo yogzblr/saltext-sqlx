@@ -18,6 +18,11 @@ HARD_MAX_TIMEOUT_MS = 300_000
 HARD_MAX_BYTES = 8 * 1024 * 1024
 HARD_MAX_CONNECT_TIMEOUT_S = 60
 HARD_MAX_RETRY_TIMEOUT_S = 10
+#: Floor for ``retry_pause_s``: every retry opens a new connection (T11 D10).
+MIN_RETRY_PAUSE_S = 0.05
+#: ``[E_OPTION_UNKNOWN]`` names at most this many keys, each cut to ``_NAME_WIDTH`` characters (T11 D8).
+_NAMES_SHOWN = 5
+_NAME_WIDTH = 40
 
 #: Operators of ``check_query_result`` that ignore ``expected``, so the key may be left out.
 NULL_OPERATORS = ("is_null", "is_not_null")
@@ -151,7 +156,11 @@ def validate(function, kwargs):
 
     unknown = sorted(str(k) for k in given if k not in schema)
     if unknown:
-        _fail("E_OPTION_UNKNOWN", f"unknown option(s) for sqlx.{function}: {', '.join(unknown)}")
+        # The names come from the caller: show them escaped (no newlines or bidi controls) and bounded (T11 D8).
+        shown = ", ".join(ascii(name)[:_NAME_WIDTH] for name in unknown[:_NAMES_SHOWN])
+        if len(unknown) > _NAMES_SHOWN:
+            shown += f" and {len(unknown) - _NAMES_SHOWN} more"
+        _fail("E_OPTION_UNKNOWN", f"unknown option(s) for sqlx.{function}: {shown}")
 
     out = {}
     for key, (kind, required, default) in schema.items():
@@ -163,6 +172,10 @@ def validate(function, kwargs):
             continue
         if not _valid(kind, value):
             _fail("E_OPTION_INVALID", f"option '{key}' must be {_KIND_DESCRIPTION[kind]}")
+        if kind in (_NAME, _TEXT, _OPT_TEXT) and "\x00" in value:
+            # libpq stops reading a statement at NUL, so the server would run a prefix of the text that was
+            # hashed for the audit record and checked by the verb filter (T11 D9).
+            _fail("E_OPTION_INVALID", f"option '{key}' must not contain a NUL character")
         out[key] = value
     if function == "check_query_result" and "expected" not in given:
         if out["operator"] not in NULL_OPERATORS:
@@ -196,4 +209,6 @@ def apply_caps(opts, profile):
         )
     if "retry_timeout_s" in out:
         out["retry_timeout_s"] = min(out["retry_timeout_s"], HARD_MAX_RETRY_TIMEOUT_S)
+    if "retry_pause_s" in out:
+        out["retry_pause_s"] = max(out["retry_pause_s"], MIN_RETRY_PAUSE_S)
     return out
