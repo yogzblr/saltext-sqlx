@@ -1,0 +1,391 @@
+"""Unit tests for saltext.sqlx.lib.engine (TEST_PLAN sections 3 and 4)."""
+
+import types
+
+import pytest
+import sqlalchemy
+from salt.exceptions import CommandExecutionError
+from salt.exceptions import SaltInvocationError
+from sqlalchemy.engine import Engine
+from sqlalchemy.pool import NullPool
+
+from saltext.sqlx.lib import dialects
+from saltext.sqlx.lib import engine
+
+PASSWORD = "p@ss:w/o%rd?Zq9-secret"
+
+
+def make(dialect="postgresql", **overrides):
+    prof = {
+        "name": "p",
+        "dialect": dialect,
+        "driver": dialects.DIALECT_DRIVERS[dialect],
+        "host": "127.0.0.1",
+        "port": 1,  # nothing listens here: real connection-refused errors, no network
+        "database": "orders",
+        "username": "salt_ro",
+        "query": {},
+        "connect_args": {},
+        "read_only": True,
+        "statement_timeout_ms": 30000,
+        "connect_timeout_s": 3,
+    }
+    prof.update(overrides)
+    return prof
+
+
+def _all_text(exc):
+    """Every string reachable from an exception: message, args, cause and context chain."""
+    seen = []
+    cur = exc
+    while cur is not None and cur not in seen:
+        seen.append(cur)
+        cur = cur.__cause__ or cur.__context__
+    return " | ".join(f"{type(e).__name__}: {e} {e.args!r}" for e in seen)
+
+
+def _assert_clean(exc):
+    text = _all_text(exc)
+    for needle in (PASSWORD, "p%40ss", "w%2Fo", "salt_ro:", "://"):
+        assert needle not in text, needle
+    assert exc.__cause__ is None
+    assert exc.__context__ is None
+
+
+# --- build_engine -----------------------------------------------------------------------------
+
+
+def test_build_engine_uses_nullpool():
+    eng = engine.build_engine(make(), PASSWORD)
+    try:
+        assert isinstance(eng, Engine)
+        assert isinstance(eng.pool, NullPool)
+        assert eng.url.password == PASSWORD
+        assert eng.url.drivername == "postgresql+psycopg"
+    finally:
+        eng.dispose()
+
+
+def test_build_engine_hides_parameters_and_does_not_echo():
+    eng = engine.build_engine(make(), PASSWORD)
+    try:
+        assert eng.hide_parameters is True
+        assert eng.echo is False
+    finally:
+        eng.dispose()
+
+
+def test_build_engine_passes_connect_timeout_and_allowlisted_args(monkeypatch):
+    seen = {}
+    real = sqlalchemy.create_engine
+
+    def spy(url, **kw):
+        seen["url"] = url
+        seen.update(kw)
+        return real(url, **kw)
+
+    monkeypatch.setattr(engine, "create_engine", spy)
+    eng = engine.build_engine(make(connect_timeout_s=7, connect_args={"application_name": "salt"}), PASSWORD)
+    eng.dispose()
+    assert seen["poolclass"] is NullPool
+    assert seen["connect_args"] == {"connect_timeout": 7, "application_name": "salt"}
+    assert isinstance(seen["url"], sqlalchemy.engine.URL)
+
+
+def test_build_engine_rejects_forbidden_connect_args():
+    with pytest.raises(SaltInvocationError) as exc:
+        engine.build_engine(make(connect_args={"ssl_context": object()}), PASSWORD)
+    assert str(exc.value).startswith("[E_POLICY]")
+
+
+def test_build_engine_timeout_override_can_only_lower(monkeypatch):
+    seen = {}
+    real = sqlalchemy.create_engine
+    monkeypatch.setattr(
+        engine, "create_engine", lambda url, **kw: seen.update(kw) or real(url, **kw)
+    )
+    prof = make("mssql", statement_timeout_ms=10_000)
+    engine.build_engine(prof, PASSWORD, timeout_ms=3000).dispose()
+    assert seen["connect_args"]["timeout"] == 3
+    engine.build_engine(prof, PASSWORD, timeout_ms=99_000).dispose()
+    assert seen["connect_args"]["timeout"] == 10
+    assert prof["statement_timeout_ms"] == 10_000
+
+
+def test_build_engine_missing_driver(monkeypatch):
+    def boom(name, *a, **k):
+        raise ImportError("x")
+
+    monkeypatch.setattr(dialects.importlib, "import_module", boom)
+    with pytest.raises(CommandExecutionError) as exc:
+        engine.build_engine(make(), PASSWORD)
+    assert str(exc.value).startswith("[E_DRIVER_MISSING]")
+    assert "saltext-sqlx[postgres]" in str(exc.value)
+
+
+# --- managed_engine: always disposes ----------------------------------------------------------
+
+
+class Spy:
+    def __init__(self, monkeypatch):
+        self.calls = 0
+        real = Engine.dispose
+
+        def dispose(this, *a, **k):
+            self.calls += 1
+            return real(this, *a, **k)
+
+        monkeypatch.setattr(Engine, "dispose", dispose)
+
+
+def test_managed_engine_disposes_on_success(monkeypatch):
+    spy = Spy(monkeypatch)
+    with engine.managed_engine(make(), PASSWORD) as eng:
+        assert isinstance(eng.pool, NullPool)
+    assert spy.calls == 1
+
+
+def test_managed_engine_disposes_when_body_raises(monkeypatch):
+    spy = Spy(monkeypatch)
+    with pytest.raises(RuntimeError):
+        with engine.managed_engine(make(), PASSWORD):
+            raise RuntimeError("boom")
+    assert spy.calls == 1
+
+
+def test_connection_disposes_when_connect_fails(monkeypatch):
+    spy = Spy(monkeypatch)
+    with pytest.raises(CommandExecutionError):
+        with engine.connection(make(), PASSWORD):
+            pass  # pragma: no cover
+    assert spy.calls == 1
+
+
+# --- first-connect failures -------------------------------------------------------------------
+
+
+def test_connection_refused_is_e_connect_without_secrets():
+    with pytest.raises(CommandExecutionError) as exc:
+        with engine.connection(make(), PASSWORD):
+            pass  # pragma: no cover
+    assert str(exc.value).startswith("[E_CONNECT] postgresql")
+    _assert_clean(exc.value)
+
+
+def test_sql_ascii_typeerror_gets_clear_utf8_message(monkeypatch):
+    def boom(self, *a, **k):
+        raise TypeError("cannot use a string pattern on a bytes-like object")
+
+    monkeypatch.setattr(Engine, "connect", boom)
+    with pytest.raises(CommandExecutionError) as exc:
+        with engine.connection(make(), PASSWORD):
+            pass  # pragma: no cover
+    msg = str(exc.value)
+    assert msg.startswith("[E_CONNECT] postgresql")
+    assert "UTF8" in msg
+    assert "SQL_ASCII" in msg
+    assert "TypeError" not in msg
+    _assert_clean(exc.value)
+
+
+def test_other_typeerror_is_e_internal_class_name_only(monkeypatch):
+    def boom(self, *a, **k):
+        raise TypeError(f"bad thing with {PASSWORD}")
+
+    monkeypatch.setattr(Engine, "connect", boom)
+    with pytest.raises(CommandExecutionError) as exc:
+        with engine.connection(make("mysql"), PASSWORD):
+            pass  # pragma: no cover
+    assert str(exc.value) == "[E_INTERNAL] mysql: TypeError"
+    _assert_clean(exc.value)
+
+
+def test_bytes_typeerror_on_non_postgres_is_not_the_ascii_message(monkeypatch):
+    def boom(self, *a, **k):
+        raise TypeError("cannot use a string pattern on a bytes-like object")
+
+    monkeypatch.setattr(Engine, "connect", boom)
+    with pytest.raises(CommandExecutionError) as exc:
+        with engine.connection(make("mssql"), PASSWORD):
+            pass  # pragma: no cover
+    assert "SQL_ASCII" not in str(exc.value)
+
+
+@pytest.mark.parametrize(
+    "variant",
+    ["{pw}", "user=salt_ro password={pw} host=h", "postgresql://u:{q}@h/db", "{q}", "{qp}"],
+)
+def test_driver_message_containing_password_is_scrubbed(monkeypatch, variant):
+    from urllib.parse import quote
+    from urllib.parse import quote_plus
+
+    text = variant.format(pw=PASSWORD, q=quote(PASSWORD, safe=""), qp=quote_plus(PASSWORD))
+
+    def boom(self, *a, **k):
+        raise sqlalchemy.exc.OperationalError("connect", {}, Exception(text))
+
+    monkeypatch.setattr(Engine, "connect", boom)
+    with pytest.raises(CommandExecutionError) as exc:
+        with engine.connection(make(), PASSWORD):
+            pass  # pragma: no cover
+    assert str(exc.value).startswith("[E_CONNECT] postgresql")
+    assert "***" in str(exc.value)
+    _assert_clean(exc.value)
+
+
+class _Orig(Exception):
+    """Stand-in for a driver exception; attributes mimic the real drivers (SPEC section 8)."""
+
+
+def _pg(sqlstate, message):
+    err = _Orig(message)
+    err.sqlstate = sqlstate
+    return err
+
+
+def _oracle(code, message):
+    return _Orig(types.SimpleNamespace(code=code, message=message))
+
+
+@pytest.mark.parametrize(
+    "dialect,err,code",
+    [
+        ("postgresql", _pg("28P01", "password authentication failed"), "E_AUTH_FAILED"),
+        ("postgresql", _pg("28000", "no pg_hba.conf entry"), "E_AUTH_FAILED"),
+        ("postgresql", _pg("08006", "connection failure"), "E_CONNECT"),
+        ("postgresql", _Orig("connection refused"), "E_CONNECT"),
+        ("mysql", _Orig(1045, "Access denied"), "E_AUTH_FAILED"),
+        ("mysql", _Orig(2003, "Can't connect"), "E_CONNECT"),
+        ("oracle", _oracle(1017, "invalid credential"), "E_AUTH_FAILED"),
+        ("oracle", _oracle(12541, "no listener"), "E_CONNECT"),
+        ("mssql", _Orig(18456, "Login failed"), "E_AUTH_FAILED"),
+        ("mssql", _Orig(20009, "Unable to connect"), "E_CONNECT"),
+    ],
+)
+def test_connect_failure_codes(monkeypatch, dialect, err, code):
+    def boom(self, *a, **k):
+        raise sqlalchemy.exc.OperationalError("connect", {}, err)
+
+    monkeypatch.setattr(Engine, "connect", boom)
+    with pytest.raises(CommandExecutionError) as exc:
+        with engine.connection(make(dialect), PASSWORD):
+            pass  # pragma: no cover
+    assert str(exc.value).startswith(f"[{code}] {dialect}")
+    _assert_clean(exc.value)
+
+
+def test_error_message_is_single_line_and_bounded(monkeypatch):
+    def boom(self, *a, **k):
+        raise sqlalchemy.exc.OperationalError("connect", {}, Exception("line1\nline2 " + "x" * 5000))
+
+    monkeypatch.setattr(Engine, "connect", boom)
+    with pytest.raises(CommandExecutionError) as exc:
+        with engine.connection(make(), PASSWORD):
+            pass  # pragma: no cover
+    assert "\n" not in str(exc.value)
+    assert len(str(exc.value)) < 600
+
+
+# --- connection: session setup ----------------------------------------------------------------
+
+
+class ConnStub:
+    def __init__(self):
+        self.statements = []
+        self.closed = False
+
+    def exec_driver_sql(self, sql, *a):
+        self.statements.append(sql)
+
+    def close(self):
+        self.closed = True
+
+
+def test_connection_applies_session_setup_and_closes(monkeypatch):
+    stub = ConnStub()
+    monkeypatch.setattr(Engine, "connect", lambda self, *a, **k: stub)
+    with engine.connection(make(), PASSWORD, timeout_ms=2000) as conn:
+        assert conn is stub
+        assert stub.statements == ["SET statement_timeout = 2000", "SET TRANSACTION READ ONLY"]
+    assert stub.closed
+
+
+def test_connection_defaults_to_profile_timeout_and_read_only(monkeypatch):
+    stub = ConnStub()
+    monkeypatch.setattr(Engine, "connect", lambda self, *a, **k: stub)
+    with engine.connection(make(read_only=False), PASSWORD):
+        pass
+    assert stub.statements == ["SET statement_timeout = 30000"]
+
+
+def test_connection_timeout_override_cannot_raise_profile_value(monkeypatch):
+    stub = ConnStub()
+    monkeypatch.setattr(Engine, "connect", lambda self, *a, **k: stub)
+    with engine.connection(make(statement_timeout_ms=5000), PASSWORD, timeout_ms=60_000):
+        pass
+    assert stub.statements[0] == "SET statement_timeout = 5000"
+
+
+def test_connection_read_only_override(monkeypatch):
+    stub = ConnStub()
+    monkeypatch.setattr(Engine, "connect", lambda self, *a, **k: stub)
+    with engine.connection(make(), PASSWORD, read_only=False):
+        pass
+    assert stub.statements == ["SET statement_timeout = 30000"]
+
+
+def test_connection_closes_and_disposes_when_body_raises(monkeypatch):
+    stub = ConnStub()
+    spy = Spy(monkeypatch)
+    monkeypatch.setattr(Engine, "connect", lambda self, *a, **k: stub)
+    with pytest.raises(ValueError):
+        with engine.connection(make(), PASSWORD):
+            raise ValueError("x")
+    assert stub.closed
+    assert spy.calls == 1
+
+
+def test_connection_setup_failure_closes_and_disposes(monkeypatch):
+    class BadStub(ConnStub):
+        def exec_driver_sql(self, sql, *a):
+            raise RuntimeError("setup failed")
+
+    stub = BadStub()
+    spy = Spy(monkeypatch)
+    monkeypatch.setattr(Engine, "connect", lambda self, *a, **k: stub)
+    with pytest.raises(RuntimeError):
+        with engine.connection(make(), PASSWORD):
+            pass  # pragma: no cover
+    assert stub.closed
+    assert spy.calls == 1
+
+
+# --- ping -------------------------------------------------------------------------------------
+
+
+def test_ping_returns_spec_shape(monkeypatch):
+    class Res:
+        def scalar(self):
+            return "16.4"
+
+    class PingStub(ConnStub):
+        def exec_driver_sql(self, sql, *a):
+            self.statements.append(sql)
+            return Res()
+
+    stub = PingStub()
+    monkeypatch.setattr(Engine, "connect", lambda self, *a, **k: stub)
+    out = engine.ping(make(), PASSWORD)
+    assert out["ok"] is True
+    assert out["dialect"] == "postgresql"
+    assert out["server_version"] == "16.4"
+    assert isinstance(out["elapsed_ms"], int)
+    assert "SELECT 1" in stub.statements
+    assert stub.closed
+
+
+def test_ping_failure_propagates_e_connect():
+    with pytest.raises(CommandExecutionError) as exc:
+        engine.ping(make(), PASSWORD)
+    assert str(exc.value).startswith("[E_CONNECT]")
+    _assert_clean(exc.value)
