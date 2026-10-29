@@ -1,0 +1,30 @@
+---
+description: saltext-sqlx — multi-database SQL Salt extension. Always-on project rules.
+alwaysApply: true
+---
+
+# saltext-sqlx rules
+
+Authoritative docs (read before editing code): @BUILD_PROMPT.md @SPEC.md @ARCHITECTURE.md @SECURITY.md @TEST_PLAN.md @TASKS.md
+
+## Always
+- Work through `TASKS.md` one task at a time, in order. Stop at the gate and summarise.
+- Unit test first for anything under `src/saltext/sqlx/lib/`. Keep `modules/sqlx_mod.py` thin.
+- If `SPEC.md` is wrong, fix it in the same change. Record real DB behaviour in `docs/WIRE_SHAPES.md`.
+
+## Never
+- Return `[]`, `False`, `None` or a dict for a failure. All failures go through `lib/errors.py` and raise `CommandExecutionError("[E_CODE] ...")`.
+- Let a caller supply host, port, driver, URL, `connect_args` or credentials. Profiles only.
+- Call `commit(` outside `runner.run_execute`. `query` always rolls back.
+- Claim the module enforces read-only. The session guard is bypassable (verified); the DB role is the control.
+- Use `exec_driver_sql` for caller SQL, or f-string a URL (use `URL.create`).
+- Write `:x::type` binds (use `CAST(:x AS type)`), or leave literal colons in strings unescaped (`\:`).
+- Log or return SQL text, params, rows, URLs or secrets. Mask `*password*` / `*secret*` / `*token*`.
+- Add a GPL dependency (`mysqlclient`) or vendor/patch an LGPL one. Ask before adding any dependency.
+- Run Python with `src/saltext` as the working directory.
+
+## Remember
+- Dialects: postgresql→psycopg, mysql→PyMySQL, oracle→oracledb (thin), mssql→pymssql. Import drivers only in `lib/dialects.py`, lazily.
+- One engine per call, `NullPool`, `dispose()` in `finally`. Drop kwargs starting with `__`.
+- Hard caps in code: rows 10 000, bytes 8 MiB, timeout 300 s, retry 10 s. Profile/call may only lower them.
+- Create PostgreSQL test databases as UTF8.

@@ -1,0 +1,75 @@
+# saltext-sqlx — TEST PLAN
+
+Unit tests prove validation, mapping, limits and serialisation with no network. Functional tests prove behaviour against
+**real databases** for every dialect. Do not mock SQLAlchemy engines in functional tests: the bugs this module exists to
+avoid (lost errors, wrong exception classes, encoding) only show up against a real server.
+
+## 1. Layers
+
+| Layer | Needs | Where |
+|---|---|---|
+| Unit | Python only (SQLite via `sqlite+pysqlite` is allowed for generic runner tests) | `tests/unit/` |
+| Functional | Docker + per-dialect containers | `tests/functional/`, marker per dialect (`pg`, `mysql`, `mariadb`, `oracle`, `mssql`) |
+| Salt integration | `pytest-salt-factories` master + minion | `tests/integration/` |
+| Manual smoke | real `salt-api` | SPEC section 11 |
+
+Run matrix: Salt 3008.x (primary), 3007.x and 3006.x (compat); SQLAlchemy 2.0.x now, 2.1.x when D4 is resolved.
+
+## 2. Test databases (STARTING POINT — only PostgreSQL has been run)
+
+| Dialect | Suggested image | Notes |
+|---|---|---|
+| PostgreSQL | `postgres:16` | **Create the database as UTF8.** A SQL_ASCII database makes psycopg 3 return `bytes` for text and SQLAlchemy crashes at first connect with `TypeError: cannot use a string pattern on a bytes-like object` (seen when a cluster was created under the C locale). `initdb -E UTF8` or `POSTGRES_INITDB_ARGS="-E UTF8"` |
+| MySQL | `mysql:8` | `MAX_EXECUTION_TIME` applies to SELECT only |
+| MariaDB | `mariadb:11` | timeout variable is `max_statement_time` (seconds) |
+| Oracle | `gvenzl/oracle-free` | thin mode, no Instant Client |
+| SQL Server | `mcr.microsoft.com/mssql/server` | requires accepting the vendor EULA in the compose file; ARM hosts may need emulation |
+
+Image tags and start-up flags have **not been tested**; T1 fixes them and records changes in `tests-support/NOTES.md`.
+Each database gets two accounts: `ro` (SELECT only) and `rw` (DML on a scratch schema), plus a seeded `orders` table with
+text, numeric, timestamp, UUID/GUID, binary, JSON and NULL columns.
+
+## 3. Unit tests
+
+| File | Must cover |
+|---|---|
+| `test_options.py` | `__pub_*`/`__kwarg__` dropped; unknown key → `E_OPTION_UNKNOWN`; caps can only be lowered; wrong types → `E_OPTION_INVALID` |
+| `test_profiles.py` | required keys; unknown key → `E_PROFILE_INVALID`; dialect/driver mismatch; defaults; call cannot override host/driver/url/connect_args |
+| `test_secrets.py` | `sdb://` via injected callable; empty → `E_SECRET`; masking: no exception text or log record contains the secret, parametrised over every error path |
+| `test_dialects.py` | URL built with `URL.create` for passwords containing `@ : / % ?`; connect_args allowlist; session-setup SQL uses `int()`-validated values |
+| `test_errors.py` | table-driven: (dialect, sqlstate/vendor code, class) → code; includes the five observed PostgreSQL rows from SPEC section 8; unknown → `E_INTERNAL` with class name only; `error_detail` false drops DETAIL; SQL text and params never in a message |
+| `test_serialize.py` | each type in SPEC section 9; NaN/Infinity; very large ints; `bytes`; nested JSON; everything passes `json.dumps` |
+| `test_runner.py` (SQLite) | `limit+1` truncation; `max_bytes` truncation; no-row statements; `query` always rolls back (assert via a second connection); `execute` commits only when allowed and not `dry_run` |
+| `test_checks.py` | every operator; numeric-string comparison; missing cell → `ok:false`; truncated row count → `ok:null`; retry loop honours cap using a fake clock |
+| `test_text_binds.py` | the three verified `text()` traps: `:name::int` is **not** a bind; `'{"a":1}'` needs `\:`; `%` fine under `text()` |
+| `test_guard.py` | source scan: `commit(` only in `runner.run_execute`; no `exec_driver_sql(` called with caller SQL; no import of a driver outside `dialects.py` |
+| `test_module.py` | `__virtual__` with/without SQLAlchemy; each function with an injected fake runner; returns JSON-serialisable |
+
+## 4. Functional tests (every dialect)
+
+| Area | Cases |
+|---|---|
+| `ping` | version string; wrong password → `E_AUTH_FAILED`; wrong port → `E_CONNECT`; unknown database |
+| `query` | typed columns round-trip (SPEC section 9); NULLs; empty result; `limit` and `truncated`; binds with `CAST(:x AS ...)`; Unicode text; large value vs `max_bytes` |
+| **error fidelity** | for each of: syntax error, missing table, missing column, division by zero, unique violation, permission denied, statement timeout — assert the code **and** that the message contains the server's own text. **Record every real exception class/code in `docs/WIRE_SHAPES.md` and correct SPEC section 8 where it differs.** |
+| timeout | long sleep statement cancelled at `statement_timeout_ms` → `E_TIMEOUT` (each dialect's mechanism per SPEC section 7) |
+| **read-only proofs** | as `ro` account: INSERT/UPDATE/DELETE/DDL refused by the database. As `rw` account through `query`: a write must not persist (rollback). Re-run the bypass attempts from SECURITY section 2 on every dialect and record the results |
+| `execute` | disabled profile → `E_EXECUTE_DISABLED`; enabled: INSERT/UPDATE/DELETE with correct `rows_affected`; `dry_run` leaves data unchanged; verb outside `execute_verbs` → `E_POLICY`; commit visible from a second connection |
+| `check_*` | pass, fail, retry-until-pass (insert from the harness mid-wait), truncated |
+| `table_list` | schemas, views, pattern |
+| encoding | PostgreSQL SQL_ASCII regression: expect a clear error or documented requirement, not a bare `TypeError` (wrap `engine.build` first-connect failures as `E_CONNECT`/`E_INTERNAL` with the class name) |
+
+## 5. Salt integration and REST
+
+Use `pytest-salt-factories`. 1) Call through `LocalClient().cmd(tgt, "sqlx.query", kwarg={...})` with JSON-typed kwargs
+(`params` as an object, `limit` as an int) — the same load path as `salt-api` minus HTTP. 2) `__pub_*` keys do not
+trigger `E_OPTION_UNKNOWN`; a typo'd option does. 3) With the real minion, a failing statement returns
+`ERROR: [E_SQL] ...` and retcode 1 (assert with `full_return`). 4) `sdb://` password resolution with a throwaway profile.
+5) eauth regex on `profile` from SECURITY section 4 refuses a non-matching profile. 6) Manual smoke with `curl` from SPEC
+section 11; record the exact command in the README.
+
+## 6. CI
+
+`nox` sessions: `lint`, `unit` (3.10–3.12), `functional-<dialect>`, `integration`. Fail the build on coverage under 90%
+for `src/saltext/sqlx/lib`, any `commit(` outside `run_execute`, and any dependency whose licence is outside MIT / BSD /
+Apache-2.0 / LGPL (`pip-licenses`; GPL fails).
