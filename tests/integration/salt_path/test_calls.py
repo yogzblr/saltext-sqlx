@@ -120,19 +120,12 @@ def test_sdb_password_resolution(call):
 
 
 @pytest.mark.pg
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "DEFECT in sqlx_mod._run: __salt__['config.get']('sqlx') resolves sdb:// itself, and a key missing from the "
-        "yaml sdb becomes password=None, which profiles.load_profile treats as 'no password'. The module then connects "
-        "without a password and returns '[E_INTERNAL] postgresql: OperationalError' instead of '[E_SECRET] ...'."
-    ),
-)
 def test_sdb_reference_that_does_not_resolve_is_e_secret(call):
     ret, retcode, _ = call("sqlx.ping", profile="pg_sdb_missing")
     assert retcode == 1
-    assert ret.startswith("ERROR: [E_SECRET] ")
-    assert "sdb://t10_sdb/t10_no_such_key" in ret
+    # SaltInvocationError is presented as "ERROR executing '<fun>': [E_...] ..." (CommandExecutionError: "ERROR: [E_...]")
+    assert ret.startswith("ERROR executing 'sqlx.ping': [E_SECRET] ")
+    assert "did not resolve" in ret
     assert RO_PASSWORD not in ret
 
 

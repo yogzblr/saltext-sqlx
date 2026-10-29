@@ -70,6 +70,11 @@ def test_password_is_optional():
     assert profiles.validate_profile("p", raw).get("password") is None
 
 
+def test_null_password_is_e_secret_not_no_password():
+    """An unresolvable sdb:// reference arrives as None from config.get; it must not mean 'no password'."""
+    _fails("E_SECRET", profiles.validate_profile, "p", make(password=None))
+
+
 @pytest.mark.parametrize("bad", ["", "sdb://", 5, ["x"]])
 def test_bad_password(bad):
     _fails("E_PROFILE_INVALID", profiles.validate_profile, "p", make(password=bad))

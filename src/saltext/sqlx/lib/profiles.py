@@ -111,6 +111,14 @@ def validate_profile(name, raw):
     out["port"] = port
 
     password = raw.get("password")
+    if "password" in raw and password is None:
+        # Salt's config.get resolves sdb:// itself and turns an unresolvable reference into None. Treating that as
+        # "no password" would connect without one and hide the real cause (found by the T10 integration suite).
+        _fail(
+            "E_SECRET",
+            f"profile '{name}': 'password' is present but null (an sdb:// reference that did not resolve?); "
+            "omit the key for no password",
+        )
     if password is not None:
         if not isinstance(password, str) or not password or password == _SDB_PREFIX:
             _invalid(name, "'password' must be a non-empty string or a complete sdb:// reference")
