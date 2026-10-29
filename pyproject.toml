@@ -122,6 +122,15 @@ build_dir = "build/sphinx"
 [tool.black]
 line-length = 100
 
+[tool.pytest.ini_options]
+markers = [
+    "pg: needs the PostgreSQL test server (tests-support/up.sh)",
+    "mysql: needs the MySQL test server",
+    "mariadb: needs the MariaDB test server",
+    "oracle: needs the Oracle test server (NOT RUN in the build environment)",
+    "mssql: needs the SQL Server test server (NOT RUN in the build environment)",
+]
+
 [tool.isort]
 force_single_line = true
 skip = ["src/saltext/sqlx/__init__.py"]

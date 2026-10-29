@@ -162,7 +162,7 @@ def test_managed_engine_disposes_when_body_raises(monkeypatch):
     assert spy.calls == 1
 
 
-def _refuse(monkeypatch, message="connection refused"):
+def _refuse(monkeypatch, message="connection failed: Connection refused"):
     def boom(self, *a, **k):
         raise sqlalchemy.exc.OperationalError("connect", {}, Exception(message))
 
@@ -182,11 +182,11 @@ def test_connection_disposes_when_connect_fails(monkeypatch):
 
 
 def test_connection_refused_is_e_connect_without_secrets(monkeypatch):
-    _refuse(monkeypatch, "connection refused")
+    _refuse(monkeypatch, "connection failed: Connection refused")
     with pytest.raises(CommandExecutionError) as exc:
         with engine.connection(make(), PASSWORD):
             pass  # pragma: no cover
-    assert str(exc.value) == "[E_CONNECT] postgresql: connection refused"
+    assert str(exc.value) == "[E_CONNECT] postgresql: connection failed: Connection refused"
     _assert_clean(exc.value)
 
 
@@ -198,7 +198,8 @@ def test_oserror_at_connect_is_e_connect(monkeypatch):
     with pytest.raises(CommandExecutionError) as exc:
         with engine.connection(make(), PASSWORD):
             pass  # pragma: no cover
-    assert str(exc.value).startswith("[E_CONNECT] postgresql: [Errno -2]")
+    # errors.raise_for is the one path: a raw OSError is not a driver error, so class name only
+    assert str(exc.value) == "[E_INTERNAL] postgresql: OSError"
     _assert_clean(exc.value)
 
 
@@ -243,7 +244,13 @@ def test_bytes_typeerror_on_non_postgres_is_not_the_ascii_message(monkeypatch):
 
 @pytest.mark.parametrize(
     "variant",
-    ["{pw}", "user=salt_ro password={pw} host=h", "postgresql://u:{q}@h/db", "{q}", "{qp}"],
+    [
+        "Connection refused {pw}",
+        "Connection refused user=salt_ro password={pw} host=h",
+        "Connection refused postgresql://u:{q}@h/db",
+        "Connection refused {q}",
+        "Connection refused {qp}",
+    ],
 )
 def test_driver_message_containing_password_is_scrubbed(monkeypatch, variant):
     text = variant.format(pw=PASSWORD, q=quote(PASSWORD, safe=""), qp=quote_plus(PASSWORD))
@@ -270,8 +277,12 @@ def _pg(sqlstate, message):
     return err
 
 
-def _oracle(code, message):
-    return _Orig(types.SimpleNamespace(code=code, message=message))
+def _oracle(full_code, message):
+    return _Orig(types.SimpleNamespace(full_code=full_code, message=message))
+
+
+def _mssql(code, message):
+    return _Orig((code, message.encode()))
 
 
 @pytest.mark.parametrize(
@@ -280,7 +291,7 @@ def _oracle(code, message):
         ("postgresql", _pg("28P01", "password authentication failed"), "E_AUTH_FAILED"),
         ("postgresql", _pg("28000", "no pg_hba.conf entry"), "E_AUTH_FAILED"),
         ("postgresql", _pg("08006", "connection failure"), "E_CONNECT"),
-        ("postgresql", _Orig("connection refused"), "E_CONNECT"),
+        ("postgresql", _Orig("connection failed: Connection refused"), "E_CONNECT"),
         # VERIFIED: psycopg 3 connect failures have no sqlstate; only the text identifies a bad password
         (
             "postgresql",
@@ -289,10 +300,12 @@ def _oracle(code, message):
         ),
         ("mysql", _Orig(1045, "Access denied"), "E_AUTH_FAILED"),
         ("mysql", _Orig(2003, "Can't connect"), "E_CONNECT"),
-        ("oracle", _oracle(1017, "invalid credential"), "E_AUTH_FAILED"),
-        ("oracle", _oracle(12541, "no listener"), "E_CONNECT"),
-        ("mssql", _Orig(18456, "Login failed"), "E_AUTH_FAILED"),
-        ("mssql", _Orig(20009, "Unable to connect"), "E_CONNECT"),
+        # Oracle and SQL Server: only the client-side connect rows are observed (SPEC section 8); the rest is
+        # UNVERIFIED and falls to E_INTERNAL with the class name only until T1b runs them.
+        ("oracle", _oracle("DPY-6005", "cannot connect"), "E_CONNECT"),
+        ("oracle", _oracle("ORA-01017", "invalid credential"), "E_INTERNAL"),
+        ("mssql", _mssql(20009, "Unable to connect"), "E_CONNECT"),
+        ("mssql", _mssql(18456, "Login failed"), "E_INTERNAL"),
     ],
 )
 def test_connect_failure_codes(monkeypatch, dialect, err, code):
@@ -388,9 +401,10 @@ def test_connection_setup_failure_closes_and_disposes(monkeypatch):
     stub = BadStub()
     spy = Spy(monkeypatch)
     monkeypatch.setattr(Engine, "connect", lambda self, *a, **k: stub)
-    with pytest.raises(RuntimeError):
+    with pytest.raises(CommandExecutionError) as exc:
         with engine.connection(make(), PASSWORD):
             pass  # pragma: no cover
+    assert str(exc.value) == "[E_INTERNAL] postgresql: RuntimeError"
     assert stub.closed
     assert spy.calls == 1
 
@@ -425,3 +439,73 @@ def test_ping_failure_propagates_e_connect(monkeypatch):
         engine.ping(make(), PASSWORD)
     assert str(exc.value).startswith("[E_CONNECT]")
     _assert_clean(exc.value)
+
+
+# --- one error path: failures after connect also go through errors.raise_for -------------------
+
+
+def test_connection_uses_errors_raise_for_for_connect_failures(monkeypatch):
+    seen = []
+    real = engine.errors.raise_for
+
+    def spy(exc, dialect, error_detail=False):
+        seen.append((dialect, error_detail))
+        return real(exc, dialect, error_detail=error_detail)
+
+    monkeypatch.setattr(engine.errors, "raise_for", spy)
+    _refuse(monkeypatch)
+    with pytest.raises(CommandExecutionError):
+        with engine.connection(make(error_detail=True), PASSWORD):
+            pass  # pragma: no cover
+    assert seen == [("postgresql", True)]
+
+
+def test_session_setup_failure_goes_through_raise_for(monkeypatch):
+    class BadStub(ConnStub):
+        def exec_driver_sql(self, sql, *_):
+            raise sqlalchemy.exc.ProgrammingError("SET", {}, _pg("42601", "syntax error"))
+
+    stub = BadStub()
+    monkeypatch.setattr(Engine, "connect", lambda self, *a, **k: stub)
+    with pytest.raises(CommandExecutionError) as exc:
+        with engine.connection(make(), PASSWORD):
+            pass  # pragma: no cover
+    assert str(exc.value) == "[E_SQL] postgresql 42601: syntax error"
+    assert stub.closed
+    _assert_clean(exc.value)
+
+
+def test_ping_statement_failure_goes_through_raise_for(monkeypatch):
+    class BadPing(ConnStub):
+        def exec_driver_sql(self, sql, *_):
+            if sql == "SELECT 1":
+                raise sqlalchemy.exc.OperationalError(sql, {}, _pg("57014", "canceling statement"))
+
+    stub = BadPing()
+    monkeypatch.setattr(Engine, "connect", lambda self, *a, **k: stub)
+    with pytest.raises(CommandExecutionError) as exc:
+        engine.ping(make(), PASSWORD)
+    assert str(exc.value) == "[E_TIMEOUT] postgresql 57014: canceling statement"
+    assert exc.value.__cause__ is None and exc.value.__context__ is None
+    assert stub.closed
+
+
+def test_ping_raw_exception_is_e_internal_class_only(monkeypatch):
+    class BadPing(ConnStub):
+        def exec_driver_sql(self, sql, *_):
+            if sql == "SELECT 1":
+                raise RuntimeError(f"secret {PASSWORD}")
+
+    monkeypatch.setattr(Engine, "connect", lambda self, *a, **k: BadPing())
+    with pytest.raises(CommandExecutionError) as exc:
+        engine.ping(make(), PASSWORD)
+    assert str(exc.value) == "[E_INTERNAL] postgresql: RuntimeError"
+    _assert_clean(exc.value)
+
+
+def test_body_exceptions_propagate_unchanged(monkeypatch):
+    monkeypatch.setattr(Engine, "connect", lambda self, *a, **k: ConnStub())
+    with pytest.raises(CommandExecutionError) as exc:
+        with engine.connection(make(), PASSWORD):
+            raise CommandExecutionError("[E_EXECUTE_DISABLED] nope")
+    assert str(exc.value) == "[E_EXECUTE_DISABLED] nope"

@@ -173,6 +173,9 @@ def test_ping_requires_profile():
         ("check_query_result", "retry_timeout_s", "3"),
         ("check_query_result", "retry_timeout_s", -1),
         ("check_query_result", "retry_pause_s", -0.5),
+        ("check_query_result", "retry_pause_s", 0),
+        ("check_query_result", "retry_pause_s", 0.0),
+        ("check_row_count", "retry_pause_s", 0),
         ("check_query_result", "retry_pause_s", True),
         ("table_list", "schema", 7),
         ("table_list", "pattern", ["a"]),
@@ -218,9 +221,33 @@ def test_check_defaults_and_numeric_types():
     assert out["row"] == 0 and out["column"] == 0
     assert out["retry_timeout_s"] == 0 and out["retry_pause_s"] == 1
     out = options.validate(
-        "check_row_count", dict(MINIMAL["check_row_count"], retry_timeout_s=2.5, retry_pause_s=0)
+        "check_row_count", dict(MINIMAL["check_row_count"], retry_timeout_s=2.5, retry_pause_s=0.25)
     )
-    assert out["retry_timeout_s"] == 2.5 and out["retry_pause_s"] == 0
+    assert out["retry_timeout_s"] == 2.5 and out["retry_pause_s"] == 0.25
+
+
+@pytest.mark.parametrize("operator", ["is_null", "is_not_null"])
+def test_expected_is_optional_for_null_operators(operator):
+    kwargs = {"profile": "p", "sql": "select 1", "operator": operator}
+    out = options.validate("check_query_result", kwargs)
+    assert out["expected"] is None
+
+
+@pytest.mark.parametrize("operator", ["==", "!=", "<", "contains", "bogus"])
+def test_expected_is_required_for_other_operators(operator):
+    kwargs = {"profile": "p", "sql": "select 1", "operator": operator}
+    msg = _fails("E_OPTION_INVALID", "check_query_result", kwargs)
+    assert "expected" in msg
+
+
+def test_expected_null_is_still_accepted_for_comparison_operators():
+    kwargs = {"profile": "p", "sql": "select 1", "operator": "==", "expected": None}
+    assert options.validate("check_query_result", kwargs)["expected"] is None
+
+
+def test_check_row_count_always_requires_expected():
+    kwargs = {"profile": "p", "sql": "select 1", "operator": "=="}
+    _fails("E_OPTION_INVALID", "check_row_count", kwargs)
 
 
 def test_execute_dry_run_default_false():
