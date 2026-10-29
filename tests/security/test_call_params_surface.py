@@ -326,9 +326,7 @@ def test_the_minions_own_libpq_environment_is_not_offered_to_a_retargeted_target
         assert leaked not in fake.seen()
 
 
-def test_control_the_environment_is_used_when_the_target_is_not_retargeted(
-    cfg, fake, monkeypatch
-):
+def test_control_the_environment_is_used_when_the_target_is_not_retargeted(cfg, fake, monkeypatch):
     """The guard is limited to retargeted calls: a profile without a password keeps libpq's normal behaviour."""
     cfg["profiles"]["base"].pop("password")
     cfg["profiles"]["base"]["port"] = fake.port

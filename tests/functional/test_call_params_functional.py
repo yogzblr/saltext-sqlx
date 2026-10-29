@@ -197,12 +197,14 @@ def test_unresolvable_call_reference_is_e_secret_without_the_reference(cfg, serv
 def test_every_connecting_function_takes_the_parameters(cfg, server):
     kw = target(server)
     sql = f"select count(*) from {server.table}"
-    assert mod.check_query_result(
-        profile="base", sql=sql, operator="==", expected=2, **kw
+    assert mod.check_query_result(profile="base", sql=sql, operator="==", expected=2, **kw)["ok"]
+    assert mod.check_row_count(
+        profile="base", sql=f"select k from {server.table}", operator="==", expected=2, **kw
     )["ok"]
-    assert mod.check_row_count(profile="base", sql=f"select k from {server.table}", operator="==", expected=2, **kw)["ok"]
     assert mod.ping(profile="base", **kw)["ok"]
-    tables = mod.table_list(profile="base", pattern=server.table.split(".")[1], schema="scratch", **kw)
+    tables = mod.table_list(
+        profile="base", pattern=server.table.split(".")[1], schema="scratch", **kw
+    )
     assert tables["tables"] == [server.table.split(".")[1]]
 
 
@@ -218,10 +220,23 @@ def test_execute_with_call_parameters_commits(cfg, server):
 
 def test_execute_still_needs_allow_execute_on_the_profile(cfg, server):
     with pytest.raises(CommandExecutionError, match=r"^\[E_EXECUTE_DISABLED\]"):
-        mod.execute(profile="base", sql=f"insert into {server.table} values ('y', 1)", **target(server, username="rw", password="sdb://vault/rw"))
+        mod.execute(
+            profile="base",
+            sql=f"insert into {server.table} values ('y', 1)",
+            **target(server, username="rw", password="sdb://vault/rw"),
+        )
     with pytest.raises(CommandExecutionError, match=r"^\[E_EXECUTE_DISABLED\]"):
         del cfg["default_profile"]
-        mod.execute(sql=f"insert into {server.table} values ('y', 1)", **target(server, username="rw", password="sdb://vault/rw", dialect=server.dialect, database=server.cfg["database"]))
+        mod.execute(
+            sql=f"insert into {server.table} values ('y', 1)",
+            **target(
+                server,
+                username="rw",
+                password="sdb://vault/rw",
+                dialect=server.dialect,
+                database=server.cfg["database"],
+            ),
+        )
     assert server.verify(f"select count(*) from {server.table} where k = 'y'") == [(0,)]
 
 
@@ -251,9 +266,16 @@ def test_statement_timeout_can_be_lowered(cfg, server):
     if server.key != "postgresql":
         pytest.skip("pg_sleep statement timeout is verified on PostgreSQL only here")
     with pytest.raises(CommandExecutionError, match=r"^\[E_TIMEOUT\]"):
-        mod.query(profile="base", sql="select pg_sleep(3)", statement_timeout_ms=200, **target(server))
+        mod.query(
+            profile="base", sql="select pg_sleep(3)", statement_timeout_ms=200, **target(server)
+        )
     # a call cannot raise the ceiling: 10**9 is clamped to the default 30 s, so a 1 s sleep succeeds
-    assert mod.query(profile="base", sql="select pg_sleep(1)", statement_timeout_ms=10**9, **target(server))["row_count"] == 1
+    assert (
+        mod.query(
+            profile="base", sql="select pg_sleep(1)", statement_timeout_ms=10**9, **target(server)
+        )["row_count"]
+        == 1
+    )
 
 
 # -- a disallowed host never gets a TCP connection -----------------------------------------------------------------------
@@ -319,8 +341,19 @@ def test_psql_query_on_postgresql(cfg, server):
         password="sdb://vault/ro",
     )
     assert out == [{"one": "1", "nothing": None, "s": "x"}]
-    with pytest.raises(CommandExecutionError, match=r'^\[E_SQL\] postgresql 42P01: relation "t12_nope" does not exist'):
-        mod.psql_query("select * from t12_nope", **{"user": "ro", "host": HOST, "port": server.cfg["port"], "password": "sdb://vault/ro"})
+    with pytest.raises(
+        CommandExecutionError,
+        match=r'^\[E_SQL\] postgresql 42P01: relation "t12_nope" does not exist',
+    ):
+        mod.psql_query(
+            "select * from t12_nope",
+            **{
+                "user": "ro",
+                "host": HOST,
+                "port": server.cfg["port"],
+                "password": "sdb://vault/ro",
+            },
+        )
     with pytest.raises(SaltInvocationError, match="runas is not supported"):
         mod.psql_query("select 1", runas="postgres")
 
@@ -330,11 +363,15 @@ def test_psql_query_write_goes_through_execute(cfg, server):
     if server.key != "postgresql":
         pytest.skip("PostgreSQL only")
     conn = {"user": "rw", "host": HOST, "port": server.cfg["port"], "password": "sdb://vault/rw"}
-    out = mod.psql_query(f"insert into {server.table} (k, n) values ('w', 5)", write=True, profile="base_rw", **conn)
+    out = mod.psql_query(
+        f"insert into {server.table} (k, n) values ('w', 5)", write=True, profile="base_rw", **conn
+    )
     assert out == [{"rows_affected": "1"}]
     assert server.verify(f"select n from {server.table} where k = 'w'") == [(5,)]
     with pytest.raises(CommandExecutionError, match=r"^\[E_EXECUTE_DISABLED\]"):
         mod.psql_query("update x set a = 1", write=True, profile="base", **conn)
-    with pytest.raises(SaltInvocationError, match=r"^\[E_POLICY\]"):  # the verb filter is not bypassed
+    with pytest.raises(
+        SaltInvocationError, match=r"^\[E_POLICY\]"
+    ):  # the verb filter is not bypassed
         mod.psql_query(f"drop table {server.table}", write=True, profile="base_rw", **conn)
     assert server.verify(f"select count(*) from {server.table}") == [(3,)]

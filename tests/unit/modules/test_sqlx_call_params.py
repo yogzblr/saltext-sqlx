@@ -56,7 +56,9 @@ def fake(monkeypatch):
     monkeypatch.setattr(
         mod.overrides,
         "_lookup",
-        lambda resolver, host, port, listed=True: ["203.0.113.9"] if "evil" in host else ["10.1.1.1"],
+        lambda resolver, host, port, listed=True: (
+            ["203.0.113.9"] if "evil" in host else ["10.1.1.1"]
+        ),
     )
     return f
 

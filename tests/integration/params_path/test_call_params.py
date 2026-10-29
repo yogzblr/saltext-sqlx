@@ -87,7 +87,7 @@ def test_salt_call_quoted_port_is_a_string_and_refused(salt_call_cli):
 
 
 def test_salt_call_unlisted_host_is_a_policy_error(salt_call_cli):
-    ret, data = _cli(salt_call_cli, "sqlx.ping", "host=192.0.2.9")
+    ret, _ = _cli(salt_call_cli, "sqlx.ping", "host=192.0.2.9")
     assert ret.returncode != 0
     assert "[E_POLICY] 'host' is not in sqlx:_policy:allowed_hosts" in ret.stderr
 
@@ -108,7 +108,7 @@ def test_salt_call_psql_query_shape(salt_call_cli):
 
 
 def test_salt_call_psql_query_runas_is_refused(salt_call_cli):
-    ret, data = _cli(salt_call_cli, "sqlx.psql_query", "select 1", "runas=postgres")
+    ret, _ = _cli(salt_call_cli, "sqlx.psql_query", "select 1", "runas=postgres")
     assert ret.returncode != 0
     assert "[E_OPTION_INVALID] runas is not supported" in ret.stderr
 
@@ -197,9 +197,9 @@ def _files_containing(root, needle):
 def test_resolved_password_is_nowhere_and_the_reference_is_only_in_the_job_load(
     call, master, minion
 ):
-    ret, retcode, jid = call("sqlx.ping", **TARGET)
+    ret, retcode, _ = call("sqlx.ping", **TARGET)
     assert retcode == 0, ret
-    bad, bad_code, bad_jid = call("sqlx.ping", **dict(TARGET, username="nobody"))
+    bad, bad_code, _ = call("sqlx.ping", **dict(TARGET, username="nobody"))
     assert bad_code == 1
     cache = master.config["cachedir"]
     assert _files_containing(cache, RO_PASSWORD) == []
