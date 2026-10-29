@@ -136,12 +136,13 @@ def check_query_result(profile=None, sql=None, operator=None, **kwargs):
 
     Keywords: ``expected`` (not needed for ``is_null`` / ``is_not_null``), ``params``, ``row``, ``column``,
     ``retry_timeout_s``, ``retry_pause_s``. Operators: ``== != < <= > >= contains not_contains is_null is_not_null``.
+    On the command line quote the symbols for YAML, for example ``operator='">"'``.
 
     CLI Example:
 
     .. code-block:: bash
 
-        salt '*' sqlx.check_query_result profile=orders_pg sql="select count(*) from orders" operator=">" expected=0
+        salt '*' sqlx.check_query_result profile=orders_pg sql="select count(*) from orders" operator='">"' expected=0
     """
 
     def work(opts, resolved):
@@ -165,12 +166,13 @@ def check_row_count(profile=None, sql=None, operator=None, **kwargs):
     Compare the number of returned rows with ``expected``. A failed comparison is ``ok: false``, not an error.
 
     Keywords: ``expected``, ``params``, ``retry_timeout_s``, ``retry_pause_s``. Operators: ``== != < <= > >=``.
+    On the command line quote the symbols for YAML, for example ``operator='">="'``.
 
     CLI Example:
 
     .. code-block:: bash
 
-        salt '*' sqlx.check_row_count profile=orders_pg sql="select 1 from orders" operator=">=" expected=1
+        salt '*' sqlx.check_row_count profile=orders_pg sql="select 1 from orders" operator='">="' expected=1
     """
 
     def work(opts, resolved):
