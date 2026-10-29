@@ -577,3 +577,17 @@ def test_integer_float_like_options_are_accepted():
         lambda: _result([[1]]), "==", 1, row=0, column=0, retry_timeout_s=0.0, retry_pause_s=0.5
     )
     assert result["ok"] is True
+
+
+def test_decimal_and_non_finite_values():
+    from decimal import Decimal  # pylint: disable=import-outside-toplevel
+
+    assert check_value(Decimal("12.50"), "==", "12.5")["ok"] is True
+    assert check_value(Decimal("NaN"), "==", 1)["ok"] is False
+    assert check_value(float("inf"), ">", 1)["ok"] is True  # real floats order natively
+
+
+def test_bool_is_not_ordered_against_numbers():
+    assert check_value(True, ">", 0)["ok"] is False
+    assert check_value(5, "<", True)["ok"] is False
+    assert check_value(True, "==", True)["ok"] is True
