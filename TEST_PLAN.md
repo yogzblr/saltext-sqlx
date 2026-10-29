@@ -75,7 +75,7 @@ functional test yet starts a real Salt minion (T10, section 5).
 Use `pytest-salt-factories`. 1) Call through `LocalClient().cmd(tgt, "sqlx.query", kwarg={...})` with JSON-typed kwargs
 (`params` as an object, `limit` as an int) — the same load path as `salt-api` minus HTTP. 2) `__pub_*` keys do not
 trigger `E_OPTION_UNKNOWN`; a typo'd option does. 3) With the real minion, a failing statement returns
-`ERROR: [E_SQL] ...` and retcode 1 (assert with `full_return`); a validation failure returns `ERROR executing 'sqlx.query': [E_OPTION_...] ...`, and `salt-call` prints `Error running 'sqlx.query': [E_...]` (SPEC section 8). Operators on the command line are YAML-quoted (`operator='">"'`, SPEC section 4). 4) `sdb://` password resolution with a throwaway profile.
+`ERROR: [E_SQL] ...` and retcode 1 (assert with `full_return`); a validation failure returns `ERROR executing 'sqlx.query': [E_OPTION_INVALID] ...`, and `salt-call` prints `Error running 'sqlx.query': [E_...]` (SPEC section 8). Operators on the command line are YAML-quoted (`operator='">"'`, SPEC section 4). 4) `sdb://` password resolution with a throwaway profile.
 5) eauth regex on `profile` from SECURITY section 4 refuses a non-matching profile. 6) Manual smoke with `curl` from SPEC
 section 11; record the exact command in the README.
 
