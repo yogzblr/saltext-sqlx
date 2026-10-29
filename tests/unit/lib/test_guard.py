@@ -61,7 +61,9 @@ def enclosing_function(tree, target):
 
 def test_source_files_were_found():
     names = {rel(p) for p in FILES}
-    assert "lib/runner.py" in names and "lib/dialects.py" in names and "modules/sqlx_mod.py" in names
+    assert (
+        "lib/runner.py" in names and "lib/dialects.py" in names and "modules/sqlx_mod.py" in names
+    )
 
 
 def test_commit_is_called_only_inside_run_execute():
@@ -77,21 +79,25 @@ def test_no_text_occurrence_of_commit_call_outside_run_execute():
     """Catches ``commit(`` hidden from the AST scan, for example in a string passed to ``eval``."""
     runner = SRC / "lib" / "runner.py"
     tree = parse(runner)
-    func = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "run_execute")
+    func = next(
+        n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "run_execute"
+    )
     allowed = range(func.lineno, func.end_lineno + 1)
     offenders = []
     for path in FILES:
         for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
             if "commit(" in line and not (path == runner and number in allowed):
                 offenders.append(f"{rel(path)}:{number}")
-    assert offenders == []
+    assert not offenders
 
 
 def test_no_autocommit_isolation_level():
     offenders = [
-        rel(p) for p in FILES if "AUTOCOMMIT" in p.read_text(encoding="utf-8").upper().replace("-", "_")
+        rel(p)
+        for p in FILES
+        if "AUTOCOMMIT" in p.read_text(encoding="utf-8").upper().replace("-", "_")
     ]
-    assert offenders == []
+    assert not offenders
 
 
 def _is_int_expression(node):
@@ -130,7 +136,7 @@ def test_exec_driver_sql_only_with_constant_statements_in_dialects_and_engine():
                 problems.append(f"{where} exec_driver_sql outside dialects.py/engine.py")
             elif not call.args or not _is_constant_sql(call.args[0]):
                 problems.append(f"{where} exec_driver_sql with a non-constant statement")
-    assert problems == []
+    assert not problems
 
 
 def test_runner_uses_text_for_caller_sql():
@@ -165,7 +171,7 @@ def test_no_driver_import_outside_dialects(path):
         for node, name in _imported_modules(parse(path))
         if name.split(".")[0] in DRIVER_MODULES
     ]
-    assert offenders == []
+    assert not offenders
 
 
 def test_guard_scan_would_catch_a_violation():
@@ -184,6 +190,8 @@ def test_guard_scan_would_catch_a_violation():
     assert not _is_constant_sql(call.args[0])
     assert _is_constant_sql(ast.parse("x('select 1')").body[0].value.args[0])
     assert _is_constant_sql(ast.parse("x(f'set a = {int(b)}')").body[0].value.args[0])
-    assert _is_constant_sql(ast.parse("x(f'set a = {int(m) // 1000}.{int(m) % 1000:03d}')").body[0].value.args[0])
+    assert _is_constant_sql(
+        ast.parse("x(f'set a = {int(m) // 1000}.{int(m) % 1000:03d}')").body[0].value.args[0]
+    )
     assert not _is_constant_sql(ast.parse("x(f'set a = {b}')").body[0].value.args[0])
     assert not _is_constant_sql(ast.parse("x(f'set a = {b + 1}')").body[0].value.args[0])

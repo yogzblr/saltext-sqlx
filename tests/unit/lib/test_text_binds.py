@@ -41,7 +41,7 @@ def test_escaped_colon_in_json_literal_is_not_a_bind():
     clause = text("select '{\"a\"\\:1}'")
     assert clause._bindparams == {}
     compiled = clause.compile(dialect=postgresql.dialect())
-    assert "{\"a\":1}" in str(compiled)
+    assert '{"a":1}' in str(compiled)
     assert "\\" not in str(compiled)
 
 
@@ -50,7 +50,9 @@ def test_percent_inside_a_literal_is_fine_and_there_is_no_bind():
     assert clause._bindparams == {}
     pg = str(clause.compile(dialect=postgresql.dialect()))
     my = str(clause.compile(dialect=mysql.dialect()))
-    assert "'%%b%%'" in pg  # doubled for the pyformat paramstyle, which is why text() is safe and exec_driver_sql is not
+    assert (
+        "'%%b%%'" in pg
+    )  # doubled for the pyformat paramstyle, which is why text() is safe and exec_driver_sql is not
     assert "'%%b%%'" in my
 
 
