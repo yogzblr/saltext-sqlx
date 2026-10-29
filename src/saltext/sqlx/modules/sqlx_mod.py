@@ -105,7 +105,9 @@ def execute(profile=None, sql=None, **kwargs):
     """
     Run one data-changing statement. Refused with ``[E_EXECUTE_DISABLED]`` unless the profile has ``allow_execute``.
 
-    Keywords: ``params``, ``dry_run`` (default false; true rolls back), ``timeout_ms``.
+    Keywords: ``params``, ``dry_run`` (default false; true rolls back), ``timeout_ms``. ``dry_run=None`` means
+    "not given", NOT "safe": it takes the default and the statement is COMMITTED. Pass ``dry_run=True`` to roll back.
+    One statement per call; a second statement after ``;`` is refused by the driver.
 
     CLI Example:
 
@@ -204,10 +206,30 @@ def ping(profile=None, **kwargs):
     )
 
 
-def _like(pattern):
-    """A SQL ``LIKE`` pattern (``%`` and ``_``) as a regular expression."""
-    parts = {"%": ".*", "_": "."}
-    return re.compile("".join(parts.get(c) or re.escape(c) for c in pattern), re.DOTALL)
+def _like(pattern, name):
+    """
+    True when ``name`` matches the SQL ``LIKE`` ``pattern`` (``%`` any run, ``_`` one character, case-sensitive).
+
+    Iterative matcher with one backtrack point (the last ``%``), O(len(pattern) * len(name)) in the worst case. A
+    regular expression built from the pattern backtracks without bound on ``%a%a%a...b`` (T11 D4).
+    """
+    p = n = 0
+    star = mark = -1
+    while n < len(name):
+        if p < len(pattern) and pattern[p] == "%":
+            star, mark = p, n
+            p += 1
+        elif p < len(pattern) and pattern[p] in ("_", name[n]):
+            p += 1
+            n += 1
+        elif star >= 0:
+            mark += 1
+            p, n = star + 1, mark
+        else:
+            return False
+    while p < len(pattern) and pattern[p] == "%":
+        p += 1
+    return p == len(pattern)
 
 
 def table_list(profile=None, **kwargs):
@@ -225,7 +247,8 @@ def table_list(profile=None, **kwargs):
     """
 
     def work(opts, resolved):
-        match = _like(opts["pattern"]).fullmatch if opts["pattern"] else lambda _name: True
+        pattern = opts["pattern"]
+        match = (lambda name: _like(pattern, name)) if pattern else (lambda _name: True)
         with engine.connection(resolved, resolved.get("password")) as conn:
             inspector = sqlalchemy.inspect(conn)
             schema = opts["schema"] or inspector.default_schema_name

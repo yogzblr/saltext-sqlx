@@ -103,7 +103,11 @@ def test_build_engine_hides_parameters_and_does_not_echo(no_real_driver):
 def test_build_engine_passes_connect_timeout_and_allowlisted_args(no_real_driver):
     prof = make(connect_timeout_s=7, connect_args={"application_name": "salt"})
     engine.build_engine(prof, PASSWORD).dispose()
-    assert no_real_driver[0]["connect_args"] == {"application_name": "salt", "connect_timeout": 7}
+    assert no_real_driver[0]["connect_args"] == {
+        "application_name": "salt",
+        "connect_timeout": 7,
+        "prepare_threshold": 0,
+    }
 
 
 def test_build_engine_rejects_forbidden_connect_args():

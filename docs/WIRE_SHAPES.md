@@ -399,7 +399,9 @@ the same change.
 - Any server version other than PostgreSQL 16.15, MySQL 8.0.46 and MariaDB 10.11.14; any Python other than 3.13.16;
   any driver version other than those in section 0.
 - Docker images (`docker-compose.yml` was never started), including whether the official images match the Ubuntu builds.
-- Whether the server keeps running a statement after PyMySQL's `read_timeout` fires.
+- ~~Whether the server keeps running a statement after PyMySQL's `read_timeout` fires.~~ Observed (T11 D2, MySQL 8.0.46):
+  it does. `INSERT INTO t SELECT 1, SLEEP(8)` with `read_timeout=1.8` returned 2013 after 1.9 s; `information_schema.processlist`
+  still listed the statement at 3.4 s and 4.9 s and not at 6.4 s; the table had 0 rows afterwards (rolled back). MariaDB not re-measured.
 - That connect timeouts fire (the sandbox network never black-holes).
 - TLS certificate verification behaviour of Oracle (python-oracledb) and SQL Server (pymssql): see section 12 for the three databases that were run.
 

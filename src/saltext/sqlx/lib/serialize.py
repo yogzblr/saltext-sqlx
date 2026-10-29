@@ -73,6 +73,18 @@ def _json_size(obj):
     return len(text.encode("utf-8", "replace"))
 
 
+def _cannot_fit(raw, max_bytes):
+    """True when one value alone is longer than ``max_bytes``, so the row can never fit (T11 D3).
+
+    A ``str`` of N characters needs at least N bytes plus quotes in compact JSON, and ``bytes`` of N need 4N/3 bytes
+    of base64, so the full encoding (a second and third copy of a 100 MB value) is not needed to know that.
+    """
+    for value in raw:
+        if isinstance(value, (str, bytes, bytearray, memoryview)) and len(value) > max_bytes:
+            return True
+    return False
+
+
 def build_result(columns, raw_rows, limit, max_bytes):
     """Build ``{"columns", "rows", "row_count", "truncated"}`` from raw driver rows.
 
@@ -88,6 +100,9 @@ def build_result(columns, raw_rows, limit, max_bytes):
     truncated = False
     for raw in raw_rows:
         if len(rows) >= limit:
+            truncated = True
+            break
+        if _cannot_fit(raw, max_bytes):
             truncated = True
             break
         row = serialize_row(raw)

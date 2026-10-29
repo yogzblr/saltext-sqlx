@@ -12,7 +12,6 @@ from salt.exceptions import SaltInvocationError
 
 from tests.security import harness
 from tests.security.harness import observe
-from tests.security.test_attacks_query import defect
 
 X, Y = "scratch.t11_x", "scratch.t11_y"
 
@@ -123,7 +122,7 @@ REFUSED_SHAPES = [
     ),
     ("with-first", "WITH d AS (SELECT 1) DELETE FROM {x}", "E_POLICY"),
     ("fullwidth-INSERT", "ＩＮＳＥＲＴ INTO {y} VALUES (7, 7)", "E_POLICY"),
-    ("null-byte-prefix", "\x00INSERT INTO {y} VALUES (7, 7)", "E_POLICY"),
+    ("null-byte-prefix", "\x00INSERT INTO {y} VALUES (7, 7)", "E_OPTION_INVALID"),
     ("INSERTX", "INSERTX INTO {y} VALUES (7, 7)", "E_POLICY"),
     ("INSERT_", "INSERT_ INTO {y} VALUES (7, 7)", "E_POLICY"),
     ("parenthesised", "(INSERT INTO {y} VALUES (7, 7))", "E_POLICY"),
@@ -174,12 +173,6 @@ def test_pg_nested_block_comment_cannot_hide_a_verb(request, ex, server):
     """D5: PostgreSQL nests ``/* /* */ */``; the filter ends the comment at the first ``*/`` and sees INSERT, the server runs DELETE."""
     if server.key != "postgresql":
         pytest.skip("PostgreSQL comment syntax")
-    defect(
-        request,
-        server,
-        "D5",
-        "nested block comment hides DELETE from the verb filter (verbs=[INSERT])",
-    )
     outcome, state = ex(
         "rwi",
         f"/* /* */ INSERT INTO {Y} VALUES (6, 6) */ DELETE FROM {X}",
@@ -211,12 +204,6 @@ def test_mysql_executable_comment_cannot_hide_a_verb(request, ex, server, label,
         pytest.skip("MySQL family only")
     if label == "mariadb-executable-comment" and server.key != "mariadb":
         pytest.skip("MariaDB-only comment form (MySQL sees a plain comment and fails with 1064)")
-    defect(
-        request,
-        server,
-        "D5",
-        "executable comment hides an INSERT from the verb filter (verbs=[UPDATE])",
-    )
     outcome, state = ex("rwu", sql.format(y=Y), label=label)
     assert state == UNCHANGED, f"an INSERT ran although execute_verbs is [UPDATE]: y={state[1]}"
 
@@ -250,7 +237,6 @@ def test_pg_semicolon_cannot_smuggle_a_second_verb(request, ex, server):
     """D1: the filter looks at the first keyword only; PostgreSQL runs the rest."""
     if server.key != "postgresql":
         pytest.skip("multi-statement strings run on PostgreSQL only")
-    defect(request, server, "D1", "INSERT; DELETE passes execute_verbs=[INSERT] on PostgreSQL")
     outcome, state = ex("rwi", f"INSERT INTO {Y} VALUES (6, 6); DELETE FROM {X}")
     assert state == UNCHANGED, f"DELETE ran although execute_verbs is [INSERT]: x={state[0]}"
 
@@ -293,14 +279,9 @@ def test_dry_run_true_cannot_be_defeated_by_a_commit_in_the_statement(request, e
     """D1: on PostgreSQL ``INSERT ...; COMMIT`` with dry_run=True is committed while the result says committed false."""
     if server.key != "postgresql":
         pytest.skip("multi-statement strings run on PostgreSQL only")
-    defect(
-        request,
-        server,
-        "D1",
-        "dry_run=True is defeated by '; COMMIT' and the result still reports committed: false",
-    )
     outcome, state = ex("rwv", f"INSERT INTO {Y} VALUES (8, 8); COMMIT", dry_run=True)
-    assert outcome[0] == "OK" and outcome[1]["committed"] is False
+    # Fixed: the multi-statement string is refused (42601); either outcome is safe as long as nothing persists.
+    assert outcome[0] == "ERR" or outcome[1]["committed"] is False
     assert state == UNCHANGED, f"dry_run=True persisted a row: y={state[1]}"
 
 

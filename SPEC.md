@@ -165,6 +165,13 @@ written as is) of `columns` plus the length of the compact JSON of `rows`, nothi
 (`profile`, `row_count`, `truncated`, `elapsed_ms`) and the key names are not counted. Rows are added in order while the
 running total stays within `max_bytes`; the first row that would exceed it, and every row after it, is dropped and
 `truncated` is true. If even the first row does not fit, the result has `rows: []`, `row_count: 0`, `truncated: true`.
+Memory (T11 D3): on PostgreSQL (`SELECT`, `VALUES`, `TABLE`, and `WITH` without `INSERT`/`UPDATE`/`DELETE`/`MERGE`) the rows are
+read through a server-side cursor and on MySQL/MariaDB through PyMySQL's unbuffered `SSCursor`, so only `limit + 1` rows
+leave the server; if rows are left unread on MySQL/MariaDB the connection is dropped rather than drained. Other statements
+(`SHOW`, `EXPLAIN`, `INSERT ... RETURNING`, `SELECT ... INTO`) and Oracle/SQL Server are read buffered. A single value
+larger than `max_bytes` is dropped without being JSON-encoded, but the driver still receives it whole (measured: a 100 MB
+`text` value costs about 270 MB of RSS, the floor of a bare psycopg cursor); on MySQL/MariaDB `max_allowed_packet` bounds
+it, on PostgreSQL select `left(col, n)`.
 `limit` is checked first: when another row exists beyond `limit`, `truncated` is true. The `columns` list is never itself
 refused, so a result with no rows is not marked truncated even if `columns` alone is larger than `max_bytes`. Value
 conversions are in section 9.
@@ -174,15 +181,22 @@ Refused with `[E_EXECUTE_DISABLED]` unless the profile has `allow_execute: true`
 is resolved or any connection is opened). Then, in `runner.run_execute`:
 
 - `dry_run` must be exactly `True` or `False` (a real `bool`); anything else, including a string or a number, is
-  `[E_OPTION_INVALID]`, so a malformed flag can never commit. The call-level default is `false` (D2).
+  `[E_OPTION_INVALID]`, so a malformed flag can never commit. The call-level default is `false` (D2). **`dry_run=None`
+  means "not given", not "safe"**: it takes the default and the statement is COMMITTED (T11 D11). Pass `dry_run=True`
+  explicitly to roll back.
 - The first keyword of the statement must be in `execute_verbs` (compared case-insensitively), else `[E_POLICY]`. A statement
   that does not start with a keyword at all (`(select 1)`, `;drop table t`) is also `[E_POLICY]`. An empty or comment-only
   statement is `[E_OPTION_INVALID]`.
-- The filter skips only whitespace, `--` line comments and `/* */` block comments before the keyword. A MySQL `#` comment is
-  not skipped, so a statement that starts with one fails with `[E_POLICY]`. A MySQL `/*! ... */` comment **is** skipped like
-  any block comment although MySQL executes its content; the filter looks at the keyword after it. This is a best-effort
-  filter, **not a security boundary** (a CTE, a `;` or a function call can still write): the database role limits what
-  `execute` can do.
+- The filter skips only whitespace, `--` line comments and plain `/* */` block comments (`/*+ ... */` included) before
+  the keyword. A MySQL `#` comment is not skipped, so a statement that starts with one fails with `[E_POLICY]`. A leading
+  `/*!` or `/*M!` comment (MySQL and MariaDB execute its content) and a leading block comment that contains `/*`
+  (PostgreSQL nests block comments, MySQL does not, so the two servers disagree where the verb starts) are refused with
+  `[E_POLICY]` on every dialect (T11 D5). This is a best-effort filter, **not a security boundary** (a CTE or a function
+  call can still write): the database role limits what `execute` can do.
+- One statement per call. On PostgreSQL the connection uses psycopg's extended protocol (`prepare_threshold=0`, set by the
+  module and not settable from a profile), so a string with a second statement (`INSERT ...; COMMIT`) fails with
+  `[E_SQL] postgresql 42601: cannot insert multiple commands into a prepared statement`; PyMySQL does not enable
+  multi-statements, so MySQL and MariaDB answer 1064 (T11 D1). A trailing `;` is accepted.
 - The connection is opened with `read_only` **False**, whatever the profile says: `allow_execute: true` wins over
   `read_only: true`, because an execute-enabled profile must be able to write (`sqlx_mod.execute`). The in-session
   read-only guard is therefore not applied to `execute`; set `read_only: false` on such a profile to keep the profile
@@ -293,8 +307,8 @@ unverified except where stated. They must be run by the owner on a machine with 
 | dialect | driver (pip extra) | URL | Licence (package metadata) | timeout mechanism | in-session read-only |
 |---|---|---|---|---|---|
 | `postgresql` | `psycopg[binary]` (extra `postgres`) | `postgresql+psycopg://` | LGPL-3.0-only | `SET statement_timeout = <ms>`: cancels at the limit, SQLSTATE 57014. **observed** [WS 2] | `SET TRANSACTION READ ONLY`: refuses writes (25006) but **bypassable** (SECURITY.md section 2). **observed** [WS 3] |
-| `mysql` | `PyMySQL` (extra `mysql`) | `mysql+pymysql://` | MIT | `SET SESSION MAX_EXECUTION_TIME=<ms>`: raises 3024 (SQLSTATE `HY000`) for a SELECT that reads tables; a table-less `SELECT SLEEP(n)` is cut short **silently** (returns 1, no error); `INSERT ... SELECT` is **not limited**. **observed** on 8.0.46 only [WS 2]. The earlier "MySQL >= 5.7.8" is **unverified**. | `SET SESSION TRANSACTION READ ONLY`: refuses writes (1792, SQLSTATE 25006) but **bypassable** by four statements. `START TRANSACTION READ ONLY` resists the most statements but is also bypassable. **observed** [WS 3] |
-| `mariadb` | `PyMySQL` (extra `mysql`) | `mysql+pymysql://` (SQLAlchemy sets `dialect.is_mariadb`, `False` on MySQL and `True` on MariaDB; use it to pick the variable) | MIT | `SET SESSION max_statement_time=<seconds>`: fractional values accepted; raises 1969 (SQLSTATE `70100`) for SELECT and for `INSERT ... SELECT`. **observed** on 10.11.14 [WS 2]. `MAX_EXECUTION_TIME` does not exist here (1193). | `SET SESSION TRANSACTION READ ONLY`: refuses writes (1792) but **bypassable**; the session variable is `tx_read_only` (`transaction_read_only` does not exist, 1193). **observed** [WS 3] |
+| `mysql` | `PyMySQL` (extra `mysql`) | `mysql+pymysql://` | MIT | `SET SESSION MAX_EXECUTION_TIME=<ms>`: raises 3024 (SQLSTATE `HY000`) for a SELECT that reads tables; a table-less `SELECT SLEEP(n)` is cut short **silently** (returns 1, no error); `INSERT ... SELECT` is **not limited** by it; a statement can also override it with `/*+ MAX_EXECUTION_TIME(n) */`. The module therefore also sets PyMySQL `read_timeout` = timeout + 1 s (a lower profile value is honoured), which ends the caller's wait with 2013 / `E_TIMEOUT` (T11 D2). **observed** on 8.0.46 only [WS 2]. The earlier "MySQL >= 5.7.8" is **unverified**. | `SET SESSION TRANSACTION READ ONLY`: refuses writes (1792, SQLSTATE 25006) but **bypassable** by four statements. `START TRANSACTION READ ONLY` resists the most statements but is also bypassable. **observed** [WS 3] |
+| `mariadb` | `PyMySQL` (extra `mysql`) | `mysql+pymysql://` (SQLAlchemy sets `dialect.is_mariadb`, `False` on MySQL and `True` on MariaDB; use it to pick the variable) | MIT | `SET SESSION max_statement_time=<seconds>`: fractional values accepted; raises 1969 (SQLSTATE `70100`) for SELECT and for `INSERT ... SELECT`; `SET STATEMENT max_statement_time=0 FOR ...` overrides it, so `read_timeout` (timeout + 1 s) is the backstop here too (T11 D2). **observed** on 10.11.14 [WS 2]. `MAX_EXECUTION_TIME` does not exist here (1193). | `SET SESSION TRANSACTION READ ONLY`: refuses writes (1792) but **bypassable**; the session variable is `tx_read_only` (`transaction_read_only` does not exist, 1193). **observed** [WS 3] |
 | `oracle` | `oracledb` thin mode (extra `oracle`) | `oracle+oracledb://` | UPL-1.0 OR Apache-2.0 | `connection.call_timeout` (ms): **unverified** (NOT RUN) | `SET TRANSACTION READ ONLY` as first statement: **unverified** (NOT RUN) |
 | `mssql` | `pymssql` (extra `mssql`) | `mssql+pymssql://` | LGPL-2.1 | `timeout` / `login_timeout` connect args (s): **unverified** (NOT RUN) | none, role only: **unverified** (NOT RUN) |
 
@@ -513,7 +527,7 @@ curl -sS -k https://salt-api.example:8000/run -H 'Content-Type: application/json
 |---|---|---|
 | D9 | A call value above a cap (`limit`, `timeout_ms`, `max_bytes`, `retry_timeout_s`): clamp silently, or reject? | **Clamp** (current code: `options.apply_caps`). Rejecting with `E_OPTION_INVALID` would tell the caller its request was not honoured; clamping is friendlier to agents but hides the truncation until `truncated` is read. Profile values above a hard maximum are already rejected. |
 | D10 | Is `mariadb` a separate `dialect` value, or detected at run time through `dialect.is_mariadb`? | Detect (`mysql` is the only value; WS 9 item 5 shows `is_mariadb` is `False` on MySQL and `True` on MariaDB). A separate value would make the choice of variable explicit in config and let `profiles.py` reject a wrong guess, at the cost of a fifth dialect and the same driver. |
-| D11 | Use PyMySQL `read_timeout` as a client-side backstop for MySQL/MariaDB statement timeouts? | Not decided. Observed: `read_timeout=1` raised `OperationalError` 2013 after 1.0 s (WS 9 item 5), which covers the cases the server variable misses on MySQL (table-less SELECT, DML), but whether the server keeps running the statement afterwards was NOT observed. The 2013 mapping exists in `errors._my` (see section 8) but the module sets no `read_timeout` itself (a profile may pass it in `connect_args`, section 7). |
+| D11 | Use PyMySQL `read_timeout` as a client-side backstop for MySQL/MariaDB statement timeouts? | **Yes, implemented (T11 D2).** `read_timeout = statement_timeout_ms / 1000 + 1` s, module-owned; a profile may lower it, not raise it. Observed on MySQL 8.0.46: after the client gives up with 2013 the server keeps running the statement until it finishes, then rolls back (0 rows persisted for an `INSERT ... SELECT SLEEP(8)`). The backstop bounds the caller's wait, not the server's work. |
 
 ### Open decisions added after wave 3 (assumption used if unanswered)
 

@@ -808,3 +808,34 @@ def test_no_driver_or_sqlalchemy_names_leak_into_module_imports():
     )
     assert not re.search(r"^\s*(import|from)\s+(psycopg|pymysql|oracledb|pymssql)", source, re.M)
     assert "str(exc)" not in source  # the SQLAlchemy str() embeds SQL and values (R3)
+
+
+# --------------------------------------------------------------------------------------------------
+# T11 D7: values the driver cannot represent are data errors, not E_INTERNAL
+# --------------------------------------------------------------------------------------------------
+@pytest.mark.parametrize(
+    "text",
+    [
+        "timestamp too large (after year 10K): 'infinity'",
+        "date too large (after year 10K): '5874897-01-01'",
+        "timestamp too small (before year 1): '-infinity'",
+    ],
+)
+def test_postgres_driver_data_error_is_sql_data_without_the_value(text):
+    orig = _pg(None, text, cls_name="DataError")
+    orig.diag = None  # psycopg raised it client-side: no server diagnostics
+    code, message = errors.translate(_wrap(orig, sa_exc.DataError), "postgresql")
+    assert code == "E_SQL_DATA"
+    assert "too " in message and "'" not in message and "infinity" not in message
+
+
+def test_postgres_driver_data_error_keeps_the_value_with_error_detail():
+    orig = _pg(None, "timestamp too large (after year 10K): 'infinity'", cls_name="DataError")
+    orig.diag = None
+    code, message = errors.translate(_wrap(orig, sa_exc.DataError), "postgresql", error_detail=True)
+    assert code == "E_SQL_DATA" and "'infinity'" in message
+
+
+def test_overflow_error_is_a_data_error():
+    code, message = errors.translate(OverflowError("date value out of range"), "postgresql")
+    assert code == "E_SQL_DATA" and "out of range" in message
