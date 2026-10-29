@@ -174,12 +174,6 @@ def test_pg_nested_block_comment_cannot_hide_a_verb(request, ex, server):
     """D5: PostgreSQL nests ``/* /* */ */``; the filter ends the comment at the first ``*/`` and sees INSERT, the server runs DELETE."""
     if server.key != "postgresql":
         pytest.skip("PostgreSQL comment syntax")
-    defect(
-        request,
-        server,
-        "D5",
-        "nested block comment hides DELETE from the verb filter (verbs=[INSERT])",
-    )
     outcome, state = ex(
         "rwi",
         f"/* /* */ INSERT INTO {Y} VALUES (6, 6) */ DELETE FROM {X}",
@@ -211,12 +205,6 @@ def test_mysql_executable_comment_cannot_hide_a_verb(request, ex, server, label,
         pytest.skip("MySQL family only")
     if label == "mariadb-executable-comment" and server.key != "mariadb":
         pytest.skip("MariaDB-only comment form (MySQL sees a plain comment and fails with 1064)")
-    defect(
-        request,
-        server,
-        "D5",
-        "executable comment hides an INSERT from the verb filter (verbs=[UPDATE])",
-    )
     outcome, state = ex("rwu", sql.format(y=Y), label=label)
     assert state == UNCHANGED, f"an INSERT ran although execute_verbs is [UPDATE]: y={state[1]}"
 

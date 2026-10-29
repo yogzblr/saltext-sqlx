@@ -4,6 +4,7 @@ A file database is used so that a SECOND connection, on a second engine, can pro
 """
 
 import json
+import types
 
 import pytest
 import sqlalchemy as sa
@@ -449,3 +450,113 @@ def test_query_result_close_failure_is_ignored_and_rollback_still_runs():
     out = runner.run_query(fake, "select 1", None, limit=5, max_bytes=100)
     assert out["rows"] == [[1]]
     assert fake.events == ["execute", "rollback"]
+
+
+# --------------------------------------------------------------------------------------------------
+# Streaming reads (T11 D3)
+# --------------------------------------------------------------------------------------------------
+class DialectConn(FakeConn):
+    """FakeConn that reports a SQLAlchemy dialect name and records ``invalidate``."""
+
+    def __init__(self, name, result=None):
+        super().__init__(result)
+        self.dialect = types.SimpleNamespace(name=name)
+        self.options = None
+
+    def execute(self, clause, params=None, execution_options=None):
+        self.options = execution_options
+        return super().execute(clause, params)
+
+    def invalidate(self):
+        self.events.append("invalidate")
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "SELECT 1",
+        "  select * from t where a = 1;",
+        "/* c */ VALUES (1), (2)",
+        "-- c\nTABLE t",
+        "WITH x AS (SELECT 1) SELECT * FROM x",
+        "/*+ hint */ SELECT 1",
+        "SELECT * FROM t FOR UPDATE",
+    ],
+)
+def test_postgresql_selects_stream(sql):
+    fake = DialectConn("postgresql", FakeResult(rows=[(1,)]))
+    runner.run_query(fake, sql, None, limit=5, max_bytes=1000)
+    assert fake.options == {"stream_results": True}
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "SHOW server_version",
+        "EXPLAIN SELECT 1",
+        "INSERT INTO t VALUES (1) RETURNING id",
+        "WITH d AS (DELETE FROM t RETURNING id) SELECT * FROM d",
+        "WITH x AS (SELECT 1) INSERT INTO t SELECT * FROM x",
+        "SELECT * INTO newt FROM t",
+        "(SELECT 1)",
+        "/*! SELECT 1 */",
+        "/* a /* b */ c */ SELECT 1",
+        "CALL p()",
+    ],
+)
+def test_postgresql_other_statements_are_read_buffered(sql):
+    fake = DialectConn("postgresql", FakeResult(rows=[(1,)]))
+    runner.run_query(fake, sql, None, limit=5, max_bytes=1000)
+    assert fake.options is None
+
+
+def test_mysql_always_streams_and_abandons_unread_rows():
+    fake = DialectConn("mysql", FakeResult(rows=[(i,) for i in range(10)]))
+    out = runner.run_query(fake, "SELECT x FROM big", None, limit=4, max_bytes=100_000)
+    assert fake.options == {"stream_results": True}
+    assert out["row_count"] == 4 and out["truncated"] is True
+    # The unread rows are not drained: the connection is dropped, and neither close() nor rollback() runs.
+    assert fake.events == ["execute", "invalidate"]
+    assert fake.result.closed is False
+
+
+def test_mysql_fully_read_result_is_closed_and_rolled_back_normally():
+    fake = DialectConn("mysql", FakeResult(rows=[(1,), (2,)]))
+    runner.run_query(fake, "SELECT x FROM small", None, limit=4, max_bytes=100_000)
+    assert fake.events == ["execute", "rollback"] and fake.result.closed is True
+
+
+def test_other_dialects_are_not_asked_to_stream():
+    fake = DialectConn("oracle", FakeResult(rows=[(1,)]))
+    runner.run_query(fake, "SELECT 1 FROM dual", None, limit=4, max_bytes=100_000)
+    assert fake.options is None
+
+
+# --------------------------------------------------------------------------------------------------
+# Leading comments (T11 D5)
+# --------------------------------------------------------------------------------------------------
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "/* /* */ DELETE FROM t */ insert into t values (1)",
+        "/* /* */ insert into t values (1) */ DELETE FROM t",
+        "/*! DELETE FROM t */ insert into t values (1)",
+        "/*!50000 DELETE FROM t */ insert into t values (1)",
+        "/*M! DELETE FROM t */ insert into t values (1)",
+        "/*m!100100 DELETE FROM t */ insert into t values (1)",
+        "-- c\n/* x */ /*! DELETE FROM t */ insert into t values (1)",
+    ],
+)
+def test_verb_filter_refuses_comments_the_server_reads_differently(sql):
+    fake = FakeConn()
+    with pytest.raises(SaltInvocationError, match=r"^\[E_POLICY\] "):
+        runner.run_execute(fake, sql, None, dry_run=False, execute_verbs=VERBS)
+    assert not fake.events
+
+
+def test_verb_filter_still_skips_plain_and_hint_comments():
+    fake = FakeConn(FakeResult(rowcount=1))
+    runner.run_execute(
+        fake, "/*+ hint */ /* a */ -- b\n insert into t values (1)", None, dry_run=False, execute_verbs=VERBS
+    )
+    assert fake.events == ["execute", "commit"]

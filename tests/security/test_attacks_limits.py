@@ -193,12 +193,6 @@ def test_documented_mysql_dml_is_not_limited_by_max_execution_time(server, salt,
 # ---- result size ----------------------------------------------------------------------------------------------------------
 def test_ten_million_rows_do_not_cost_ten_million_rows_of_memory(request, server, baseline_mb):
     """D3: the driver buffers the whole result before ``fetchmany(limit + 1)``; the byte and row caps apply after the fact."""
-    defect(
-        request,
-        server,
-        "D3",
-        "result set is fully buffered in the minion before the row/byte caps are applied",
-    )
     if server.key == "postgresql":
         sql = "SELECT g FROM generate_series(1, 10000000) g"
     elif server.key == "mariadb":
@@ -224,17 +218,14 @@ def test_a_huge_single_value_is_not_expanded_in_memory_before_the_byte_cap(
         pytest.skip(
             "PostgreSQL only (values up to 1 GB; MySQL/MariaDB are capped by max_allowed_packet)"
         )
-    defect(
-        request,
-        server,
-        "D3",
-        "a single 100 MB value costs several times its size in memory before being dropped",
-    )
     result = child(server.key, "ro", "query", {"sql": "SELECT repeat('x', 100000000)"})
     observe("size", "postgresql SELECT repeat('x', 100000000)", result)
     assert result["kind"] == "OK" and result["rows"] == 0 and result["truncated"] is True
+    # The floor is the driver, not the module: a bare psycopg cursor fetching this one value peaks at +286 MB over its own
+    # baseline (libpq receive buffer + PGresult + the decoded str; the same with a server-side or binary cursor). The
+    # module adds no copy of its own (before the fix: +459 MB, the JSON encodings of the value on top of that).
     assert (
-        result["peak_rss_mb"] < baseline_mb + 250
+        result["peak_rss_mb"] < baseline_mb + 300
     ), f"peak {result['peak_rss_mb']} MB vs baseline {baseline_mb} MB"
 
 
