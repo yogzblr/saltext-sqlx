@@ -6,6 +6,7 @@
 #   ca/ other-ca/        CA certificate + key (other-ca is unrelated to ca)
 #   server/              server.pem server.key ca.pem  (SAN DNS:localhost, IP:127.0.0.1, signed by ca)
 #   expired-server/      same names, server certificate already expired
+#   server-good/         copy of server/ (swap_server_cert.sh puts it back)
 #   good/                profile directories (ca.pem, client.pem, client.key), client CN=tls_cert, signed by ca
 #   ca-only/             ca.pem only (TLS without a client certificate)
 #   wrong-ca/            ca.pem of other-ca (the server's CA is unknown to the client) + a valid client pair
@@ -80,10 +81,11 @@ cp ca/ca.pem expired-client/ca.pem; issue ca expired-client/client tls_cert "$CL
 cp ca/ca.pem alt-names/ca.crt; cp good/client.pem alt-names/client.crt; cp good/client.key alt-names/client.key
 
 rm -rf ca/db other-ca/db
+cp -a server server-good   # swap_server_cert.sh restores from it
 find . -name '*.key' -exec chmod 600 {} +
 find . -name '*.pem' -o -name '*.crt' | xargs chmod 644
 find . -type d -exec chmod 755 {} +
 if id "$srv_user" >/dev/null 2>&1; then
-  chown -R "$srv_user" server expired-server
+  chown -R "$srv_user" server expired-server server-good
 fi
 echo "PKI written to $out"

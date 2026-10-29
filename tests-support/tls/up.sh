@@ -33,6 +33,7 @@ CONF
 local   all  all                         trust
 hostnossl all all 0.0.0.0/0              reject
 hostssl tlsdb tls_cert 0.0.0.0/0         cert clientcert=verify-full
+hostssl tlsdb tls_mismatch 0.0.0.0/0     cert clientcert=verify-full
 hostssl tlsdb tls_pw   0.0.0.0/0         scram-sha-256
 hostssl all   postgres 0.0.0.0/0         scram-sha-256
 CONF
@@ -42,8 +43,8 @@ CONF
   local psql=("$PGBIN/psql" -h "$R/pg" -p "$SQLX_TLS_PG_PORT" -U postgres -v ON_ERROR_STOP=1 -X -q)
   if ! "${psql[@]}" -tAc "select 1 from pg_database where datname='tlsdb'" | grep -q 1; then
     "${psql[@]}" -c "create database tlsdb encoding 'UTF8' lc_collate 'C.UTF-8' lc_ctype 'C.UTF-8' template template0"
-    "${psql[@]}" -c "create role tls_pw login password 'tls_pw_pw'" -c "create role tls_cert login"
-    "${psql[@]}" -d tlsdb -c "grant connect on database tlsdb to tls_pw, tls_cert"
+    "${psql[@]}" -c "create role tls_pw login password 'tls_pw_pw'" -c "create role tls_cert login" -c "create role tls_mismatch login"
+    "${psql[@]}" -d tlsdb -c "grant connect on database tlsdb to tls_pw, tls_cert, tls_mismatch"
   fi
   echo "postgresql (tls) up on $SQLX_TLS_PG_PORT"
 }
