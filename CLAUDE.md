@@ -18,7 +18,8 @@ DatabaseLibrary; connection details live in **profiles**, never in the call.
 
 ## Hard rules (summary)
 - One error path (`lib/errors.py`); never return `[]`/`False` for a failure.
-- Callers pick a profile only. `query` never commits. `execute` needs `allow_execute: true`.
+- Callers pick a profile only. `query` never commits. `execute` needs `allow_execute: true` (it then runs without the session read-only guard).
+- On the command line, YAML-quote comparison operators: `operator='">"'` (SPEC section 4).
 - The in-session read-only guard is bypassable (observed on PostgreSQL, MySQL and MariaDB); the DB role is the real control.
 - Catch `Exception`, not only `DBAPIError`; take the message from `exc.orig`, never `str()` of the SQLAlchemy exception (it embeds SQL and bound values); map on the vendor code first.
 - `text()` + binds only; `CAST(:x AS t)`, never `:x::t`; literal colons as `\:`; never `exec_driver_sql` for caller SQL.
@@ -37,6 +38,8 @@ Observed on real servers (T1, 2026-10-29): PostgreSQL 16.15, MySQL 8.0.46, Maria
 (`docs/WIRE_SHAPES.md`). **Oracle and SQL Server are NOT RUN**: Docker Hub, MCR and the Oracle registry returned HTTP 403 in
 the build environment, so every Oracle and SQL Server server-side row in SPEC sections 7-8 is unverified. The owner must run
 them on a machine with registry access (`tests-support/up.sh`, then `scripts/probes/`); this is task T1b in `TASKS.md`.
-Other open items: the dialect-to-driver table moves from `profiles.DIALECT_DRIVERS` to `lib/dialects.py` (T4); whether to
-add `cryptography` to the `mysql` extra; D9 (clamp vs reject), D10 (`mariadb` as a dialect value), D11 (PyMySQL
-`read_timeout`). Open decisions D1–D11 are at the end of `SPEC.md`.
+Built and merged on `build/base`: T0-T9 (libraries, engine, errors, runner, module with all six functions). In progress: T10
+(Salt integration, README) and T11 (security pass). No test has run a real Salt minion yet.
+Other open items: whether to add `cryptography` to the `mysql` extra; D9 (clamp vs reject), D10 (`mariadb` as a dialect value),
+D11 (PyMySQL `read_timeout`), D12 (TLS certificate directory; today no path-bearing TLS option is allowed), D13 (the
+`MaskingFilter` secret set is never cleared). Open decisions D1–D13 are at the end of `SPEC.md`.

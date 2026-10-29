@@ -10,7 +10,7 @@ error** instead of Salt's `[]` / `False` / generic traceback.
 | File | Purpose |
 |---|---|
 | `BUILD_PROMPT.md` | Rules R1–R20, mistakes table (all observed), phase order |
-| `SPEC.md` | The contract: profiles, functions, limits, dialects, error codes, return types, open decisions D1–D11 |
+| `SPEC.md` | The contract: profiles, functions, limits, dialects, error codes, return types, open decisions D1–D13 |
 | `ARCHITECTURE.md` | Layout, call flow, transaction handling, error translation, adapter interface |
 | `SECURITY.md` | Threat model, the observed read-only bypass (PostgreSQL, MySQL, MariaDB), eauth examples, audit, checklist |
 | `TEST_PLAN.md` | Unit / functional (per dialect) / Salt integration matrices |
@@ -57,4 +57,4 @@ for Salt's Python 3.11 onedir.
 ## Decisions already made
 
 Execute is included but disabled per profile until enabled (2026-10-29). LGPL drivers (psycopg, pymssql) are accepted as
-unmodified pip dependencies; GPL is not (2026-10-29). Open decisions D1–D11 are at the end of `SPEC.md`.
+unmodified pip dependencies; GPL is not (2026-10-29). Open decisions D1–D13 are at the end of `SPEC.md`.

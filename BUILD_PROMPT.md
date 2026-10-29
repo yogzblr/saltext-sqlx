@@ -8,7 +8,7 @@ each gate.
 ## Rules (non-negotiable)
 
 **Errors**
-- R1. Exactly one error path: `lib/errors.py`. Every database failure becomes `CommandExecutionError("[E_CODE] <dialect> <code>: <message>")`. Never return `[]`, `False`, `None` or `{"error": ...}` for a failure.
+- R1. Exactly one error path: `lib/errors.py`. Every database failure becomes `CommandExecutionError("[E_CODE] <dialect> <code>: <message>")`. Never return `[]`, `False`, `None` or `{"error": ...}` for a failure. Validation and policy failures keep the same `[E_CODE]` prefix as `SaltInvocationError`; `errors.raise_for` passes them through unchanged (SPEC section 8).
 - R2. Map on SQLSTATE / vendor code first, exception class second. Unknown → `E_INTERNAL` with the class name only.
 - R3. Never put the SQL text, bound values, the URL, or a secret in any message, log record or return.
 
@@ -44,6 +44,7 @@ each gate.
 | `text("select '{\"a\":1}'")` | `:1` read as a bind → `A value is required for bind parameter '1'` | write `\:` |
 | `exec_driver_sql("... like '%b%'")` with psycopg | `only '%s', '%b', '%t' are allowed as placeholders` | use `text()` for caller SQL |
 | Trusting `SET TRANSACTION READ ONLY` (or any in-session guard) | caller SQL can `SET TRANSACTION READ WRITE`, `START TRANSACTION READ WRITE` or `COMMIT` and write. Bypassable on PostgreSQL 16.15, MySQL 8.0.46 and MariaDB 10.11.14 (WIRE_SHAPES section 3); Oracle and SQL Server NOT RUN | read-only DB role |
+| Passing `operator=">"` or `"=="` unquoted on the `salt` / `salt-call` command line | the CLI parses values as YAML and the symbol is mangled | YAML-quote it: `operator='">"'` (SPEC section 4) |
 | Using `postgres.psql_query`-style return-on-failure | the real error is lost | R1 |
 | Treating `ProgrammingError` as a subclass of `OperationalError` (as Salt's `mysql.query` does) | syntax errors escape as raw tracebacks | catch `DBAPIError` **and more** (next rows) |
 | Assuming `DBAPIError` is the only exception that reaches the caller | observed raw: `TypeError` (PostgreSQL SQL_ASCII, first connect), `RuntimeError` and `AttributeError` (PyMySQL auth without or with `cryptography`), `ValueError` (`exec_driver_sql` with a literal `%` on PyMySQL), `sqlalchemy.exc.InvalidRequestError` (mis-read bind) | catch `Exception` around connect and execute; unknown class -> `E_INTERNAL` with the class name only |
