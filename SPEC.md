@@ -121,27 +121,52 @@ Uses `sqlalchemy.inspect(...)`. Returns `{"schema", "tables": [...], "views": [.
 
 ## 7. Dialects and drivers
 
-| dialect | driver (pip extra) | URL | Licence | timeout mechanism | in-session read-only |
+Labels. **observed**: seen on a real server by task T1 on 2026-10-29, evidence in `docs/WIRE_SHAPES.md` (`WS n` = its
+section n). **unverified**: not run; kept from vendor documentation and must not be relied on until a server is available.
+Servers actually run: PostgreSQL 16.15, MySQL 8.0.46, MariaDB 10.11.14, with SQLAlchemy 2.0.55 and 2.1.6, psycopg 3.3.6,
+PyMySQL 1.2.3. Oracle and SQL Server could not be started in the T1 environment (registries blocked), so their rows are
+unverified except where stated.
+
+| dialect | driver (pip extra) | URL | Licence (package metadata) | timeout mechanism | in-session read-only |
 |---|---|---|---|---|---|
-| `postgresql` | `psycopg[binary]` (extra `postgres`) | `postgresql+psycopg://` | LGPL-3.0 | `SET statement_timeout = <ms>` ✔ | `SET TRANSACTION READ ONLY` ✔ |
-| `mysql` | `PyMySQL` (extra `mysql`) | `mysql+pymysql://` | MIT | `SET SESSION MAX_EXECUTION_TIME=<ms>` (MySQL ≥ 5.7.8, SELECT only); MariaDB: `SET SESSION max_statement_time=<s>` | `SET SESSION TRANSACTION READ ONLY` |
-| `oracle` | `oracledb` thin mode (extra `oracle`) | `oracle+oracledb://` | Apache-2.0 / UPL | `connection.call_timeout` (ms) | `SET TRANSACTION READ ONLY` as first statement |
-| `mssql` | `pymssql` (extra `mssql`) | `mssql+pymssql://` | LGPL-2.1 | `timeout` / `login_timeout` connect args (s) | none; role only |
+| `postgresql` | `psycopg[binary]` (extra `postgres`) | `postgresql+psycopg://` | LGPL-3.0-only | `SET statement_timeout = <ms>`: cancels at the limit, SQLSTATE 57014. **observed** [WS 2] | `SET TRANSACTION READ ONLY`: refuses writes (25006) but **bypassable** (SECURITY.md section 2). **observed** [WS 3] |
+| `mysql` | `PyMySQL` (extra `mysql`) | `mysql+pymysql://` | MIT | `SET SESSION MAX_EXECUTION_TIME=<ms>`: raises 3024 (SQLSTATE `HY000`) for a SELECT that reads tables; a table-less `SELECT SLEEP(n)` is cut short **silently** (returns 1, no error); `INSERT ... SELECT` is **not limited**. **observed** on 8.0.46 only [WS 2]. The earlier "MySQL >= 5.7.8" is **unverified**. | `SET SESSION TRANSACTION READ ONLY`: refuses writes (1792, SQLSTATE 25006) but **bypassable** by four statements. `START TRANSACTION READ ONLY` resists the most statements but is also bypassable. **observed** [WS 3] |
+| `mariadb` | `PyMySQL` (extra `mysql`) | `mysql+pymysql://` (SQLAlchemy sets `dialect.is_mariadb`, `False` on MySQL and `True` on MariaDB; use it to pick the variable) | MIT | `SET SESSION max_statement_time=<seconds>`: fractional values accepted; raises 1969 (SQLSTATE `70100`) for SELECT and for `INSERT ... SELECT`. **observed** on 10.11.14 [WS 2]. `MAX_EXECUTION_TIME` does not exist here (1193). | `SET SESSION TRANSACTION READ ONLY`: refuses writes (1792) but **bypassable**; the session variable is `tx_read_only` (`transaction_read_only` does not exist, 1193). **observed** [WS 3] |
+| `oracle` | `oracledb` thin mode (extra `oracle`) | `oracle+oracledb://` | UPL-1.0 OR Apache-2.0 | `connection.call_timeout` (ms): **unverified** (NOT RUN) | `SET TRANSACTION READ ONLY` as first statement: **unverified** (NOT RUN) |
+| `mssql` | `pymssql` (extra `mssql`) | `mssql+pymssql://` | LGPL-2.1 | `timeout` / `login_timeout` connect args (s): **unverified** (NOT RUN) | none, role only: **unverified** (NOT RUN) |
 
-Only the **PostgreSQL row is verified** (SQLAlchemy 2.0.55 + psycopg 3.3.6 + PostgreSQL 16). The other rows are from
-documentation and must be pinned by task T1 against real servers. `mysqlclient` (GPL) is excluded. LGPL drivers are
-accepted by the owner as unmodified pip dependencies (decision recorded 2026-10-29). `connect_args` keys are checked
-against a per-driver allowlist; `ssl_context`, callables and file paths outside the TLS directory are rejected.
+Notes, all **observed** unless stated.
+- MySQL and MariaDB share one driver and one URL scheme but differ in the timeout variable, the read-only variable, the
+  error message wording, and SQLSTATE for the same vendor code (for example 1366 is `HY000` on MySQL and `22007` on MariaDB).
+  The adapter must detect the flavour (`dialect.is_mariadb`) and may not assume one set of statements for both.
+- PyMySQL 1.2.3 negotiated TLS with MySQL 8 by itself (self-signed server certificate, nothing verified by the caller). With
+  `ssl_disabled=True`, MySQL 8's default `caching_sha2_password` needs the `cryptography` package: without it PyMySQL
+  raises a bare `RuntimeError`; with it, the first connection after the server's auth cache was cleared raised a bare
+  `AttributeError` and the next succeeded [WS 6]. `oracledb` already depends on `cryptography`; the `mysql` extra does not.
+  Whether to add it is a dependency decision (R16) and was not made in T1.
+- A PostgreSQL database created as SQL_ASCII fails on the first connect with a bare `TypeError: cannot use a string pattern
+  on a bytes-like object` (not a `DBAPIError`) [WS 7].
+- Choosing the MySQL/MariaDB read-only statement is a T4 decision; no tested statement is bypass-proof (WS 3).
+- `connect_args` keys are checked against a per-driver allowlist; `ssl_context`, callables and file paths outside the TLS
+  directory are rejected. (Design rule, not a database behaviour.)
+- `mysqlclient` (GPL) is excluded. LGPL drivers are accepted by the owner as unmodified pip dependencies (decision
+  recorded 2026-10-29).
 
-SQLAlchemy is pinned `>=2.0,<2.1` until T1 has also run the suite against 2.1.x (D4).
+SQLAlchemy is pinned `>=2.0,<2.1` in `pyproject.toml`. T1 ran the same cases on SQLAlchemy 2.1.6: PostgreSQL, MySQL and
+MariaDB results and the client-side Oracle and SQL Server results were identical to 2.0.55, and the `text()` traps in
+section 5 still occur [WS 8]. Widening the pin remains decision D4.
 
 ## 8. Errors
 
-One path: any `sqlalchemy.exc.DBAPIError` (and driver exceptions during connect) is mapped to
+One path: any exception raised while connecting or executing is mapped to
 `CommandExecutionError("[E_CODE] <dialect> <sqlstate-or-vendor-code>: <message>")`. Salt returns this as
 `ERROR: [E_CODE] ...` with retcode 1. Validation failures raise `SaltInvocationError` with the same prefix style.
+**Catching `DBAPIError` is not enough**: these reached the caller as other types (observed, WS 5-7):
+`TypeError` (PostgreSQL SQL_ASCII, first connect), `RuntimeError` and `AttributeError` (PyMySQL authentication),
+`ValueError` (PyMySQL with `exec_driver_sql` and a literal `%`), and `sqlalchemy.exc.StatementError` for a mis-read bind.
+Those map to `E_INTERNAL` unless a rule below says otherwise.
 
-| Code | Meaning | Source |
+| Code | Meaning | Source (observed unless marked unverified) |
 |---|---|---|
 | `E_PROFILE_UNKNOWN` | profile name not configured | validation |
 | `E_PROFILE_INVALID` | missing/unknown/inconsistent profile key | validation |
@@ -149,29 +174,63 @@ One path: any `sqlalchemy.exc.DBAPIError` (and driver exceptions during connect)
 | `E_SECRET` | `sdb://` reference failed or resolved empty | secrets |
 | `E_POLICY` | verb not allowed, limit above cap, forbidden driver arg | policy |
 | `E_EXECUTE_DISABLED` | `execute` on a profile without `allow_execute` | policy |
-| `E_DRIVER_MISSING` | driver package not installed | import |
-| `E_CONNECT` | network/TLS/host failure | `OperationalError` before auth |
-| `E_AUTH_FAILED` | bad credentials | driver code (PG 28P01/28000, MySQL 1045, Oracle ORA-01017, MSSQL 18456) |
-| `E_SQL` | syntax error, unknown object/column, permission denied | `ProgrammingError`, SQLSTATE class 42 |
-| `E_SQL_DATA` | data exception (division by zero, bad cast) | `DataError`, class 22 |
-| `E_CONSTRAINT` | integrity violation | `IntegrityError`, class 23 |
-| `E_READ_ONLY` | write attempted in a read-only context | PG 25006 and equivalents |
-| `E_TIMEOUT` | statement timeout/cancel | PG 57014 and equivalents |
-| `E_INTERNAL` | anything else; message is the exception **class name only** | catch-all |
+| `E_DRIVER_MISSING` | driver package not installed | import. A missing optional dependency also surfaced as a bare `RuntimeError` naming `cryptography` (PyMySQL); mapping that to this code is a T5 choice |
+| `E_CONNECT` | network/TLS/host failure | PostgreSQL `psycopg.OperationalError`, no SQLSTATE, text `Connection refused`; MySQL/MariaDB `OperationalError` 2003 (no SQLSTATE); Oracle `oracledb.exceptions.OperationalError` `DPY-6005`; SQL Server `pymssql.exceptions.OperationalError` 20009 (the last two are client-side rows, no server needed) |
+| `E_AUTH_FAILED` | bad credentials | PostgreSQL: `psycopg.OperationalError` with **no SQLSTATE** (28P01 is not observable), only the text `FATAL:  password authentication failed`; MySQL/MariaDB: 1045 (SQLSTATE 28000). Access to an unknown/forbidden database as a non-admin gave 1044 (SQLSTATE 42000) on MySQL/MariaDB and `FATAL:  database ... does not exist` (no SQLSTATE) on PostgreSQL. Oracle `ORA-01017` and SQL Server 18456: **unverified** |
+| `E_SQL` | syntax error, unknown object/column, permission denied | PostgreSQL `ProgrammingError`, class 42. MySQL/MariaDB: 1064 and 1146 are `ProgrammingError`, but 1054 (unknown column) and 1142 (permission denied) are `OperationalError`; all have SQLSTATE class 42, so key on the code, not the class |
+| `E_SQL_DATA` | data exception (division by zero, bad cast) | PostgreSQL `DataError`, class 22. MySQL/MariaDB: 1365 (division by zero, only in data-changing statements; `SELECT 1/0` returns NULL) is `OperationalError`, SQLSTATE 22012; 1366 (bad value) is `DataError` with SQLSTATE `HY000` on MySQL and `22007` on MariaDB, so key on the vendor code |
+| `E_CONSTRAINT` | integrity violation | PostgreSQL 23505 `IntegrityError`; MySQL/MariaDB 1062 `IntegrityError`, SQLSTATE 23000 |
+| `E_READ_ONLY` | write attempted in a read-only context | PostgreSQL 25006 (`InternalError`); MySQL/MariaDB 1792 (`OperationalError`, SQLSTATE 25006). Oracle: **unverified** |
+| `E_TIMEOUT` | statement timeout/cancel | PostgreSQL 57014 (`OperationalError`); MySQL 3024 (`HY000`); MariaDB 1969 (`70100`). MySQL does not raise for a table-less `SELECT SLEEP()` (WS 2). Oracle and SQL Server: **unverified** |
+| `E_INTERNAL` | anything else; message is the exception **class name only** | catch-all, including the raw exceptions listed above |
 
-Observed on PostgreSQL 16 (verified):
+Observed on PostgreSQL 16.15 (re-verified 2026-10-29; the five original rows are unchanged):
 
 | Input | SQLAlchemy / driver class | SQLSTATE | Code |
 |---|---|---|---|
 | `selec 1` | ProgrammingError / SyntaxError | 42601 | `E_SQL` |
 | `select * from nope` | ProgrammingError / UndefinedTable | 42P01 | `E_SQL` |
+| `select nope from t` | ProgrammingError / UndefinedColumn | 42703 | `E_SQL` |
 | `select 1/0` | DataError / DivisionByZero | 22012 | `E_SQL_DATA` |
+| duplicate key | IntegrityError / UniqueViolation | 23505 | `E_CONSTRAINT` |
+| insert as a SELECT-only role | ProgrammingError / InsufficientPrivilege | 42501 | `E_SQL` |
 | insert under `READ ONLY` | InternalError / ReadOnlySqlTransaction | 25006 | `E_READ_ONLY` |
 | `pg_sleep(3)` with 300 ms timeout | OperationalError / QueryCanceled | 57014 | `E_TIMEOUT` |
+| wrong password / unknown database / port closed | OperationalError / `psycopg.OperationalError` | none | `E_AUTH_FAILED` / `E_CONNECT` by message text only |
 
-Message text: the server's primary message (psycopg `diag.message_primary`; other drivers `exc.args`), plus `hint` when
-present. `detail` is included only if `error_detail: true`. Never include the SQL text, bound values, or the URL.
-Mapping must be keyed on SQLSTATE/vendor code first, exception class second.
+Observed on MySQL 8.0.46 and MariaDB 10.11.14 (PyMySQL 1.2.3; both servers unless two values are shown, MySQL / MariaDB):
+
+| Input | SQLAlchemy / driver class | SQLSTATE | Vendor code | Code |
+|---|---|---|---|---|
+| `selec 1` | ProgrammingError / ProgrammingError | 42000 | 1064 | `E_SQL` |
+| `select * from nope` | ProgrammingError / ProgrammingError | 42S02 | 1146 | `E_SQL` |
+| `select nope from t` | OperationalError / OperationalError | 42S22 | 1054 | `E_SQL` |
+| `select 1/0` | no error, returns `NULL` | - | - | none |
+| `insert ... select 1/0` | OperationalError / OperationalError | 22012 | 1365 | `E_SQL_DATA` |
+| string bound to an integer column | DataError / DataError | HY000 / 22007 | 1366 | `E_SQL_DATA` |
+| duplicate key | IntegrityError / IntegrityError | 23000 | 1062 | `E_CONSTRAINT` |
+| insert as a SELECT-only user | OperationalError / OperationalError | 42000 | 1142 | `E_SQL` |
+| insert under `READ ONLY` | OperationalError / OperationalError | 25006 | 1792 | `E_READ_ONLY` |
+| timeout | OperationalError / OperationalError | HY000 / 70100 | 3024 / 1969 | `E_TIMEOUT` |
+| wrong password | OperationalError / OperationalError | 28000 | 1045 | `E_AUTH_FAILED` |
+| port closed | OperationalError / OperationalError | none | 2003 | `E_CONNECT` |
+| client `read_timeout` expired | OperationalError / OperationalError | none | 2013 | not decided |
+
+Oracle and SQL Server: only the connection-refused rows are observed (see `E_CONNECT`). All other classes and codes for
+them are **unverified**.
+
+Message text. Observed fields: psycopg `exc.orig.diag.message_primary` (plus `message_hint` on some errors and
+`message_detail` where the server sends one); PyMySQL `exc.orig.args == (code, message)` and `exc.orig.sqlstate`; oracledb
+`exc.orig.args[0]` is an error object with `full_code` and `message`; pymssql `exc.orig.args == ((code, b"message"),)`
+(bytes). Use the message of `exc.orig` and **never `str()` of the SQLAlchemy exception**: it appends `[SQL: ...]` and
+`[parameters: ...]` with the bound values. `detail` is included only if `error_detail: true`, which works on
+PostgreSQL (the row value is in `message_detail`) but not on MySQL/MariaDB, where the row value is part of the primary
+message (`Duplicate entry 'a@example.com'`). The server's primary message can also echo a bound value (PostgreSQL 22P02,
+MySQL/MariaDB 1366), so "never include bound values" cannot be guaranteed for the server's own text. Never include the SQL
+text or the URL. No account password was found in any exception text or traceback in any observed case (WS 9).
+Mapping must be keyed on the vendor code and SQLSTATE first, exception class second; SQLSTATE is absent for PostgreSQL
+connect-phase errors and for MySQL/MariaDB client-side errors, and differs between MySQL and MariaDB for the same vendor
+code, so for the MySQL family the vendor code is the primary key.
 
 ## 9. Return-value rules
 
