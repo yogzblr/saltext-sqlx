@@ -6,6 +6,7 @@ host, port, driver, URL or ``connect_args``, because those only exist here, in o
 ``password`` may be an ``sdb://`` reference. It is validated for shape but **not** resolved here (that is
 ``lib/secrets.py``). Messages name keys only and never contain values. This module has no Salt dunders.
 """
+
 import copy
 import re
 
@@ -101,7 +102,10 @@ def validate_profile(name, raw):
 
     driver = raw.get("driver", DIALECT_DRIVERS[dialect])
     if driver != DIALECT_DRIVERS[dialect]:
-        _invalid(name, f"'driver' does not match dialect '{dialect}' (expected '{DIALECT_DRIVERS[dialect]}')")
+        _invalid(
+            name,
+            f"'driver' does not match dialect '{dialect}' (expected '{DIALECT_DRIVERS[dialect]}')",
+        )
     out["driver"] = driver
 
     out["host"] = _text(name, raw, "host")

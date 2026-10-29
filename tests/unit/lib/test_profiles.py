@@ -1,5 +1,7 @@
 """Unit tests for saltext.sqlx.lib.profiles (TEST_PLAN section 3)."""
+
 import copy
+import inspect
 import json
 
 import pytest
@@ -131,7 +133,9 @@ def test_dialect_driver_pairs_accepted(dialect, driver):
     ],
 )
 def test_dialect_driver_mismatch_is_rejected(dialect, driver):
-    _fails("E_PROFILE_INVALID", profiles.validate_profile, "p", make(dialect=dialect, driver=driver))
+    _fails(
+        "E_PROFILE_INVALID", profiles.validate_profile, "p", make(dialect=dialect, driver=driver)
+    )
 
 
 def test_unknown_dialect_without_driver_is_rejected():
@@ -299,6 +303,9 @@ def test_profile_caps_feed_option_caps():
 
 
 def test_load_profile_signature_takes_only_name_and_config():
-    import inspect
-
     assert list(inspect.signature(profiles.load_profile).parameters) == ["name", "config"]
+
+
+@pytest.mark.parametrize("key", ["query", "connect_args"])
+def test_null_mapping_means_empty(key):
+    assert profiles.validate_profile("p", make(**{key: None}))[key] == {}
