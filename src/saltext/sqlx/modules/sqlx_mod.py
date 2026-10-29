@@ -302,7 +302,7 @@ def psql_query(  # pylint: disable=too-many-arguments,too-many-positional-argume
     reference unless the policy allows literals) are call-time parameters and need ``sqlx:_policy:allow_call_params``.
     ``profile`` defaults to ``sqlx:default_profile`` and must be a postgresql profile. ``runas`` is refused. ``write=True``
     goes through the ``execute`` path (``allow_execute`` and the verb filter apply). Returns a list of dicts
-    (column to text or ``None``); a failure raises ``[E_...]`` instead of returning ``[]``. Differences: SPEC section 4.7.
+    (column to text or ``None``; rows beyond the row or byte cap are dropped silently, ``sqlx.query`` shows the ``truncated`` flag); a failure raises ``[E_...]`` instead of returning ``[]``. Differences: SPEC section 4.7.
 
     CLI Example:
 
@@ -325,8 +325,4 @@ def psql_query(  # pylint: disable=too-many-arguments,too-many-positional-argume
     result = _run(
         function, _postgres_only(_execute if write else _query), dict(call, profile=profile)
     )
-    if result.get("truncated"):
-        log.warning(
-            "sqlx.psql_query: the result was truncated by the row or byte cap; sqlx.query shows the flag"
-        )
     return psql_compat.shape(result, write)

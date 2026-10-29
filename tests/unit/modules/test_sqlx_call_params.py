@@ -369,14 +369,9 @@ def test_psql_query_write_still_applies_the_verb_filter_in_the_runner(fake):
     assert fake.executes[0]["execute_verbs"] == ["INSERT", "UPDATE", "DELETE"]
 
 
-def test_psql_query_truncation_is_logged(fake, caplog, monkeypatch):
+def test_psql_query_truncation_is_silent_but_the_rows_are_capped(fake):
+    """Documented difference (SPEC 4.7): the Salt shape has no place for the flag; nothing is logged but the audit line."""
     fake.cfg["default_profile"] = "pg_ro"
     fake.query_result = dict(ROWS, truncated=True)
-    own = logging.getLogger(
-        "sqlx_test_truncation"
-    )  # not propagated: keeps Salt's deferred root handler out of it
-    own.propagate = False
-    own.addHandler(caplog.handler)
-    monkeypatch.setattr(mod, "log", own)
-    assert len(mod.psql_query("select 1")) == 2
-    assert "truncated" in caplog.text
+    assert len(mod.psql_query("select 1", limit=2)) == 2
+    assert fake.queries[0]["limit"] == 2
