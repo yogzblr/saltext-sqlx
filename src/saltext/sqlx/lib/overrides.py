@@ -298,8 +298,13 @@ def prepare(function, kwargs, config):  # pylint: disable=unused-argument
 # -- host / port / dialect gates --------------------------------------------------------------------------------------
 
 
-def _lookup(resolver, host, port):
-    """Addresses for ``host`` from ``resolver`` (default: ``getaddrinfo``, the call the drivers make). ``[E_CONNECT]`` if none."""
+def _lookup(resolver, host, port, listed=True):
+    """
+    Addresses for ``host`` from ``resolver`` (default: ``getaddrinfo``, the call the drivers make).
+
+    None found is ``[E_CONNECT]`` for a name the policy lists and ``[E_POLICY]`` for one it does not (so an unlisted name
+    is always reported as outside ``allowed_hosts``, whatever DNS says).
+    """
     addresses = []
     try:
         if resolver is None:
@@ -310,6 +315,8 @@ def _lookup(resolver, host, port):
     except (OSError, UnicodeError):
         addresses = []
     if not addresses:
+        if not listed:
+            _fail("E_POLICY", "'host' is not in sqlx:_policy:allowed_hosts")
         _fail(
             "E_CONNECT",
             "host name could not be resolved for the policy check",
@@ -359,7 +366,7 @@ def _check_host(host, port, policy, resolver):
             _fail(
                 "E_POLICY", "'host' is not in sqlx:_policy:allowed_hosts"
             )  # an unlisted name is never looked up
-        found = _lookup(resolver, text, port if _is_int(port) else 0)
+        found = _lookup(resolver, text, port if _is_int(port) else 0, name_ok)
         addresses = [a for a in (_address(x) for x in found) if a is not None]
         allowed = name_ok or (
             bool(nets) and bool(addresses) and all(any(_in(a, n) for n in nets) for a in addresses)

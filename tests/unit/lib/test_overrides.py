@@ -446,6 +446,17 @@ def test_unresolvable_name_is_e_connect_before_any_connection():
     assert str(exc.value).startswith("[E_CONNECT]")
 
 
+def test_unresolvable_unlisted_name_is_e_policy_whatever_dns_says():
+    """With a CIDR in the list an unlisted name is looked up; if it does not resolve it is simply outside the list."""
+    with pytest.raises(SaltInvocationError) as exc:
+        go(
+            cfg(allowed_hosts=["10.0.0.0/8"]),
+            {"profile": "pg", "host": "gone.example"},
+            resolver=lambda h, p: [],
+        )
+    assert str(exc.value).startswith("[E_POLICY]")
+
+
 def test_real_resolver_is_used_by_default(monkeypatch):
     calls = []
 
