@@ -1084,9 +1084,23 @@ def test_adhoc_connection_without_password_is_marked_dropped():
 
 def test_hostile_connection_key_names_are_escaped_and_bounded_in_the_message():
     """T11 D8 applies to keys inside ``connection`` too: no raw newline or bidi control reaches a message."""
-    evil = "x\nINJECT‮" + "y" * 100
+    bidi = chr(0x202E)
+    evil = "x\nINJECT" + bidi + "y" * 100
     with pytest.raises(SaltInvocationError) as exc:
         go(cfg(), {"profile": "pg", "connection": {evil: 1}})
     text = str(exc.value)
     assert text.startswith("[E_OPTION_UNKNOWN] unknown key(s) in connection: ")
-    assert "\n" not in text and "‮" not in text and len(text) < 160
+    assert "\n" not in text and bidi not in text and len(text) < 160
+
+
+def test_many_hostile_connection_keys_are_counted_not_listed():
+    with pytest.raises(SaltInvocationError) as exc:
+        go(cfg(), {"profile": "pg", "connection": {f"k{i}": 1 for i in range(9)}})
+    assert str(exc.value).endswith("and 4 more")
+
+
+def test_empty_host_is_invalid():
+    with pytest.raises(SaltInvocationError, match=r"^\[E_OPTION_INVALID\] option 'host'"):
+        overrides._check_host(
+            "", 5432, overrides.parse_policy(cfg()), None
+        )  # pylint: disable=protected-access
