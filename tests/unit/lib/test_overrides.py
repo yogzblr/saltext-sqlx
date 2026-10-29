@@ -1080,3 +1080,13 @@ def test_adhoc_connection_without_password_is_marked_dropped():
         {"dialect": "postgresql", "host": "10.1.1.1", "database": "d", "username": "u"},
     )
     assert prof["password_dropped"] is True
+
+
+def test_hostile_connection_key_names_are_escaped_and_bounded_in_the_message():
+    """T11 D8 applies to keys inside ``connection`` too: no raw newline or bidi control reaches a message."""
+    evil = "x\nINJECT‮" + "y" * 100
+    with pytest.raises(SaltInvocationError) as exc:
+        go(cfg(), {"profile": "pg", "connection": {evil: 1}})
+    text = str(exc.value)
+    assert text.startswith("[E_OPTION_UNKNOWN] unknown key(s) in connection: ")
+    assert "\n" not in text and "‮" not in text and len(text) < 160

@@ -115,6 +115,14 @@ def _norm_dialect(value):
     return "mysql" if value == "mariadb" else value
 
 
+def _shown(names):
+    """Caller-chosen key names for a message: escaped (no newlines or bidi controls) and bounded, as in ``options``."""
+    shown = ", ".join(ascii(n)[: options._NAME_WIDTH] for n in names[: options._NAMES_SHOWN])  # pylint: disable=protected-access
+    if len(names) > options._NAMES_SHOWN:  # pylint: disable=protected-access
+        shown += f" and {len(names) - options._NAMES_SHOWN} more"  # pylint: disable=protected-access
+    return shown
+
+
 def _is_int(value):
     return isinstance(value, int) and not isinstance(value, bool)
 
@@ -267,12 +275,12 @@ def prepare(function, kwargs, config):  # pylint: disable=unused-argument
         conn = conn or {}
         bad = sorted(str(k) for k in conn if k not in FIELDS)
         if bad:
-            _fail("E_OPTION_UNKNOWN", f"unknown key(s) in connection: {', '.join(bad)}")
+            _fail("E_OPTION_UNKNOWN", f"unknown key(s) in connection: {_shown(bad)}")
         both = sorted(k for k in conn if kwargs.get(k) is not None and conn[k] is not None)
         if both:
             _fail(
                 "E_OPTION_INVALID",
-                f"key(s) given both as options and in connection: {', '.join(both)}",
+                f"key(s) given both as options and in connection: {_shown(both)}",
             )
         for key in FIELDS:
             value = conn.get(key) if conn.get(key) is not None else kwargs.get(key)
