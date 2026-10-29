@@ -118,7 +118,7 @@ def test_underlying_exception_text_is_not_chained():
     with pytest.raises(CommandExecutionError) as excinfo:
         secrets.resolve_secret(REF, _getter_raising(RuntimeError(SECRET)))
     assert excinfo.value.__cause__ is None
-    assert excinfo.value.__suppress_context__ is True
+    assert excinfo.value.__context__ is None
 
 
 def test_getter_exception_class_name_is_reported():
@@ -274,14 +274,15 @@ def test_filter_keeps_non_sensitive_text(masked_logger):
     assert handler.lines == ["INFO connecting to host=db port=5432 passwords are hidden"]
 
 
-def test_filter_masks_extra_attributes_named_like_secrets(masked_logger):
-    logger, handler, _ = masked_logger
-    seen = []
-    handler.addFilter(lambda r: seen.append(r.__dict__.copy()) or True)
-    logger.info("msg", extra={"password": "hunter2", "db_token": "hunter2", "host": "h"})
-    assert seen[0]["password"] == "***"
-    assert seen[0]["db_token"] == "***"
-    assert seen[0]["host"] == "h"
+def test_filter_masks_extra_attributes_named_like_secrets():
+    record = logging.LogRecord("n", logging.INFO, __file__, 1, "msg", None, None)
+    record.password = "hunter2"
+    record.db_token = "hunter2"
+    record.host = "h"
+    assert secrets.MaskingFilter().filter(record) is True
+    assert record.password == "***"
+    assert record.db_token == "***"
+    assert record.host == "h"
 
 
 def test_filter_masks_registered_secret_values_anywhere(masked_logger):
