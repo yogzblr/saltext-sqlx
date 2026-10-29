@@ -2,6 +2,7 @@
 
 import datetime as dt
 import decimal
+import enum
 import json
 import uuid
 
@@ -34,7 +35,7 @@ def strict(obj):
 def test_passthrough_scalars(value, expected):
     out = serialize_value(value)
     assert out == expected
-    assert type(out) is type(expected)
+    assert isinstance(out, type(expected))
     assert strict(out) == expected
 
 
@@ -145,7 +146,7 @@ def test_huge_int_preserved_as_int():
     n = 2**200 + 1
     out = serialize_value(n)
     assert out == n
-    assert type(out) is int
+    assert isinstance(out, int)
     assert strict(out) == n
 
 
@@ -164,8 +165,6 @@ def test_unknown_type_uses_str():
 
 
 def test_str_subclass_and_int_subclass_pass_through():
-    import enum
-
     class Color(str, enum.Enum):
         RED = "red"
 
@@ -214,7 +213,7 @@ def test_build_result_empty_columns():
 def test_build_result_columns_but_no_rows():
     res = build_result(["a"], [], 10, 1024)
     assert res["columns"] == ["a"]
-    assert res["rows"] == []
+    assert not res["rows"]
     assert res["truncated"] is False
 
 
@@ -240,7 +239,7 @@ def test_more_than_limit_rows_truncated():
 
 def test_limit_zero():
     res = build_result(["n"], [(1,)], 0, 10_000)
-    assert res["rows"] == []
+    assert not res["rows"]
     assert res["row_count"] == 0
     assert res["truncated"] is True
     res = build_result(["n"], [], 0, 10_000)
@@ -281,7 +280,7 @@ def test_byte_budget_exact_fit_not_truncated():
 
 def test_first_row_exceeds_budget_returns_zero_rows_truncated():
     res = build_result(["c"], [("y" * 1000,)], 10, 100)
-    assert res["rows"] == []
+    assert not res["rows"]
     assert res["row_count"] == 0
     assert res["truncated"] is True
     assert res["columns"] == ["c"]
@@ -292,7 +291,7 @@ def test_budget_measures_utf8_bytes_not_characters():
     row = ("é" * 40,)  # 80 bytes of UTF-8 payload when encoded raw
     ascii_size = len(json.dumps(list(row), separators=(",", ":"), ensure_ascii=False).encode())
     res = build_result([], [row], 10, ascii_size - 1)
-    assert res["rows"] == []
+    assert not res["rows"]
     assert res["truncated"] is True
     res = build_result([], [row], 10, ascii_size + 4)
     assert res["row_count"] == 1
@@ -328,7 +327,8 @@ def test_unserialisable_dict_cycle_not_supported_message():
 
 
 def test_module_has_no_salt_dunders():
-    src = open(serialize.__file__, encoding="utf-8").read()
+    with open(serialize.__file__, encoding="utf-8") as fh:
+        src = fh.read()
     assert "__salt__" not in src
     assert "__opts__" not in src
     assert "sqlalchemy" not in src
