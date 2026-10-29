@@ -42,7 +42,7 @@ def __virtual__():
     return __virtualname__
 
 
-def _run(function, work, kwargs):
+def _run(function, work, kwargs):  # pylint: disable=inconsistent-return-statements
     """The one call path: validate, profile, secret, caps, ``work``, audit. Any failure goes to ``raise_for``."""
     started = time.perf_counter()
     user = kwargs.get("__pub_user")

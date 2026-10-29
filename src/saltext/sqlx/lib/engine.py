@@ -66,19 +66,6 @@ def managed_engine(profile, password, timeout_ms=None):
         eng.dispose()
 
 
-def _scrub(text, password):
-    """Remove the password (raw and URL-quoted forms) and any URL from driver text; single line, bounded."""
-    text = str(text)
-    if password:
-        for form in sorted(
-            {password, quote(password, safe=""), quote_plus(password)}, key=len, reverse=True
-        ):
-            text = text.replace(form, "***")
-    text = _URL_RE.sub("<url>", text)
-    text = " ".join(text.split())
-    return text[:_MAX_MESSAGE]
-
-
 def _fail(exc, profile, password):
     """
     Raise the translated error for ``exc`` through :func:`errors.raise_for`, the one error path (R1).

@@ -1,9 +1,10 @@
 """Unit tests for saltext.sqlx.modules.sqlx_mod (TEST_PLAN ``test_module.py``).
 
 ``__salt__``, ``__opts__`` and the database layer (``engine`` connection, ``runner``) are injected fakes: no Salt
-daemon and no database. Real servers are covered by ``tests/functional/modules/test_sqlx_module_functional.py``.
+daemon and no database. Real servers are covered by ``tests/functional/test_sqlx_module_functional.py``.
 """
 
+# pylint: disable=unused-argument
 import contextlib
 import hashlib
 import importlib.util
@@ -87,6 +88,7 @@ class Fake:
         self.pings = []
         self.sdb = []
         self.query_result = dict(ROWS)
+        self.query_result_fn = None
         self.query_error = None
         self.execute_error = None
         self.connect_error = None
@@ -110,10 +112,9 @@ class Fake:
         self.queries.append({"sql": sql, "params": params, "limit": limit, "max_bytes": max_bytes})
         if self.query_error is not None:
             raise self.query_error
-        result = self.query_result
-        if callable(result):
-            result = result(len(self.queries))
-        return dict(result)
+        if self.query_result_fn is not None:
+            return dict(self.query_result_fn(len(self.queries)))
+        return dict(self.query_result)
 
     def run_execute(self, conn, sql, params, *, dry_run, execute_verbs):
         assert conn == "CONN"
@@ -160,10 +161,6 @@ def fake(monkeypatch):
     f.config = config
     f.salt = salt
     return f
-
-
-def code_of(exc):
-    return str(exc.value).split("]")[0] + "]"
 
 
 # --- __virtual__ ------------------------------------------------------------------------------
@@ -390,7 +387,7 @@ def test_check_row_count_truncated_is_unknown(fake):
 
 
 def test_check_retry_uses_a_new_connection_per_attempt(fake):
-    fake.query_result = lambda n: dict(ROWS, rows=[[n]], row_count=1)
+    fake.query_result_fn = lambda n: dict(ROWS, rows=[[n]], row_count=1)
     out = mod.check_query_result(
         profile="pg_ro",
         sql="select 1",
