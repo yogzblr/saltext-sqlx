@@ -65,7 +65,7 @@ dev = [
 # When initializing the dev env using the included automation, pass
 # `--extras` to install them automatically.
 dev_extra = [
-    "black==26.5.1",
+    "black==26.10.1",
     "isort==8.0.1",
     "coverage==7.14.3",
     # licence report for NOTICE (`pip-licenses --format=markdown`); the GPL gate itself is
