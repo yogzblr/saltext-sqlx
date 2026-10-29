@@ -240,12 +240,6 @@ def test_table_list_pattern_cannot_pin_the_cpu(request, server):
     """D4: the LIKE pattern is compiled to a regular expression with ambiguous ``.*`` runs (catastrophic backtracking)."""
     if server.key != "postgresql":
         pytest.skip("one dialect is enough: the pattern code is shared")
-    defect(
-        request,
-        server,
-        "D4",
-        "table_list pattern '%a%a%a...b' backtracks without bound against a 50-character table name",
-    )
     name = "t11_" + "a" * 50
     server.admin(f'DROP TABLE IF EXISTS scratch."{name}"')
     server.admin(f'CREATE TABLE scratch."{name}" (a integer)')
