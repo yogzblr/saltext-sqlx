@@ -13,14 +13,7 @@ import re
 from salt.exceptions import SaltInvocationError
 
 from saltext.sqlx.lib import options
-
-#: dialect -> the only driver allowed with it (SPEC section 7).
-DIALECT_DRIVERS = {
-    "postgresql": "psycopg",
-    "mysql": "pymysql",
-    "oracle": "oracledb",
-    "mssql": "pymssql",
-}
+from saltext.sqlx.lib.dialects import DIALECT_DRIVERS  # single source of truth (SPEC section 7)
 
 DEFAULT_EXECUTE_VERBS = ("INSERT", "UPDATE", "DELETE")
 
