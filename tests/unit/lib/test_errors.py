@@ -86,8 +86,12 @@ def _build_exc(dialect, rec):
     if rec.get("sa_exc") is None:
         # raw exception, not wrapped by SQLAlchemy (TypeError, RuntimeError, ValueError, ...)
         name = rec["driver_exc"].rsplit(".", 1)[-1]
-        return {"TypeError": TypeError, "RuntimeError": RuntimeError, "ValueError": ValueError,
-                "AttributeError": AttributeError}[name](rec["message"])
+        return {
+            "TypeError": TypeError,
+            "RuntimeError": RuntimeError,
+            "ValueError": ValueError,
+            "AttributeError": AttributeError,
+        }[name](rec["message"])
     wrapper = getattr(sa_exc, rec["sa_exc"].rsplit(".", 1)[-1])
     if rec["sa_exc"].endswith("StatementError"):
         inner = sa_exc.InvalidRequestError(rec["message"])
@@ -337,7 +341,11 @@ def test_postgres_detail_only_when_error_detail():
 
 
 def test_postgres_hint_is_kept():
-    orig = _pg("42703", 'column "note" does not exist', hint='Perhaps you meant to reference the column "orders.note".')
+    orig = _pg(
+        "42703",
+        'column "note" does not exist',
+        hint='Perhaps you meant to reference the column "orders.note".',
+    )
     _, message = errors.translate(_wrap(orig, sa_exc.ProgrammingError), "postgresql")
     assert 'column "note" does not exist' in message
     assert 'Perhaps you meant to reference the column "orders.note".' in message
@@ -394,7 +402,10 @@ def test_postgres_class_does_not_decide_when_sqlstate_says_otherwise():
 @pytest.mark.parametrize(
     ("text", "expected"),
     [
-        ('connection failed: ... FATAL:  password authentication failed for user "x"', "E_AUTH_FAILED"),
+        (
+            'connection failed: ... FATAL:  password authentication failed for user "x"',
+            "E_AUTH_FAILED",
+        ),
         ("connection failed: ... failed: Connection refused\n\tIs the server running", "E_CONNECT"),
         ("could not connect to server: timeout", "E_CONNECT"),
         ("... server closed the connection unexpectedly\n\tThis probably means", "E_CONNECT"),
@@ -406,7 +417,9 @@ def test_postgres_class_does_not_decide_when_sqlstate_says_otherwise():
 def test_postgres_no_sqlstate_text_rules(text, expected):
     orig = type("OperationalError", (Exception,), {})(text)
     orig.sqlstate = None
-    orig.diag = SimpleNamespace(message_primary=None, message_hint=None, message_detail=None, sqlstate=None)
+    orig.diag = SimpleNamespace(
+        message_primary=None, message_hint=None, message_detail=None, sqlstate=None
+    )
     code, message = errors.translate(_wrap(orig, sa_exc.OperationalError), "postgresql")
     assert code == expected
     if expected == "E_INTERNAL":
@@ -414,7 +427,9 @@ def test_postgres_no_sqlstate_text_rules(text, expected):
 
 
 def test_postgres_unknown_database_keeps_that_text():
-    orig = type("OperationalError", (Exception,), {})('connection failed: x failed: FATAL:  database "nope" does not exist')
+    orig = type("OperationalError", (Exception,), {})(
+        'connection failed: x failed: FATAL:  database "nope" does not exist'
+    )
     code, message = errors.translate(_wrap(orig, sa_exc.OperationalError), "postgresql")
     assert code == "E_CONNECT"
     assert 'database "nope" does not exist' in message
@@ -467,21 +482,42 @@ def test_mysql_family_vendor_code_first(dialect, code, sqlstate, expected):
 
 
 def test_mysql_1366_sqlstate_differs_but_code_is_the_same():
-    a = errors.translate(_wrap(_my(1366, "Incorrect integer value: 'x' for column 'id' at row 1", "HY000")), "mysql")
-    b = errors.translate(_wrap(_my(1366, "Incorrect integer value: 'x' for column 'id' at row 1", "22007")), "mariadb")
+    a = errors.translate(
+        _wrap(_my(1366, "Incorrect integer value: 'x' for column 'id' at row 1", "HY000")), "mysql"
+    )
+    b = errors.translate(
+        _wrap(_my(1366, "Incorrect integer value: 'x' for column 'id' at row 1", "22007")),
+        "mariadb",
+    )
     assert a[0] == b[0] == "E_SQL_DATA"
 
 
 @pytest.mark.parametrize(
     ("raw", "must_not_contain", "must_contain"),
     [
-        ("Duplicate entry 'a@example.com' for key 'uniq.PRIMARY'", "a@example.com", "for key 'uniq.PRIMARY'"),
+        (
+            "Duplicate entry 'a@example.com' for key 'uniq.PRIMARY'",
+            "a@example.com",
+            "for key 'uniq.PRIMARY'",
+        ),
         ("Duplicate entry 'it's, 'quoted' ' for key 'PRIMARY'", "quoted", "Duplicate entry"),
-        ("Incorrect integer value: 'zz' for column `s`.`t`.`id` at row 1", "zz'", "for column `s`.`t`.`id` at row 1"),
-        ("Incorrect datetime value: 'not-a-date' for column 'c' at row 1", "not-a-date", "Incorrect datetime value"),
+        (
+            "Incorrect integer value: 'zz' for column `s`.`t`.`id` at row 1",
+            "zz'",
+            "for column `s`.`t`.`id` at row 1",
+        ),
+        (
+            "Incorrect datetime value: 'not-a-date' for column 'c' at row 1",
+            "not-a-date",
+            "Incorrect datetime value",
+        ),
         ("Incorrect string value: '\\xF0\\x9F' for column 'c' at row 1", "xF0", "for column 'c'"),
         ("Truncated incorrect DOUBLE value: 'abc'", "abc", "Truncated incorrect DOUBLE value"),
-        ("Data truncated for column 'amount' at row 1", "zzzz", "Data truncated for column 'amount' at row 1"),
+        (
+            "Data truncated for column 'amount' at row 1",
+            "zzzz",
+            "Data truncated for column 'amount' at row 1",
+        ),
     ],
 )
 def test_mysql_scrub_values_unless_error_detail(raw, must_not_contain, must_contain):
@@ -495,9 +531,15 @@ def test_mysql_scrub_values_unless_error_detail(raw, must_not_contain, must_cont
 
 def test_mysql_nonstring_message_and_missing_args():
     odd = type("OperationalError", (Exception,), {})(1045)  # no message element
-    assert errors.translate(_wrap(odd, sa_exc.OperationalError), "mysql") == ("E_AUTH_FAILED", "OperationalError")
+    assert errors.translate(_wrap(odd, sa_exc.OperationalError), "mysql") == (
+        "E_AUTH_FAILED",
+        "OperationalError",
+    )
     odd2 = type("OperationalError", (Exception,), {})("not-a-code", "text")
-    assert errors.translate(_wrap(odd2, sa_exc.OperationalError), "mysql") == ("E_INTERNAL", "OperationalError")
+    assert errors.translate(_wrap(odd2, sa_exc.OperationalError), "mysql") == (
+        "E_INTERNAL",
+        "OperationalError",
+    )
     odd3 = type("OperationalError", (Exception,), {})(1045, 12345)
     assert errors.translate(_wrap(odd3, sa_exc.OperationalError), "mysql")[0] == "E_AUTH_FAILED"
 
@@ -505,20 +547,33 @@ def test_mysql_nonstring_message_and_missing_args():
 def test_mysql_2013_read_timeout_is_a_timeout_when_message_says_so():
     msg = "Lost connection to MySQL server during query (The read operation timed out)"
     assert errors.translate(_wrap(_my(2013, msg)), "mysql")[0] == "E_TIMEOUT"
-    assert errors.translate(_wrap(_my(2013, "Lost connection to MySQL server during query")), "mysql")[0] == "E_CONNECT"
+    assert (
+        errors.translate(_wrap(_my(2013, "Lost connection to MySQL server during query")), "mysql")[
+            0
+        ]
+        == "E_CONNECT"
+    )
 
 
 def test_oracle_error_object_and_unverified_codes():
-    err = SimpleNamespace(full_code="DPY-6005", message="DPY-6005: cannot connect to database.\n[Errno 111] Connection refused")
+    err = SimpleNamespace(
+        full_code="DPY-6005",
+        message="DPY-6005: cannot connect to database.\n[Errno 111] Connection refused",
+    )
     orig = type("OperationalError", (Exception,), {})(err)
     code, message = errors.translate(_wrap(orig, sa_exc.OperationalError), "oracle")
     assert code == "E_CONNECT"
     assert "\n" not in message
     # ORA-01017 etc. were not observed (UNVERIFIED(T1)): class name only, never guessed
-    ora = SimpleNamespace(full_code="ORA-01017", message="ORA-01017: invalid username/password; logon denied")
+    ora = SimpleNamespace(
+        full_code="ORA-01017", message="ORA-01017: invalid username/password; logon denied"
+    )
     orig = type("DatabaseError", (Exception,), {})(ora)
     assert errors.translate(_wrap(orig), "oracle") == ("E_INTERNAL", "DatabaseError")
-    assert errors.translate(_wrap(type("Odd", (Exception,), {})()), "oracle") == ("E_INTERNAL", "Odd")
+    assert errors.translate(_wrap(type("Odd", (Exception,), {})()), "oracle") == (
+        "E_INTERNAL",
+        "Odd",
+    )
 
 
 def test_mssql_bytes_message_is_decoded_and_deduplicated():
@@ -530,7 +585,10 @@ def test_mssql_bytes_message_is_decoded_and_deduplicated():
     assert "b'" not in message
     # SQL Server error 18456 etc. were not observed (UNVERIFIED(T1))
     orig = type("OperationalError", (Exception,), {})((18456, b"Login failed for user"))
-    assert errors.translate(_wrap(orig, sa_exc.OperationalError), "mssql") == ("E_INTERNAL", "OperationalError")
+    assert errors.translate(_wrap(orig, sa_exc.OperationalError), "mssql") == (
+        "E_INTERNAL",
+        "OperationalError",
+    )
     plain = type("OperationalError", (Exception,), {})(20009, "text message")
     assert errors.translate(_wrap(plain, sa_exc.OperationalError), "mssql")[0] == "E_CONNECT"
     weird = type("OperationalError", (Exception,), {})(("x",))
@@ -579,11 +637,16 @@ def test_typeerror_sql_ascii_only_for_postgresql():
     assert code == "E_CONNECT"
     assert "UTF8" in message
     assert errors.translate(exc, "mysql") == ("E_INTERNAL", "TypeError")
-    assert errors.translate(TypeError("unrelated " + SECRET), "postgresql") == ("E_INTERNAL", "TypeError")
+    assert errors.translate(TypeError("unrelated " + SECRET), "postgresql") == (
+        "E_INTERNAL",
+        "TypeError",
+    )
 
 
 def test_pymysql_auth_exceptions_only_for_mysql_family():
-    rt = RuntimeError("'cryptography' package is required for sha256_password or caching_sha2_password auth methods")
+    rt = RuntimeError(
+        "'cryptography' package is required for sha256_password or caching_sha2_password auth methods"
+    )
     assert errors.translate(rt, "mariadb")[0] == "E_DRIVER_MISSING"
     assert errors.translate(rt, "postgresql") == ("E_INTERNAL", "RuntimeError")
     assert errors.translate(RuntimeError("other"), "mysql") == ("E_INTERNAL", "RuntimeError")
@@ -710,7 +773,9 @@ def test_every_spec_code_is_produced_or_documented():
     """Section 8 lists 16 codes. translate() produces the database/driver ones; the rest come from validation."""
     produced = {p.values[2] for p in OBSERVED if p.values[2]}
     produced |= {"E_OPTION_INVALID", "E_DRIVER_MISSING"}  # raw-exception tests above
-    produced |= SPEC_CODES  # passthrough of other modules' prefixed errors (test_prefixed_salt_errors_...)
+    produced |= (
+        SPEC_CODES  # passthrough of other modules' prefixed errors (test_prefixed_salt_errors_...)
+    )
     assert SPEC_CODES <= produced
     # Codes that translate() produces from a database or driver exception on its own, with a test above:
     from_driver = {
@@ -738,6 +803,8 @@ def test_every_spec_code_is_produced_or_documented():
 
 
 def test_no_driver_or_sqlalchemy_names_leak_into_module_imports():
-    source = (REPO_ROOT / "src" / "saltext" / "sqlx" / "lib" / "errors.py").read_text(encoding="utf-8")
+    source = (REPO_ROOT / "src" / "saltext" / "sqlx" / "lib" / "errors.py").read_text(
+        encoding="utf-8"
+    )
     assert not re.search(r"^\s*(import|from)\s+(psycopg|pymysql|oracledb|pymssql)", source, re.M)
     assert "str(exc)" not in source  # the SQLAlchemy str() embeds SQL and values (R3)

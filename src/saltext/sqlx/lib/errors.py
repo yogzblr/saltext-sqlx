@@ -83,9 +83,7 @@ _MSG_CRYPTOGRAPHY = (
     "PyMySQL needs the 'cryptography' package for sha256_password / caching_sha2_password authentication; "
     "install it or use mysql_native_password"
 )
-_MSG_AUTH_SWITCH = (
-    "the MySQL authentication handshake failed on first connect (driver received no packet); retry the call"
-)
+_MSG_AUTH_SWITCH = "the MySQL authentication handshake failed on first connect (driver received no packet); retry the call"
 
 
 def _mro_names(exc):
@@ -187,9 +185,16 @@ _MY_CODES = {
 }
 # Fallback for vendor codes T1 did not observe: the SQLSTATE class, which was consistent for every observed code
 # except 1044 (handled above). UNVERIFIED(T1) for the unobserved codes.
-_MY_SQLSTATE_CLASS = {"22": "E_SQL_DATA", "23": "E_CONSTRAINT", "42": "E_SQL", "28": "E_AUTH_FAILED"}
+_MY_SQLSTATE_CLASS = {
+    "22": "E_SQL_DATA",
+    "23": "E_CONSTRAINT",
+    "42": "E_SQL",
+    "28": "E_AUTH_FAILED",
+}
 _MY_DUP = re.compile(r"(Duplicate entry )'.*'( for key)", re.DOTALL)
-_MY_VALUE = re.compile(r"((?:Truncated )?[Ii]ncorrect [^:']*? value: )'.*'(?= for column|\s*$)", re.DOTALL)
+_MY_VALUE = re.compile(
+    r"((?:Truncated )?[Ii]ncorrect [^:']*? value: )'.*'(?= for column|\s*$)", re.DOTALL
+)
 
 
 def _my(orig, error_detail):
@@ -270,14 +275,18 @@ def _raw(exc, dialect):
     inner = getattr(exc, "orig", None) if "StatementError" in names else None
     # Only inspected, never copied into a message; a StatementError's own text embeds the SQL and the values.
     text = _plain_text(inner if inner is not None else exc)
-    if "InvalidRequestError" in names or (inner is not None and "InvalidRequestError" in _mro_names(inner)):
+    if "InvalidRequestError" in names or (
+        inner is not None and "InvalidRequestError" in _mro_names(inner)
+    ):
         if "A value is required for bind parameter" in text:
             found = re.search(r"bind parameter '([^']*)'", text)
             name = f" '{found.group(1)}'" if found else ""
             return Translation("E_OPTION_INVALID", None, _HINT_BIND.format(name=name))
         return None
     if isinstance(exc, TypeError) and dialect == "postgresql":
-        if "string pattern on a bytes-like object" in text:  # SQL_ASCII database, first connect (WS 7)
+        if (
+            "string pattern on a bytes-like object" in text
+        ):  # SQL_ASCII database, first connect (WS 7)
             return Translation("E_CONNECT", None, _MSG_SQL_ASCII)
     elif isinstance(exc, RuntimeError) and dialect in _MYSQL_FAMILY:
         if "'cryptography' package is required" in text:  # PyMySQL authentication (WS 6)
@@ -327,8 +336,12 @@ def raise_for(exc, dialect, error_detail=False):
     with a ``[E_...]`` prefix are re-raised with the same class and text.
     """
     result = describe(exc, dialect, error_detail)
-    if isinstance(exc, (SaltInvocationError, CommandExecutionError)) and _PREFIXED.match(_plain_text(exc)) and (
-        result.code in CODES and result.native is None and result.message != type(exc).__name__
+    if (
+        isinstance(exc, (SaltInvocationError, CommandExecutionError))
+        and _PREFIXED.match(_plain_text(exc))
+        and (
+            result.code in CODES and result.native is None and result.message != type(exc).__name__
+        )
     ):
         out = type(exc)(f"[{result.code}] {result.message}")
     else:
