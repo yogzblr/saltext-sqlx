@@ -200,8 +200,9 @@ def run_execute(conn, sql, params, *, dry_run, execute_verbs):
     ``[E_POLICY]``) must be in
     ``execute_verbs`` (case-insensitive), else ``[E_POLICY]``; an empty or comment-only statement is
     ``[E_OPTION_INVALID]``. The filter is best effort and bypassable; the database role limits what ``execute`` can do.
-    ``dry_run`` must be a real ``bool`` (anything else is ``[E_OPTION_INVALID]``, so a missing flag can never
-    commit by accident).
+    ``dry_run`` must be a real ``bool`` (anything else is ``[E_OPTION_INVALID]``, so a malformed flag can never
+    commit by accident). ``options.validate`` turns ``dry_run=None`` ("not given") into the default ``False`` before
+    this function is reached, so ``None`` at the call level COMMITS (T11 D11).
 
     With ``dry_run`` true the statement runs, ``rows_affected`` reports what it changed, and the transaction is rolled
     back. On any exception the transaction is rolled back and the original exception is re-raised.

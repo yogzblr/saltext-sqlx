@@ -12,7 +12,6 @@ from salt.exceptions import SaltInvocationError
 
 from tests.security import harness
 from tests.security.harness import observe
-from tests.security.test_attacks_query import defect
 
 X, Y = "scratch.t11_x", "scratch.t11_y"
 
@@ -123,7 +122,7 @@ REFUSED_SHAPES = [
     ),
     ("with-first", "WITH d AS (SELECT 1) DELETE FROM {x}", "E_POLICY"),
     ("fullwidth-INSERT", "ＩＮＳＥＲＴ INTO {y} VALUES (7, 7)", "E_POLICY"),
-    ("null-byte-prefix", "\x00INSERT INTO {y} VALUES (7, 7)", "E_POLICY"),
+    ("null-byte-prefix", "\x00INSERT INTO {y} VALUES (7, 7)", "E_OPTION_INVALID"),
     ("INSERTX", "INSERTX INTO {y} VALUES (7, 7)", "E_POLICY"),
     ("INSERT_", "INSERT_ INTO {y} VALUES (7, 7)", "E_POLICY"),
     ("parenthesised", "(INSERT INTO {y} VALUES (7, 7))", "E_POLICY"),

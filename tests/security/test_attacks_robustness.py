@@ -15,7 +15,6 @@ from salt.exceptions import SaltInvocationError
 
 from tests.security import harness
 from tests.security.harness import observe
-from tests.security.test_attacks_query import defect
 
 
 def deep_list(n):

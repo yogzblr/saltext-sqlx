@@ -52,7 +52,7 @@ def test_pub_keys_are_dropped_and_a_typo_is_not(call):
     ret, retcode, _ = call("sqlx.query", profile="pg_ro", sql="select 1", limt=1)
     assert retcode == 1
     # SaltInvocationError is wrapped by the minion as "ERROR executing '<fun>': <message>"
-    assert ret == "ERROR executing 'sqlx.query': [E_OPTION_UNKNOWN] unknown option(s) for sqlx.query: limt"
+    assert ret == "ERROR executing 'sqlx.query': [E_OPTION_UNKNOWN] unknown option(s) for sqlx.query: 'limt'"
 
 
 @pytest.mark.pg

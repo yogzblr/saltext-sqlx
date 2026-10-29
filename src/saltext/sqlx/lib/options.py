@@ -59,7 +59,7 @@ _SCHEMA = {
         "profile": (_NAME, True, None),
         "sql": (_TEXT, True, None),
         "params": (_PARAMS, False, None),
-        "dry_run": (_BOOL, False, False),
+        "dry_run": (_BOOL, False, False),  # None = "not given" = False = COMMIT (T11 D11, SPEC 4.2)
         "timeout_ms": (_POS_INT, False, None),
     },
     "check_query_result": {

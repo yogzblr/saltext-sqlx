@@ -15,7 +15,6 @@ import pytest
 
 from tests.security import harness
 from tests.security.harness import observe
-from tests.security.test_attacks_query import defect
 
 CHILD = pathlib.Path(__file__).with_name("probe_child.py")
 REPO = CHILD.parents[2]

@@ -53,7 +53,8 @@ beyond what is needed, and no `EXECUTE` on write-capable packages). `read_only: 
 |---|---|
 | Caller writes through `query` | Read-only DB role (section 2); `query` never commits |
 | Caller uses `execute` without permission | `allow_execute` false by default; verb filter; `dry_run`; separate profile/role with write rights |
-| Verb filter bypass (comments, CTEs, `;`) | Filter is best-effort only; the **role** limits what `execute` can do, so give the write profile minimal grants |
+| Verb filter bypass (comments, CTEs, functions) | Filter is best-effort only; the **role** limits what `execute` can do, so give the write profile minimal grants. A leading `/*!`, `/*M!` or nested comment is refused; a second statement after `;` is refused by the driver on every dialect (extended protocol on PostgreSQL, no multi-statements on MySQL/MariaDB) |
+| Statement lifts its own time cap, or a huge result exhausts minion memory | `statement_timeout` / `MAX_EXECUTION_TIME` / `max_statement_time` plus the PyMySQL `read_timeout` backstop; results are streamed so memory is bounded by `limit` / `max_bytes` (one very large value still costs about 2.7x its size on PostgreSQL, so give the role no access to such columns or select `left(col, n)`) |
 | Caller points the minion at an arbitrary host (SSRF, credential relay) | Profiles only; call arguments cannot set host, port, driver, URL or `connect_args` (D1) |
 | Secrets in the Salt job cache | `password` is `sdb://` only in production; `allow_inline_secrets` is not provided. The call never carries a secret. Salt stores job args and returns on the master and event bus |
 | SQL text and results in the job cache | They are stored by Salt. Prefer `params` for values, keep `row_limit` small, set `keep_jobs`, consider an external job cache disabled for this function. Treat results as data in the master's job cache for DPDP and sovereignty purposes |
@@ -142,9 +143,9 @@ State after the T11 review (2026-10-29, `docs/SECURITY_REVIEW.md`). Evidence is 
   `NOTICE` lists the declared dependencies and the full closure from real package metadata; `test_licences.py` fails on any GPL
   or AGPL and on any LGPL outside `psycopg`, `psycopg-binary`, `pymssql`. No GPL present.
 
-### Defects found by the T11 review (open, not fixed in this task)
+### Defects found by the T11 review (fixed)
 
-D1 (PostgreSQL accepts multi-statement strings: defeats the read-only guard, the time cap, `execute_verbs` and `dry_run`) and the
-medium and low findings D2-D10 are listed with reproduction, file and suggested fix in `docs/SECURITY_REVIEW.md` section 3. Each
-has a strict `xfail` test in `tests/security/`. Until D1 is fixed, treat the DB role as the only control on PostgreSQL, as
-section 2 already says.
+D1 to D10 from `docs/SECURITY_REVIEW.md` section 3 are fixed on branch `fix/hardening-t11`; the status of each, with the
+before/after measurements, is in section 3 of that file. D11 is a documented design point: `dry_run=None` means "not given"
+and the statement is **committed**. The remaining limits are the ones this file already states: the in-session read-only
+guard is bypassable, so the DB role is the control; and a client-side timeout does not stop the server's work.

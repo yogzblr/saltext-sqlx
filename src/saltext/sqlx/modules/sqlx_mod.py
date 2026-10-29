@@ -105,7 +105,9 @@ def execute(profile=None, sql=None, **kwargs):
     """
     Run one data-changing statement. Refused with ``[E_EXECUTE_DISABLED]`` unless the profile has ``allow_execute``.
 
-    Keywords: ``params``, ``dry_run`` (default false; true rolls back), ``timeout_ms``.
+    Keywords: ``params``, ``dry_run`` (default false; true rolls back), ``timeout_ms``. ``dry_run=None`` means
+    "not given", NOT "safe": it takes the default and the statement is COMMITTED. Pass ``dry_run=True`` to roll back.
+    One statement per call; a second statement after ``;`` is refused by the driver.
 
     CLI Example:
 

@@ -14,9 +14,9 @@ Rules honoured here:
 * The module's own SQL is constant text plus at most one integer that went through ``int()`` (ARCHITECTURE
   section 3). Caller SQL never passes through this module.
 
-Only PostgreSQL behaviour is verified. Every statement or mechanism for the other dialects comes from
-documentation (SPEC section 7) and is marked ``UNVERIFIED(T1)``; each mechanism sits in its own small function so
-that T1's recorded facts can replace it without touching anything else. This module has no Salt dunders.
+PostgreSQL, MySQL and MariaDB behaviour is verified (docs/WIRE_SHAPES.md). Every statement or mechanism for Oracle
+and SQL Server comes from documentation (SPEC section 7) and is marked ``UNVERIFIED(T1)``; each mechanism sits in
+its own small function so that recorded facts can replace it without touching anything else. This module has no Salt dunders.
 """
 
 import importlib
@@ -222,8 +222,8 @@ class MySQL(Adapter):
     module = "pymysql"
     pip_extra = "mysql"
     drivername = "mysql+pymysql"
-    # UNVERIFIED(T1): which URL-query / connect arguments SQLAlchemy 2.0 passes through to PyMySQL unchanged
-    # (in particular bool coercion of ssl_*), and PyMySQL's own names for them.
+    # Verified (docs/WIRE_SHAPES.md sections 2, 6 and 12): these URL-query / connect arguments reach PyMySQL under
+    # these names.
     allowed_args = frozenset(
         {
             "charset",
@@ -255,19 +255,21 @@ class MySQL(Adapter):
 
     def _set_timeout(self, conn, ms):
         if getattr(conn.dialect, "is_mariadb", False):
-            # UNVERIFIED(T1): MariaDB ``max_statement_time`` takes seconds (decimals allowed), from documentation;
-            # it applies to every statement type. Needs MariaDB >= 10.1.
+            # Verified on MariaDB 10.11.14 (WIRE_SHAPES section 2): ``max_statement_time`` takes seconds (decimals
+            # allowed) and cancels every statement type, INSERT ... SELECT included (1969). A statement can lift it
+            # with ``SET STATEMENT max_statement_time=0 FOR ...``; ``read_timeout`` is the backstop (T11 D2).
             conn.exec_driver_sql(
                 f"SET SESSION max_statement_time = {int(ms) // 1000}.{int(ms) % 1000:03d}"
             )
         else:
-            # UNVERIFIED(T1): MySQL >= 5.7.8 ``MAX_EXECUTION_TIME`` in ms, from documentation; it applies to SELECT
-            # statements only, so DML is not bounded by it.
+            # Verified on MySQL 8.0.46 (WIRE_SHAPES section 2): ``MAX_EXECUTION_TIME`` in ms applies to SELECT only
+            # (3024; a table-less SELECT SLEEP is cut silently) and not to DML. A hint can override it. The
+            # ``read_timeout`` connect argument is the backstop for both (T11 D2).
             conn.exec_driver_sql(f"SET SESSION MAX_EXECUTION_TIME = {int(ms)}")
 
     def _set_read_only(self, conn):
-        # UNVERIFIED(T1): from documentation. It affects transactions started after the statement, and whether
-        # the implicit transaction SQLAlchemy/PyMySQL opened is covered is not known.
+        # Verified (WIRE_SHAPES section 3): refuses writes with 1792 in the transaction SQLAlchemy/PyMySQL opens
+        # implicitly, but statements in the caller's SQL can undo it. The database role is the control.
         conn.exec_driver_sql("SET SESSION TRANSACTION READ ONLY")
 
 

@@ -335,12 +335,15 @@ def test_apply_caps_does_not_mutate_and_ping_is_untouched():
 
 
 # ---- T11 D8, D9, D10 ------------------------------------------------------------------------
+BIDI = chr(0x202E)  # right-to-left override
+
+
 def test_unknown_option_names_are_escaped_bounded_and_counted():
     """D8: key names come from the caller; no raw newline, bidi control or 100 000-character name is echoed."""
     kwargs = dict(MINIMAL["query"])
-    kwargs.update({"a\r\nINFO forged": 1, "‮evil": 1, "k" * 100_000: 1})
+    kwargs.update({"a\r\nINFO forged": 1, BIDI + "evil": 1, "k" * 100_000: 1})
     msg = _fails("E_OPTION_UNKNOWN", "query", kwargs)
-    assert "\n" not in msg and "\r" not in msg and "‮" not in msg
+    assert "\n" not in msg and "\r" not in msg and BIDI not in msg
     assert "\\r\\nINFO" in msg and len(msg) < 400
 
 
