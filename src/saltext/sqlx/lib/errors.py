@@ -18,6 +18,7 @@ rest is marked ``UNVERIFIED(T1)`` and falls to ``E_INTERNAL`` (class name only).
 """
 
 import re
+import ssl
 from collections import namedtuple
 
 from salt.exceptions import CommandExecutionError
@@ -83,6 +84,7 @@ _MSG_CRYPTOGRAPHY = (
     "PyMySQL needs the 'cryptography' package for sha256_password / caching_sha2_password authentication; "
     "install it or use mysql_native_password"
 )
+_MSG_TLS_FILE = "a TLS file given to the driver (CA, client certificate or key) could not be opened: {reason}"
 _MSG_AUTH_SWITCH = "the MySQL authentication handshake failed on first connect (driver received no packet); retry the call"
 
 
@@ -129,6 +131,16 @@ _PG_TEXT = (
     ("could not connect", "E_CONNECT"),
     ("server closed the connection", "E_CONNECT"),
     ("are allowed as placeholders", "E_OPTION_INVALID"),
+    # TLS (docs/WIRE_SHAPES.md section 12; libpq 18.0.6 against PostgreSQL 16.15). Paths in these are removed by
+    # ``tls.scrub`` in ``engine`` before the caller sees them.
+    ("connection requires a valid client certificate", "E_AUTH_FAILED"),
+    ("certificate authentication failed", "E_AUTH_FAILED"),
+    ("SSL error:", "E_CONNECT"),  # unknown CA, expired certificate, alert unknown ca / bad certificate
+    ("does not match host name", "E_CONNECT"),
+    ("no encryption", "E_CONNECT"),  # pg_hba.conf hostnossl ... reject
+    ("server does not support SSL", "E_CONNECT"),
+    ("private key file", "E_CONNECT"),  # could not load / has group or world access
+    ("root certificate file", "E_CONNECT"),
 )
 _PG_DB_MISSING = re.compile(r'database ".*" does not exist')
 _PG_INVALID_INPUT = re.compile(r'(invalid input (?:syntax|value) for [^:]*): ".*"', re.DOTALL)
@@ -175,6 +187,7 @@ _MY_CODES = {
     3024: "E_TIMEOUT",  # MySQL MAX_EXECUTION_TIME
     1969: "E_TIMEOUT",  # MariaDB max_statement_time
     1792: "E_READ_ONLY",
+    3159: "E_CONNECT",  # MySQL require_secure_transport=ON and the client did not use TLS (observed)
     1062: "E_CONSTRAINT",
     1064: "E_SQL",
     1146: "E_SQL",
@@ -291,6 +304,14 @@ def _raw(exc, dialect):
     elif isinstance(exc, RuntimeError) and dialect in _MYSQL_FAMILY:
         if "'cryptography' package is required" in text:  # PyMySQL authentication (WS 6)
             return Translation("E_DRIVER_MISSING", None, _MSG_CRYPTOGRAPHY)
+    elif isinstance(exc, ssl.SSLError) and dialect in _MYSQL_FAMILY:
+        # PyMySQL loads the client certificate and key itself and lets the ssl error escape (observed: garbage key,
+        # certificate/key mismatch). args == (code, "[SSL] PEM lib (_ssl.c:...)"): no path in it.
+        detail = exc.args[1] if len(exc.args) > 1 and isinstance(exc.args[1], str) else "TLS error"
+        return Translation("E_CONNECT", None, detail)
+    elif isinstance(exc, (FileNotFoundError, PermissionError)) and dialect in _MYSQL_FAMILY:
+        # FileNotFoundError / PermissionError from the same step; the file name in the exception is deliberately dropped
+        return Translation("E_CONNECT", None, _MSG_TLS_FILE.format(reason=exc.strerror))
     elif isinstance(exc, AttributeError) and dialect in _MYSQL_FAMILY:
         if "is_auth_switch_request" in text:  # first connect after FLUSH PRIVILEGES (WS 6)
             return Translation("E_CONNECT", None, _MSG_AUTH_SWITCH)

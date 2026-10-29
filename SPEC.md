@@ -50,6 +50,12 @@ sqlx:
       row_limit: 500                       # default 500, hard max 10000
       max_bytes: 1048576                   # response size cap, default 1 MiB, hard max 8 MiB
       error_detail: false                  # include the server's DETAIL line in errors (can contain row data)
+      # TLS with a certificate directory (D12, below; needs sqlx:_policy:ssl_certs_dir_root):
+      # ssl_certs_dir: /etc/salt/sqlx-certs/orders_pg   # absolute, under the policy root; holds ca.pem [client.pem client.key]
+      # ssl_mode: verify-full                           # default when a directory is set; or verify-ca
+      # ssl_files: {ca: ca.pem, cert: client.pem, key: client.key}   # optional plain file names inside the directory
+  _policy:                                  # not a profile; read by profiles.load_profile
+    ssl_certs_dir_root: /etc/salt/sqlx-certs
 ```
 
 Validation (`lib/profiles.py`, `validate_profile`; the source of truth if this text and the code ever differ). Every
@@ -66,6 +72,7 @@ failure is `[E_PROFILE_INVALID]`, names keys only and never contains a value.
 | `query` | optional mapping of string keys to str/int/float/bool values; `null` means `{}`. Only the shape is checked here; the per-driver allowlist (section 7) is applied by the dialect adapter when the engine is built |
 | `connect_args` | optional mapping with string keys; `null` means `{}`. Only the shape is checked here; the per-driver allowlist (section 7) is applied by the dialect adapter when the engine is built |
 | `read_only`, `allow_execute`, `error_detail` | booleans; defaults `true`, `false`, `false` |
+| `ssl_certs_dir`, `ssl_mode`, `ssl_files` | **optional, profile-only TLS settings (D12)**; rules in section 3.1. `ssl_mode` and `ssl_files` without `ssl_certs_dir` are rejected. The validated profile gains `ssl_certs_dir` (as given) and `tls` (resolved real paths; internal, never shown in a message) |
 | `execute_verbs` | list of single-word alphabetic strings; default `[INSERT, UPDATE, DELETE]`; every entry is **upper-cased** by validation; an empty list is accepted; duplicates are kept |
 | `statement_timeout_ms`, `connect_timeout_s`, `row_limit`, `max_bytes` | integer >= 1 (a bool is not an integer); defaults and hard maxima in section 6; **a value above the hard maximum is rejected** with `[E_PROFILE_INVALID]`, it is not clamped |
 
@@ -73,6 +80,38 @@ failure is `[E_PROFILE_INVALID]`, names keys only and never contains a value.
 disclose other profile names); a `profiles` value that is not a mapping, or a profile that fails the table above, is
 `[E_PROFILE_INVALID]`. Only the requested profile is validated. The result is a fresh copy with defaults filled in and
 `name` added.
+
+### 3.1 TLS certificate directory (`lib/tls.py`, decision D12)
+
+Callers still never supply connection details: `ssl_certs_dir`, `ssl_mode` and `ssl_files` are profile keys, and the driver
+arguments they produce are built by the module (`tls.query_args` / `tls.connect_args`, applied by the dialect adapter after
+the allowlist check). A profile may **not** also set the keys the TLS layer owns in `query` / `connect_args` (PostgreSQL
+`sslmode`, `sslrootcert`, `sslcert`, `sslkey`, `sslcertmode`; MySQL `ssl_ca`, `ssl_cert`, `ssl_key`, `ssl_verify_cert`,
+`ssl_verify_identity`, `ssl_disabled`; Oracle `ssl_server_dn_match`, `protocol`, `wallet_location`): `[E_PROFILE_INVALID]`
+naming the key. The per-driver allowlist (section 7) is unchanged and still default-deny: no path-bearing key was added to it.
+
+| Rule | Result |
+|---|---|
+| `sqlx:_policy:ssl_certs_dir_root` (read from the same `config.get("sqlx")` mapping that holds `profiles`) | the directory must resolve (`realpath`) to the root or below it. Root missing, not absolute, or not an existing directory: `[E_POLICY]`. `sqlx:_policy` not a mapping: `[E_PROFILE_INVALID]` |
+| `ssl_certs_dir` | absolute string without `..`; relative or `..`: `[E_PROFILE_INVALID]`. Resolves outside the root (including through a symlink): `[E_POLICY]`. Missing or not a directory: `[E_PROFILE_INVALID]` |
+| `ssl_mode` | `verify-full` (default when a directory is set) or `verify-ca`. `disable`, `prefer`, `allow` are refused with a directory. `require` is refused too: on MySQL/MariaDB it encrypts without verifying the server, and on PostgreSQL libpq treats `require` plus a root certificate as `verify-ca` (observed: `sslmode=require` with a wrong `sslrootcert` fails with `certificate verify failed`), so it adds nothing |
+| `ssl_files` | optional mapping, keys `ca`, `cert`, `key`; each value a plain file name (no `/`, `\`, `..`, empty or NUL). Unknown key or bad name: `[E_PROFILE_INVALID]`. Not accepted for `oracle` |
+| default names | `ca.pem` (fallback `ca.crt`), `client.pem` (fallback `client.crt`), `client.key`. A fallback is used only when it is the only candidate; if both `ca.pem` and `ca.crt` (or both client names) exist: `[E_PROFILE_INVALID]` asking for `ssl_files`. A name given in `ssl_files` disables the fallback and must exist |
+| required / paired files | CA missing: `[E_PROFILE_INVALID]` naming the file name only. A client certificate without its key, or a key without its certificate: `[E_PROFILE_INVALID]`. No client pair at all is fine (server authentication only) |
+| every file | must resolve under the root (a file symlink to somewhere else under the root is allowed, one that leaves it is `[E_POLICY]`), be a regular file (`[E_PROFILE_INVALID]`) and be openable by the minion (`[E_PROFILE_INVALID]`, "not readable") |
+| private key mode | owner-only (`0600`/`0400`), or `0640` when owned by root (libpq's own rule). Any world access or group write/execute, or a group-readable key not owned by root: `[E_POLICY]` saying to `chmod 600` (or 640 when root-owned). Checked from `stat`; PyMySQL does not check key modes itself, PostgreSQL's libpq does |
+| contents | **never read** by the module (only name, location, type, mode and openability are checked) and never in a message or log |
+| order | everything above runs in `validate_profile` (called by `load_profile`), before the secret is resolved and before any network call |
+| `mssql` | `[E_PROFILE_INVALID] ... 'ssl_certs_dir' is not supported for mssql yet`. pymssql 2.4.6 `connect()` has only `encryption` (`off`/`request`/`require`); it takes no CA file or client certificate, and FreeTDS reads its own configuration file, which this module does not manage |
+
+Mapping to the drivers (`tls.py`; the file arguments are the real paths found above):
+
+| Dialect | Arguments | Where |
+|---|---|---|
+| `postgresql` / psycopg 3 (libpq) | `sslmode` (`verify-full` or `verify-ca`), `sslrootcert`, and with a client pair `sslcert` and `sslkey`; without a pair `sslcertmode=disable`, so that libpq does not present `~/.postgresql/postgresql.crt` or `$PGSSLCERT` | URL query |
+| `mysql` (MySQL and MariaDB) / PyMySQL | `ssl_ca`, `ssl_verify_cert=True`, `ssl_verify_identity=True` for `verify-full` and `False` for `verify-ca`, and with a client pair `ssl_cert`, `ssl_key` | `connect_args`, not the URL: SQLAlchemy moves URL-query `ssl_ca`/`ssl_cert`/`ssl_key` into PyMySQL's deprecated `ssl` dict, which PyMySQL then ignores as soon as an `ssl_verify_*` keyword is also present (PyMySQL 1.2.3 `connections.py`) |
+| `oracle` / python-oracledb thin | `protocol="tcps"`, `wallet_location=<directory>`, `ssl_server_dn_match=True` for `verify-full`, `False` for `verify-ca`; the directory must contain `ewallet.pem` | `connect_args`. **UNVERIFIED(T1b)**: no Oracle server was available; only the argument mapping is unit-tested. The `ewallet.pem` name, the `wallet_password` case (an encrypted wallet is not supported: no password key exists) and the `verify-ca` meaning of `ssl_server_dn_match=False` come from the python-oracledb documentation |
+| `mssql` | refused (above) | **UNVERIFIED**: never run |
 
 Call arguments may **lower** `row_limit` (`limit`), `statement_timeout_ms` (`timeout_ms`) and `max_bytes`, never raise them.
 A call value above the profile value or the hard maximum is **clamped silently** to the lowest of call, profile and hard
@@ -282,10 +321,12 @@ Notes, all **observed** unless stated.
   `target_session_attrs`, `keepalives`, `keepalives_idle`, `keepalives_interval`, `keepalives_count`; `mysql` `charset`,
   `read_timeout`, `write_timeout`, `ssl_disabled`, `ssl_verify_cert`, `ssl_verify_identity`; `oracle` `expire_time`,
   `retry_count`, `retry_delay`, `ssl_server_dn_match`; `mssql` `appname`, `charset`, `tds_version`. `ssl_context` and callables
-  are rejected (not scalar), and **no path-bearing TLS option is allowed today** (no `sslrootcert`, `sslcert`, `sslkey`,
-  `ssl_ca`, ...), so `sslmode: verify-full` verifies against the driver's default CA bundle only and database mTLS client
-  certificates cannot be configured. That gap is decision D12. (Design rule, not a database behaviour.) The Oracle,
-  SQL Server and MySQL/MariaDB names are from vendor documentation, not observed (`UNVERIFIED(T1)` in `dialects.py`).
+  are rejected (not scalar), and **no path-bearing TLS option is in any allowlist**: a profile cannot put `sslrootcert`,
+  `sslcert`, `sslkey` or `ssl_ca`/`ssl_cert`/`ssl_key` into `query` or `connect_args`. Certificates are configured only
+  through `ssl_certs_dir` (section 3.1), which produces those arguments inside the module (decision D12). Without
+  `ssl_certs_dir`, `sslmode: verify-full` verifies against the driver's default CA bundle only. (Design rule, not a
+  database behaviour.) The Oracle, SQL Server and MySQL/MariaDB names are from vendor documentation, not observed
+  (`UNVERIFIED(T1)` in `dialects.py`), except the PyMySQL TLS keyword names used by section 3.1, which were observed.
 - `mysqlclient` (GPL) is excluded. LGPL drivers are accepted by the owner as unmodified pip dependencies (decision
   recorded 2026-10-29).
 
@@ -330,6 +371,16 @@ the `cryptography` package -> `E_DRIVER_MISSING`; PyMySQL first-connect `Attribu
 raised while connecting (not wrapped by SQLAlchemy) is `E_INTERNAL`. For Oracle and SQL Server only the client-side
 connect-refused code is mapped (`DPY-6005`, `20009` -> `E_CONNECT`); **every Oracle and SQL Server authentication, SQL, timeout
 and read-only code is `E_INTERNAL` until task T1b** records the real ones.
+
+**TLS failures** (observed, `docs/WIRE_SHAPES.md` section 12; the real driver message is kept, with paths reduced to file names by
+`tls.scrub` in `engine`): PostgreSQL libpq text `SSL error: ...` (unknown CA, expired certificate on either side, `alert unknown ca`),
+`... does not match host name ...`, `pg_hba.conf rejects connection ... no encryption`, `server does not support SSL`, `... private key
+file ...` and `root certificate file ... does not exist` -> `E_CONNECT`; `connection requires a valid client certificate` and
+`certificate authentication failed for user ...` -> `E_AUTH_FAILED`. MySQL/MariaDB: 2003 (certificate verify failed, hostname
+mismatch) and 2013 (TLS alert from the server) -> `E_CONNECT`; 3159 (`require_secure_transport`) -> `E_CONNECT`; 1045 for an `X509`
+or `SSL`-only account used without a client certificate or without TLS -> `E_AUTH_FAILED` (the server gives no TLS-specific reason);
+PyMySQL's own `ssl.SSLError` (unusable key, key/certificate mismatch) and `FileNotFoundError`/`PermissionError` for a TLS file ->
+`E_CONNECT` (the file name in the OS error is dropped).
 
 `mysql` is the dialect name passed for MariaDB too (section 7), so messages read `[E_...] mysql <vendor code>: ...` on both
 servers. Unless `error_detail` is true, MySQL/MariaDB messages have the duplicate-key value (`Duplicate entry '...'`) and the
@@ -468,5 +519,5 @@ curl -sS -k https://salt-api.example:8000/run -H 'Content-Type: application/json
 
 | ID | Decision | Assumption |
 |---|---|---|
-| D12 | Define a TLS certificate directory (CA bundle, client certificate and key) so that profiles can use database TLS with verification and mTLS? Needed for CloudXP. | Not decided; today **none**. The `query` / `connect_args` allowlist (section 7) contains no path-bearing option, so `sslmode: verify-full` (PostgreSQL) and `ssl_verify_cert` / `ssl_verify_identity` (MySQL/MariaDB) can only use the driver's default CA bundle, and a client certificate cannot be configured. A directory would let a profile name a file relative to it (for example `sslrootcert: ca.pem`), with the module joining and checking the path (no `..`, no absolute path, no symlink out, regular file); the directory would be minion configuration, never a caller argument. Until decided, do not add `sslrootcert`, `sslcert`, `sslkey` or `ssl_ca` to any allowlist. |
+| D12 | **Decided (owner) and implemented**: a TLS certificate directory so that profiles can use database TLS with verification and mutual TLS. | Profile keys `ssl_certs_dir`, `ssl_mode` (`verify-full` default, `verify-ca`), `ssl_files` (`ca`, `cert`, `key` as plain file names); default names `ca.pem`/`ca.crt`, `client.pem`/`client.crt`, `client.key`; the directory must resolve under `sqlx:_policy:ssl_certs_dir_root` (minion config or pillar), else `[E_POLICY]`; key files with group/world access are refused. Full rules and the per-driver mapping are in section 3.1. **Verified on real servers** (throw-away PKI, `tests-support/tls`): PostgreSQL 16.15 (libpq 18.0.6, psycopg 3.3.6), MySQL 8.0.46 and MariaDB 10.11.14 (PyMySQL 1.2.3): verify-full with and without a client certificate, mutual TLS, wrong CA, hostname not in the SANs, expired client and server certificate, client certificate from another CA, client certificate required but missing, plain connection to a TLS-only server, vanished or corrupt key file; error shapes in `docs/WIRE_SHAPES.md` section 12. **NOT verified**: Oracle (argument mapping only, `UNVERIFIED(T1b)`), SQL Server (refused as unsupported), `verify-ca` on Oracle, certificate revocation (no CRL support), encrypted private keys (there is no passphrase key; not tested), TLS 1.2-only or cipher policy (driver defaults). Open: whether the policy should also require the directory itself not to be group/world-writable (not checked today). |
 | D13 | `MaskingFilter.add_secret` (called by `sqlx_mod._run` for every resolved password) only ever adds: the set of registered secrets gains one entry per distinct password and is never emptied for the life of the minion process (a memory and hygiene issue; retired passwords stay in memory and keep being masked). Clear or replace the registered secret after each call? | Not decided; today it is never cleared. Clearing after the call keeps the set small and drops stale passwords, but a log record emitted after the call (by another thread, or a late handler) would then no longer be masked by value; the key-based masking (`password|secret|token`) would still apply. Stricter is to keep it, so keep it until decided. |

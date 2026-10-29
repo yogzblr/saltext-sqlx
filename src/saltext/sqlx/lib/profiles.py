@@ -13,6 +13,7 @@ import re
 from salt.exceptions import SaltInvocationError
 
 from saltext.sqlx.lib import options
+from saltext.sqlx.lib import tls
 from saltext.sqlx.lib.dialects import DIALECT_DRIVERS  # single source of truth (SPEC section 7)
 
 DEFAULT_EXECUTE_VERBS = ("INSERT", "UPDATE", "DELETE")
@@ -36,6 +37,9 @@ _ALLOWED = frozenset(
         "row_limit",
         "max_bytes",
         "error_detail",
+        "ssl_certs_dir",
+        "ssl_mode",
+        "ssl_files",
     )
 )
 
@@ -69,12 +73,14 @@ def _text(name, raw, key):
     return value
 
 
-def validate_profile(name, raw):
+def validate_profile(name, raw, policy=None):
     """
     Validate one profile dict and return a new dict with defaults filled in and ``name`` added.
 
     Raises ``SaltInvocationError`` ``[E_PROFILE_INVALID]`` for a missing or unknown key, a wrong type, a value above
     a hard maximum, or a dialect/driver pair that SPEC section 7 does not allow. The input is not modified.
+    ``policy`` is the ``sqlx:_policy`` mapping; it is only consulted when the profile sets ``ssl_certs_dir``
+    (``lib/tls.py``).
     """
     if not isinstance(raw, dict):
         _invalid(name, "must be a mapping")
@@ -161,6 +167,11 @@ def validate_profile(name, raw):
             _invalid(name, f"'{key}' exceeds the hard maximum of {maximum}")
         out[key] = value
 
+    resolved = tls.validate(name, raw, dialect, policy)  # SPEC section 7 / D12; checks the files, no network
+    if resolved is not None:
+        out["ssl_certs_dir"] = raw["ssl_certs_dir"]
+        out["tls"] = resolved
+
     return out
 
 
@@ -179,4 +190,4 @@ def load_profile(name, config):
         _fail("E_PROFILE_INVALID", "sqlx:profiles must be a mapping")
     if not isinstance(name, str) or not name or name not in section:
         _fail("E_PROFILE_UNKNOWN", "profile is not configured")
-    return validate_profile(name, section[name])
+    return validate_profile(name, section[name], config.get("_policy"))

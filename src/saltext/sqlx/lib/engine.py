@@ -19,6 +19,7 @@ from sqlalchemy.pool import NullPool
 from saltext.sqlx.lib import dialects
 from saltext.sqlx.lib import errors
 from saltext.sqlx.lib import secrets
+from saltext.sqlx.lib import tls
 
 __all__ = ["build_engine", "connection", "managed_engine", "ping"]
 
@@ -78,7 +79,7 @@ def _fail(exc, profile, password):
     try:
         errors.raise_for(exc, profile["dialect"], error_detail=profile.get("error_detail", False))
     except (CommandExecutionError, SaltInvocationError) as err:
-        text = _URL_RE.sub("<url>", secrets.mask(str(err), [password]))
+        text = _URL_RE.sub("<url>", tls.scrub(secrets.mask(str(err), [password]), profile))
         failure = type(err)(text[:_MAX_MESSAGE])
     raise failure
 

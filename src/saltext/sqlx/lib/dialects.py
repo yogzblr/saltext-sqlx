@@ -27,6 +27,7 @@ from salt.exceptions import SaltInvocationError
 from sqlalchemy.engine import URL
 
 from saltext.sqlx.lib import options
+from saltext.sqlx.lib import tls
 
 #: dialect -> the only driver allowed with it (SPEC section 7). Single source of truth.
 DIALECT_DRIVERS = {
@@ -122,6 +123,7 @@ class Adapter:
         self._check_args(query, "query")
         values = {k: (str(v).lower() if isinstance(v, bool) else str(v)) for k, v in query.items()}
         values.update(self._extra_query(profile))
+        values.update(tls.query_args(self.name, profile))  # module-produced, not allowlist-checked
         return URL.create(
             self.drivername,
             username=profile["username"],
@@ -142,6 +144,7 @@ class Adapter:
         self._check_args(extra, "connect_args")
         args = dict(extra)
         args.update(self._timeout_connect_args(profile))
+        args.update(tls.connect_args(self.name, profile))  # module-produced, not allowlist-checked
         return args
 
     # -- session ---------------------------------------------------------------------------------
