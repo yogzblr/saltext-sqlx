@@ -16,12 +16,87 @@ On a Salt onedir install use `salt-pip install ...` instead of `pip`.
 ## Usage
 
 The execution module has the virtualname `sqlx`. Connection details live in profiles under
-`sqlx:profiles:<name>` in minion config or pillar; callers select a profile only. See `SPEC.md` for
-the contract. The module is a stub until task T7; check that it loads with:
+`sqlx:profiles:<name>` in minion config or pillar; callers select a profile only. `SPEC.md` is the contract.
+
+Profile example (SPEC section 3):
+
+```yaml
+sqlx:
+  profiles:
+    orders_pg:
+      dialect: postgresql          # required: postgresql | mysql | oracle | mssql
+      driver: psycopg              # optional; defaults to the dialect's only driver
+      host: db1.internal
+      port: 5432
+      database: orders
+      username: salt_ro
+      password: sdb://vault/orders_pg      # sdb:// reference, or a literal (see SECURITY.md)
+      read_only: true                      # default true
+      allow_execute: false                 # default false
+      statement_timeout_ms: 30000          # default 30000, hard max 300000
+      connect_timeout_s: 10
+      row_limit: 500                       # default 500, hard max 10000
+```
 
 ```bash
-salt-call --local sys.list_functions sqlx
+salt 'db-minion-01' sqlx.ping profile=orders_pg
+salt 'db-minion-01' sqlx.query profile=orders_pg sql="select id, total from orders where status = :s" params='{"s": "open"}' limit=50
 ```
+
+A failing statement comes back with the database's own text and retcode 1, without the SQL or the bound values:
+`ERROR: [E_SQL] postgresql 42P01: relation "t10_nope" does not exist`.
+
+### The read-only guard is NOT the control
+
+`read_only: true` sets a read-only session as a best-effort guard. It is bypassable from inside the session (observed on
+PostgreSQL, MySQL and MariaDB; `SECURITY.md` section 2). **Point every profile at a database account that has only the
+privileges it needs (a read-only role for `query`)**; the database role is the control. Keep `allow_execute: false`
+except on a profile that uses a separate, write-capable account, and restrict who can call `sqlx.execute` with
+`external_auth` (below).
+
+### CLI quoting caveat
+
+On the command line Salt parses each `key=value` with YAML, so comparison operators must be YAML-quoted, inside shell
+quotes: `operator='"=="'`. Unquoted, `operator===` is split at the first `=` and fails with
+`Passed invalid arguments ... got multiple values for argument 'profile'`, and `operator=>` fails with
+`[E_OPTION_INVALID] option 'operator' must be a non-empty string` (both observed, `tests/integration/salt_path`).
+
+```bash
+salt 'db-minion-01' sqlx.check_query_result profile=orders_pg sql="select count(*) from orders" operator='"=="' expected=3
+```
+
+Validation errors are wrapped by the minion as `ERROR executing 'sqlx.query': [E_OPTION_UNKNOWN] ...`; errors raised by
+the database path read `ERROR: [E_SQL] ...`. Both have retcode 1. Salt adds `__pub_*` keys to every job; they are
+ignored, a misspelt option is `E_OPTION_UNKNOWN`.
+
+### Usage via salt-api
+
+Recorded from a real run of `tests/integration/salt_path/test_salt_api.py`: a test master with `rest_cherrypy` (plain
+HTTP on a free port, `disable_ssl: true`), the `file` eauth backend with a throwaway user (SPEC section 11 uses `pam`;
+a system user was not created for the test), and the live PostgreSQL test database. The request is the SPEC section 11
+`curl` with `-k` and `https` replaced by plain `http`, and the minion id, profile and credentials of the test:
+
+```bash
+curl -sS http://127.0.0.1:51565/run -H 'Content-Type: application/json' -d '[{"client": "local", "tgt": "minion-A2zVLT", "fun": "sqlx.query", "kwarg": {"profile": "pg_ro", "sql": "select id,note from t10_orders where id >= CAST(:s AS INTEGER) order by id", "params": {"s": 2}, "limit": 1}, "eauth": "file", "username": "t10_alice", "password": "t10_alice_pw_5b1e"}]'
+```
+
+```json
+{"return": [{"minion-A2zVLT": {"columns": ["id", "note"], "rows": [[2, "two"]], "row_count": 1, "truncated": true, "elapsed_ms": 1, "profile": "pg_ro"}}]}
+```
+
+`params` arrives as an object and `limit` as an integer. A request for a profile the user is not allowed
+(`mysql_ro`) returns cherrypy's HTML error page and no job runs.
+
+### Authorization and what Salt stores
+
+`external_auth` regex limits on `profile` work as in `SECURITY.md` section 4 (verified with `file` eauth): the permitted
+user can call `sqlx.query` with `pg_ro`, is refused for any other profile (including a positional profile, a missing
+profile and a longer name), and is refused for `sqlx.execute`. A function listed **without** `kwargs` (for example a bare
+`- sqlx.ping`) has no profile limit at all, so give every entry its own `kwargs: {profile: ...}`.
+
+Salt stores the job load: the **SQL text and the bound `params` of every call are in the master job cache** (`.load.p`),
+on the event bus (`salt/job/<jid>/new`) and, at debug level, in the master and minion logs. The account password never
+appeared in any of them, and the stored job *return* holds the rows only. Do not put secrets in `sql` or `params`.
 
 ## Security
 
