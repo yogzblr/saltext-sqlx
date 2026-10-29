@@ -8,7 +8,7 @@
   },
   "server_reachable": false,
   "not_run_reason": "No server could be started: Docker Hub, MCR, Oracle and vendor package hosts return HTTP 403 to the egress proxy (policy), and there is no apt package. Only client-side cases ran.",
-  "generated": "2026-10-29T02:42:46+00:00"
+  "generated": "2026-10-29T02:47:04+00:00"
  },
  "results": [
   {

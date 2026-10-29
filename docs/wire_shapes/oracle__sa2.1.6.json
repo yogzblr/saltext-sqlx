@@ -8,7 +8,7 @@
   },
   "server_reachable": false,
   "not_run_reason": "No server could be started: Docker Hub, MCR, Oracle and vendor package hosts return HTTP 403 to the egress proxy (policy), and there is no apt package. Only client-side cases ran.",
-  "generated": "2026-10-29T02:43:00+00:00"
+  "generated": "2026-10-29T02:47:18+00:00"
  },
  "results": [
   {
@@ -44,14 +44,14 @@
     "is_session_dead": "False",
     "isrecoverable": "False",
     "iswarning": "False",
-    "message": "DPY-6005: cannot connect to database (CONNECTION_ID=5utElvIoowKNJjrLfZlwXw==).\n[Errno 111] Connection refused",
+    "message": "DPY-6005: cannot connect to database (CONNECTION_ID=IkXoT7DZLa/mlkoX7KjrXw==).\n[Errno 111] Connection refused",
     "offset": "0"
    },
    "args0_class": "oracledb.errors._Error",
    "driver_attrs": {},
    "sqlstate": null,
    "vendor_code": "DPY-6005",
-   "message": "DPY-6005: cannot connect to database (CONNECTION_ID=5utElvIoowKNJjrLfZlwXw==).\n[Errno 111] Connection refused",
+   "message": "DPY-6005: cannot connect to database (CONNECTION_ID=IkXoT7DZLa/mlkoX7KjrXw==).\n[Errno 111] Connection refused",
    "password_in": {
     "str(exc)": false,
     "repr(exc)": false,
@@ -64,7 +64,7 @@
    "bound_value_in_str": false,
    "bound_value_in_driver_message": false,
    "sa_has_statement_attr": false,
-   "str_exc_first_line": "(oracledb.exceptions.OperationalError) DPY-6005: cannot connect to database (CONNECTION_ID=5utElvIoowKNJjrLfZlwXw==)."
+   "str_exc_first_line": "(oracledb.exceptions.OperationalError) DPY-6005: cannot connect to database (CONNECTION_ID=IkXoT7DZLa/mlkoX7KjrXw==)."
   },
   {
    "dialect": "oracle",
@@ -93,14 +93,14 @@
     "is_session_dead": "False",
     "isrecoverable": "False",
     "iswarning": "False",
-    "message": "DPY-6005: cannot connect to database (CONNECTION_ID=dJQVrUjqoKK7SapBP0lxnw==).\n[Errno 111] Connection refused",
+    "message": "DPY-6005: cannot connect to database (CONNECTION_ID=6bbcmu5qpTof9vklubHpkw==).\n[Errno 111] Connection refused",
     "offset": "0"
    },
    "args0_class": "oracledb.errors._Error",
    "driver_attrs": {},
    "sqlstate": null,
    "vendor_code": "DPY-6005",
-   "message": "DPY-6005: cannot connect to database (CONNECTION_ID=dJQVrUjqoKK7SapBP0lxnw==).\n[Errno 111] Connection refused",
+   "message": "DPY-6005: cannot connect to database (CONNECTION_ID=6bbcmu5qpTof9vklubHpkw==).\n[Errno 111] Connection refused",
    "password_in": {
     "str(exc)": false,
     "repr(exc)": false,
@@ -113,7 +113,7 @@
    "bound_value_in_str": false,
    "bound_value_in_driver_message": false,
    "sa_has_statement_attr": false,
-   "str_exc_first_line": "(oracledb.exceptions.OperationalError) DPY-6005: cannot connect to database (CONNECTION_ID=dJQVrUjqoKK7SapBP0lxnw==).",
+   "str_exc_first_line": "(oracledb.exceptions.OperationalError) DPY-6005: cannot connect to database (CONNECTION_ID=6bbcmu5qpTof9vklubHpkw==).",
    "note": "192.0.2.1 (TEST-NET-1), connect timeout 2 s; result depends on the sandbox network"
   },
   {

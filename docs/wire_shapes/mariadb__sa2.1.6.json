@@ -9,7 +9,7 @@
   },
   "server_reachable": true,
   "not_run_reason": null,
-  "generated": "2026-10-29T02:43:00+00:00"
+  "generated": "2026-10-29T02:47:18+00:00"
  },
  "results": [
   {
@@ -684,7 +684,7 @@
    "str_exc_first_line": "(pymysql.err.OperationalError) (1969, 'Query execution was interrupted (max_statement_time exceeded)')",
    "mechanism": "SET SESSION max_statement_time=0.3 (s)",
    "statement": "select sleep(3) from scratch.orders",
-   "elapsed_s": 0.32
+   "elapsed_s": 0.31
   },
   {
    "dialect": "mariadb",
