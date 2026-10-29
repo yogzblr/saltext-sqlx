@@ -250,7 +250,6 @@ def test_pg_semicolon_cannot_smuggle_a_second_verb(request, ex, server):
     """D1: the filter looks at the first keyword only; PostgreSQL runs the rest."""
     if server.key != "postgresql":
         pytest.skip("multi-statement strings run on PostgreSQL only")
-    defect(request, server, "D1", "INSERT; DELETE passes execute_verbs=[INSERT] on PostgreSQL")
     outcome, state = ex("rwi", f"INSERT INTO {Y} VALUES (6, 6); DELETE FROM {X}")
     assert state == UNCHANGED, f"DELETE ran although execute_verbs is [INSERT]: x={state[0]}"
 
@@ -293,14 +292,9 @@ def test_dry_run_true_cannot_be_defeated_by_a_commit_in_the_statement(request, e
     """D1: on PostgreSQL ``INSERT ...; COMMIT`` with dry_run=True is committed while the result says committed false."""
     if server.key != "postgresql":
         pytest.skip("multi-statement strings run on PostgreSQL only")
-    defect(
-        request,
-        server,
-        "D1",
-        "dry_run=True is defeated by '; COMMIT' and the result still reports committed: false",
-    )
     outcome, state = ex("rwv", f"INSERT INTO {Y} VALUES (8, 8); COMMIT", dry_run=True)
-    assert outcome[0] == "OK" and outcome[1]["committed"] is False
+    # Fixed: the multi-statement string is refused (42601); either outcome is safe as long as nothing persists.
+    assert outcome[0] == "ERR" or outcome[1]["committed"] is False
     assert state == UNCHANGED, f"dry_run=True persisted a row: y={state[1]}"
 
 

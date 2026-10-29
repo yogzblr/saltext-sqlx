@@ -494,3 +494,14 @@ def test_version_oracle_uses_driver_attribute():
 def test_version_is_always_text():
     assert dialects.adapter("mysql").version(FakeConn(scalar=8)) == "8"
     assert dialects.adapter("mysql").version(FakeConn(scalar=None)) == ""
+
+
+# --- T11 D1: PostgreSQL must reject multi-statement strings -------------------------------------
+def test_postgresql_connect_args_force_the_extended_protocol():
+    """``prepare_threshold=0`` is what makes PostgreSQL refuse ``a; b`` (T11 D1); it is module-owned."""
+    assert dialects.adapter("postgresql").connect_args(make())["prepare_threshold"] == 0
+
+
+def test_prepare_threshold_cannot_be_set_from_a_profile():
+    prof = make(connect_args={"prepare_threshold": 5})
+    _policy(dialects.adapter("postgresql").connect_args, prof)

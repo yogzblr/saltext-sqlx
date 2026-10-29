@@ -200,7 +200,12 @@ class PostgreSQL(Adapter):
     _version_sql = "SHOW server_version"
 
     def _timeout_connect_args(self, profile):
-        return {"connect_timeout": profile["connect_timeout_s"]}
+        # ``prepare_threshold=0`` makes psycopg use the extended query protocol for EVERY statement, and PostgreSQL
+        # refuses a string with more than one statement there (42601 "cannot insert multiple commands into a prepared
+        # statement"). With the default (simple protocol when there are no parameters) ``COMMIT; INSERT ...`` or
+        # ``SET statement_timeout = 0; ...`` ran as written, which defeated the read-only guard, the time cap, the
+        # ``execute`` verb filter and ``dry_run`` (T11 defect D1). Module-owned: not settable from a profile.
+        return {"connect_timeout": profile["connect_timeout_s"], "prepare_threshold": 0}
 
     def _set_timeout(self, conn, ms):
         conn.exec_driver_sql(f"SET statement_timeout = {int(ms)}")

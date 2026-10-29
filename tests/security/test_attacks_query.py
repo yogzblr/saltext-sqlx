@@ -147,14 +147,6 @@ def test_multi_statement_string_does_not_persist_a_write(
     """D1: PostgreSQL runs a multi-statement string (simple protocol) and the caller's COMMIT makes the write permanent."""
     if label == "cte-write-commit" and server.key != "postgresql":
         pytest.skip("data-modifying CTE is PostgreSQL syntax")
-    guard_bypasses = {"commit-insert-commit", "set-rw-insert-commit", "start-rw-insert-commit"}
-    if server.key == "postgresql" and (profile == "rw_query" or label in guard_bypasses):
-        defect(
-            request,
-            server,
-            "D1",
-            "PostgreSQL accepts multi-statement strings; COMMIT inside the statement persists the write",
-        )
     sql = template.format(i=ins(7), n=7)
     outcome, persisted = q(profile, sql, label=f"{label}")
     assert (
@@ -365,12 +357,6 @@ def victim(server):
 def test_select_only_account_cannot_change_its_password_through_the_guard(request, server, victim):
     """D1: with the DEFAULT guard, a SELECT-only account loses its password on PostgreSQL (COMMIT inside the statement)."""
     if server.key == "postgresql":
-        defect(
-            request,
-            server,
-            "D1",
-            "COMMIT; ALTER ROLE ... PASSWORD; COMMIT persists through sqlx.query with the guard on",
-        )
         sql = f"COMMIT; {victim}; COMMIT"
     else:
         sql = victim

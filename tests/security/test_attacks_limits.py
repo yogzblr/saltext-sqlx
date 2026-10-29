@@ -78,12 +78,6 @@ def test_pg_session_timeout_cannot_be_switched_off_by_the_statement(request, ser
     """D1: ``SET statement_timeout = 0; SELECT pg_sleep(..)`` is two statements in one call on PostgreSQL."""
     if server.key != "postgresql":
         pytest.skip("PostgreSQL only")
-    defect(
-        request,
-        server,
-        "D1",
-        "multi-statement string lets the caller disable statement_timeout (ro account, 3 s sleep under an 0.8 s cap)",
-    )
     for sql in (
         "SET statement_timeout = 0; SELECT pg_sleep(3)",
         "RESET ALL; SELECT pg_sleep(3)",
