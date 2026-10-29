@@ -1,0 +1,266 @@
+{
+ "meta": {
+  "dialect": "mssql",
+  "python": "3.13.16",
+  "sqlalchemy": "2.0.55",
+  "drivers": {
+   "pymssql": "2.4.6"
+  },
+  "server_reachable": false,
+  "not_run_reason": "No server could be started: Docker Hub, MCR, Oracle and vendor package hosts return HTTP 403 to the egress proxy (policy), and there is no apt package. Only client-side cases ran.",
+  "generated": "2026-10-29T02:42:46+00:00"
+ },
+ "results": [
+  {
+   "dialect": "mssql",
+   "case": "ping",
+   "status": "NOT RUN",
+   "reason": "No server could be started: Docker Hub, MCR, Oracle and vendor package hosts return HTTP 403 to the egress proxy (policy), and there is no apt package. Only client-side cases ran."
+  },
+  {
+   "dialect": "mssql",
+   "case": "wrong_password",
+   "status": "NOT RUN",
+   "reason": "No server could be started: Docker Hub, MCR, Oracle and vendor package hosts return HTTP 403 to the egress proxy (policy), and there is no apt package. Only client-side cases ran."
+  },
+  {
+   "dialect": "mssql",
+   "case": "unreachable_port",
+   "status": "error",
+   "sa_exc": "sqlalchemy.exc.OperationalError",
+   "dbapi_error": true,
+   "driver_exc": "pymssql.exceptions.OperationalError",
+   "driver_mro": [
+    "pymssql.exceptions.OperationalError",
+    "pymssql.exceptions.DatabaseError",
+    "pymssql.exceptions.Error"
+   ],
+   "args_types": [
+    "tuple"
+   ],
+   "driver_attrs": {},
+   "sqlstate": null,
+   "vendor_code": 20009,
+   "message": "(20009, b'DB-Lib error message 20009, severity 9:\\nUnable to connect: TDS server is unavailable or does not exist (127.0.0.1)\\nNet-Lib error during Connection refused (111)\\nDB-Lib error message 20009, severity 9:\\nUnable to connect: TDS server is unavailable or does not exist (127.0.0.1)\\nNet-Lib error during Connection refused (111)\\n')",
+   "password_in": {
+    "str(exc)": false,
+    "repr(exc)": false,
+    "repr(orig)": false,
+    "repr(orig.args)": false,
+    "traceback": false
+   },
+   "sql_text_in_str": false,
+   "parameters_block_in_str": false,
+   "bound_value_in_str": false,
+   "bound_value_in_driver_message": false,
+   "sa_has_statement_attr": false,
+   "str_exc_first_line": "(pymssql.exceptions.OperationalError) (20009, b'DB-Lib error message 20009, severity 9:\\nUnable to connect: TDS server is unavailable or does not exist (127.0.0.1)\\nNet-Lib error during Connection refused (111)\\nDB-Lib error message 20009, severity 9:\\nUnable to connect: TDS server is unavailable or...[+78]"
+  },
+  {
+   "dialect": "mssql",
+   "case": "unknown_database",
+   "status": "NOT RUN",
+   "reason": "No server could be started: Docker Hub, MCR, Oracle and vendor package hosts return HTTP 403 to the egress proxy (policy), and there is no apt package. Only client-side cases ran."
+  },
+  {
+   "dialect": "mssql",
+   "case": "connect_timeout_blackhole",
+   "status": "error",
+   "sa_exc": "sqlalchemy.exc.OperationalError",
+   "dbapi_error": true,
+   "driver_exc": "pymssql.exceptions.OperationalError",
+   "driver_mro": [
+    "pymssql.exceptions.OperationalError",
+    "pymssql.exceptions.DatabaseError",
+    "pymssql.exceptions.Error"
+   ],
+   "args_types": [
+    "tuple"
+   ],
+   "driver_attrs": {},
+   "sqlstate": null,
+   "vendor_code": 20009,
+   "message": "(20009, b'DB-Lib error message 20009, severity 9:\\nUnable to connect: TDS server is unavailable or does not exist (192.0.2.1)\\nNet-Lib error during Connection refused (111)\\nDB-Lib error message 20009, severity 9:\\nUnable to connect: TDS server is unavailable or does not exist (192.0.2.1)\\nNet-Lib error during Connection refused (111)\\n')",
+   "password_in": {
+    "str(exc)": false,
+    "repr(exc)": false,
+    "repr(orig)": false,
+    "repr(orig.args)": false,
+    "traceback": false
+   },
+   "sql_text_in_str": false,
+   "parameters_block_in_str": false,
+   "bound_value_in_str": false,
+   "bound_value_in_driver_message": false,
+   "sa_has_statement_attr": false,
+   "str_exc_first_line": "(pymssql.exceptions.OperationalError) (20009, b'DB-Lib error message 20009, severity 9:\\nUnable to connect: TDS server is unavailable or does not exist (192.0.2.1)\\nNet-Lib error during Connection refused (111)\\nDB-Lib error message 20009, severity 9:\\nUnable to connect: TDS server is unavailable or...[+78]",
+   "note": "192.0.2.1 (TEST-NET-1), connect timeout 2 s; result depends on the sandbox network"
+  },
+  {
+   "dialect": "mssql",
+   "case": "syntax_error",
+   "status": "NOT RUN",
+   "reason": "No server could be started: Docker Hub, MCR, Oracle and vendor package hosts return HTTP 403 to the egress proxy (policy), and there is no apt package. Only client-side cases ran."
+  },
+  {
+   "dialect": "mssql",
+   "case": "missing_table",
+   "status": "NOT RUN",
+   "reason": "No server could be started: Docker Hub, MCR, Oracle and vendor package hosts return HTTP 403 to the egress proxy (policy), and there is no apt package. Only client-side cases ran."
+  },
+  {
+   "dialect": "mssql",
+   "case": "missing_column",
+   "status": "NOT RUN",
+   "reason": "No server could be started: Docker Hub, MCR, Oracle and vendor package hosts return HTTP 403 to the egress proxy (policy), and there is no apt package. Only client-side cases ran."
+  },
+  {
+   "dialect": "mssql",
+   "case": "division_by_zero",
+   "status": "NOT RUN",
+   "reason": "No server could be started: Docker Hub, MCR, Oracle and vendor package hosts return HTTP 403 to the egress proxy (policy), and there is no apt package. Only client-side cases ran."
+  },
+  {
+   "dialect": "mssql",
+   "case": "division_by_zero_dml",
+   "status": "NOT RUN",
+   "reason": "No server could be started: Docker Hub, MCR, Oracle and vendor package hosts return HTTP 403 to the egress proxy (policy), and there is no apt package. Only client-side cases ran."
+  },
+  {
+   "dialect": "mssql",
+   "case": "unique_violation",
+   "status": "NOT RUN",
+   "reason": "No server could be started: Docker Hub, MCR, Oracle and vendor package hosts return HTTP 403 to the egress proxy (policy), and there is no apt package. Only client-side cases ran."
+  },
+  {
+   "dialect": "mssql",
+   "case": "permission_denied_insert",
+   "status": "NOT RUN",
+   "reason": "No server could be started: Docker Hub, MCR, Oracle and vendor package hosts return HTTP 403 to the egress proxy (policy), and there is no apt package. Only client-side cases ran."
+  },
+  {
+   "dialect": "mssql",
+   "case": "permission_denied_select",
+   "status": "NOT RUN",
+   "reason": "No server could be started: Docker Hub, MCR, Oracle and vendor package hosts return HTTP 403 to the egress proxy (policy), and there is no apt package. Only client-side cases ran."
+  },
+  {
+   "dialect": "mssql",
+   "case": "ro_update",
+   "status": "NOT RUN",
+   "reason": "No server could be started: Docker Hub, MCR, Oracle and vendor package hosts return HTTP 403 to the egress proxy (policy), and there is no apt package. Only client-side cases ran."
+  },
+  {
+   "dialect": "mssql",
+   "case": "ro_delete",
+   "status": "NOT RUN",
+   "reason": "No server could be started: Docker Hub, MCR, Oracle and vendor package hosts return HTTP 403 to the egress proxy (policy), and there is no apt package. Only client-side cases ran."
+  },
+  {
+   "dialect": "mssql",
+   "case": "ro_ddl",
+   "status": "NOT RUN",
+   "reason": "No server could be started: Docker Hub, MCR, Oracle and vendor package hosts return HTTP 403 to the egress proxy (policy), and there is no apt package. Only client-side cases ran."
+  },
+  {
+   "dialect": "mssql",
+   "case": "bad_cast_bound_value",
+   "status": "NOT RUN",
+   "reason": "No server could be started: Docker Hub, MCR, Oracle and vendor package hosts return HTTP 403 to the egress proxy (policy), and there is no apt package. Only client-side cases ran."
+  },
+  {
+   "dialect": "mssql",
+   "case": "rw_write_then_rollback",
+   "status": "NOT RUN",
+   "reason": "No server could be started: Docker Hub, MCR, Oracle and vendor package hosts return HTTP 403 to the egress proxy (policy), and there is no apt package. Only client-side cases ran."
+  },
+  {
+   "dialect": "mssql",
+   "case": "pymssql_timeout_1s",
+   "status": "NOT RUN",
+   "reason": "No server could be started: Docker Hub, MCR, Oracle and vendor package hosts return HTTP 403 to the egress proxy (policy), and there is no apt package. Only client-side cases ran.",
+   "mechanism": "pymssql connect arg timeout=1 (s)",
+   "statement": "waitfor delay '00:00:03'"
+  },
+  {
+   "dialect": "mssql",
+   "case": "guard_control_no_guard",
+   "status": "NOT RUN",
+   "reason": "No server could be started: Docker Hub, MCR, Oracle and vendor package hosts return HTTP 403 to the egress proxy (policy), and there is no apt package. Only client-side cases ran."
+  },
+  {
+   "dialect": "mssql",
+   "case": "types_roundtrip",
+   "status": "NOT RUN",
+   "reason": "No server could be started: Docker Hub, MCR, Oracle and vendor package hosts return HTTP 403 to the egress proxy (policy), and there is no apt package. Only client-side cases ran."
+  },
+  {
+   "dialect": "mssql",
+   "case": "text_trap_compile_client_side",
+   "status": "ok",
+   "paramstyle": "pyformat",
+   "compiled": {
+    "colon_cast  select :a::int": {
+     "bind_names": [],
+     "compiled": "select :a::int"
+    },
+    "json literal select '{\"a\":1}'": {
+     "bind_names": [
+      "1"
+     ],
+     "compiled": "select '{\"a\"%(1)s}'"
+    },
+    "escaped     select '{\"a\"\\:1}'": {
+     "bind_names": [],
+     "compiled": "select '{\"a\":1}'"
+    },
+    "percent     like '%b%'": {
+     "bind_names": [],
+     "compiled": "select 'abc' like '%b%'"
+    },
+    "CAST(:a AS ..)": {
+     "bind_names": [
+      "a"
+     ],
+     "compiled": "select CAST(%(a)s AS int)"
+    }
+   }
+  },
+  {
+   "dialect": "mssql",
+   "case": "text_trap_colon_cast",
+   "status": "NOT RUN",
+   "reason": "No server could be started: Docker Hub, MCR, Oracle and vendor package hosts return HTTP 403 to the egress proxy (policy), and there is no apt package. Only client-side cases ran."
+  },
+  {
+   "dialect": "mssql",
+   "case": "text_trap_json_colon_literal",
+   "status": "NOT RUN",
+   "reason": "No server could be started: Docker Hub, MCR, Oracle and vendor package hosts return HTTP 403 to the egress proxy (policy), and there is no apt package. Only client-side cases ran."
+  },
+  {
+   "dialect": "mssql",
+   "case": "text_trap_json_colon_escaped",
+   "status": "NOT RUN",
+   "reason": "No server could be started: Docker Hub, MCR, Oracle and vendor package hosts return HTTP 403 to the egress proxy (policy), and there is no apt package. Only client-side cases ran."
+  },
+  {
+   "dialect": "mssql",
+   "case": "text_percent_in_text",
+   "status": "NOT RUN",
+   "reason": "No server could be started: Docker Hub, MCR, Oracle and vendor package hosts return HTTP 403 to the egress proxy (policy), and there is no apt package. Only client-side cases ran."
+  },
+  {
+   "dialect": "mssql",
+   "case": "text_cast_bind",
+   "status": "NOT RUN",
+   "reason": "No server could be started: Docker Hub, MCR, Oracle and vendor package hosts return HTTP 403 to the egress proxy (policy), and there is no apt package. Only client-side cases ran."
+  },
+  {
+   "dialect": "mssql",
+   "case": "driver_sql_percent_no_params",
+   "status": "NOT RUN",
+   "reason": "No server could be started: Docker Hub, MCR, Oracle and vendor package hosts return HTTP 403 to the egress proxy (policy), and there is no apt package. Only client-side cases ran."
+  }
+ ]
+}

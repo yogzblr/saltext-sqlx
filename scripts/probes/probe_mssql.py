@@ -30,6 +30,7 @@ cfg = {
         "missing_table": "select * from nope",
         "missing_column": "select nope from scratch.orders",
         "div0": "select 1/0",
+        "div0_dml": "insert into scratch.t_probe select 1/0",
         "unique": "insert into scratch.uniq values ('a@example.com')",
         "perm_insert": "insert into scratch.orders (id) values (99)",
         "perm_select": "select * from private.secrets",

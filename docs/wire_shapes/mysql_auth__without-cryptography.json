@@ -1,0 +1,90 @@
+{
+ "meta": {
+  "label": "without-cryptography",
+  "cryptography": null,
+  "PyMySQL": "1.2.3",
+  "sqlalchemy": "2.0.55"
+ },
+ "results": [
+  {
+   "server": "mysql",
+   "ssl_disabled": false,
+   "auth_cache": "cold",
+   "status": "ok",
+   "ssl_cipher": "TLS_AES_256_GCM_SHA384"
+  },
+  {
+   "server": "mysql",
+   "ssl_disabled": false,
+   "auth_cache": "warm",
+   "status": "ok",
+   "ssl_cipher": "TLS_AES_256_GCM_SHA384"
+  },
+  {
+   "server": "mysql",
+   "ssl_disabled": true,
+   "auth_cache": "cold",
+   "status": "error",
+   "sa_exc": null,
+   "dbapi_error": false,
+   "driver_exc": "builtins.RuntimeError",
+   "message": "'cryptography' package is required for sha256_password or caching_sha2_password auth methods",
+   "vendor_code": null,
+   "sqlstate": null,
+   "password_in": {
+    "str(exc)": false,
+    "repr(exc)": false,
+    "repr(orig)": false,
+    "repr(orig.args)": false,
+    "traceback": false
+   }
+  },
+  {
+   "server": "mysql",
+   "ssl_disabled": true,
+   "auth_cache": "warm",
+   "status": "error",
+   "sa_exc": null,
+   "dbapi_error": false,
+   "driver_exc": "builtins.RuntimeError",
+   "message": "'cryptography' package is required for sha256_password or caching_sha2_password auth methods",
+   "vendor_code": null,
+   "sqlstate": null,
+   "password_in": {
+    "str(exc)": false,
+    "repr(exc)": false,
+    "repr(orig)": false,
+    "repr(orig.args)": false,
+    "traceback": false
+   }
+  },
+  {
+   "server": "mariadb",
+   "ssl_disabled": false,
+   "auth_cache": "cold",
+   "status": "ok",
+   "ssl_cipher": "(none: not encrypted)"
+  },
+  {
+   "server": "mariadb",
+   "ssl_disabled": false,
+   "auth_cache": "warm",
+   "status": "ok",
+   "ssl_cipher": "(none: not encrypted)"
+  },
+  {
+   "server": "mariadb",
+   "ssl_disabled": true,
+   "auth_cache": "cold",
+   "status": "ok",
+   "ssl_cipher": "(none: not encrypted)"
+  },
+  {
+   "server": "mariadb",
+   "ssl_disabled": true,
+   "auth_cache": "warm",
+   "status": "ok",
+   "ssl_cipher": "(none: not encrypted)"
+  }
+ ]
+}

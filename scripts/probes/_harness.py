@@ -127,8 +127,12 @@ def classify(e, secrets=(), sql_texts=(), param_values=()):
         "traceback": tb,
     }
     rec["password_in"] = {k: any(p and p in v for p in secrets) for k, v in surfaces.items()}
-    rec["sql_text_in_str"] = any(s and s in str(e) for s in sql_texts)
+    # SQLAlchemy appends "[SQL: ...]" and "[parameters: ...]" blocks to str(exc); the bound value can also be echoed by the
+    # server inside the driver's own message.
+    rec["sql_text_in_str"] = "[SQL:" in str(e)
+    rec["parameters_block_in_str"] = "[parameters:" in str(e)
     rec["bound_value_in_str"] = any(v and v in str(e) for v in param_values)
+    rec["bound_value_in_driver_message"] = any(v and v in str(drv) for v in param_values)
     rec["sa_has_statement_attr"] = bool(getattr(e, "statement", None))
     rec["str_exc_first_line"] = _short(str(e).splitlines()[0] if str(e) else "", 300)
     return rec
@@ -157,13 +161,13 @@ class Harness:
         self.results.append(r)
         return r
 
-    def not_run(self, case, why=None):
-        return self.add(case, status="NOT RUN", reason=why or self.reason)
+    def not_run(self, case, why=None, **extra):
+        return self.add(case, status="NOT RUN", reason=why or self.reason, **extra)
 
     def case(self, case, fn, secrets=(), sql=(), values=(), keep=False, **extra):
         """Run fn(); record the exception (error) or the return value (ok)."""
         if self.reason and not extra.pop("client_side", False):
-            return self.not_run(case)
+            return self.not_run(case, **extra)
         extra.pop("client_side", None)
         try:
             val = fn()
