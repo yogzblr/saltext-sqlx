@@ -37,7 +37,7 @@ text, numeric, timestamp, UUID/GUID, binary, JSON and NULL columns.
 | `test_profiles.py` | required keys; unknown key → `E_PROFILE_INVALID`; dialect/driver mismatch; defaults; call cannot override host/driver/url/connect_args |
 | `test_secrets.py` | `sdb://` via injected callable; empty → `E_SECRET`; masking: no exception text or log record contains the secret, parametrised over every error path |
 | `test_dialects.py` | URL built with `URL.create` for passwords containing `@ : / % ?`; connect_args allowlist; session-setup SQL uses `int()`-validated values |
-| `test_errors.py` | table-driven: (dialect, sqlstate/vendor code, class) → code; includes the observed PostgreSQL, MySQL and MariaDB rows from SPEC section 8 and the raw non-`DBAPIError` exceptions (`TypeError`, `RuntimeError`, `AttributeError`, `ValueError`, `InvalidRequestError`) → `E_INTERNAL`; unknown → `E_INTERNAL` with class name only; `error_detail` false drops DETAIL; SQL text and params never in a message |
+| `test_errors.py` | table-driven: (dialect, sqlstate/vendor code, class) → code; includes the nine observed PostgreSQL rows, the MySQL/MariaDB rows from SPEC section 8 and the raw non-`DBAPIError` exceptions (`TypeError`, `RuntimeError`, `AttributeError`, `ValueError`, `InvalidRequestError`) with the code section 8 assigns each (`E_CONNECT`, `E_DRIVER_MISSING`, `E_OPTION_INVALID`, else `E_INTERNAL`); Oracle and SQL Server only the connect-refused rows (all else `E_INTERNAL` until T1b); a pre-prefixed `[E_...]` exception passes through; unknown → `E_INTERNAL` with class name only; `error_detail` false drops DETAIL; SQL text and params never in a message |
 | `test_serialize.py` | each type in SPEC section 9; NaN/Infinity; very large ints; `bytes`; nested JSON; everything passes `json.dumps` |
 | `test_runner.py` (SQLite) | `limit+1` truncation; `max_bytes` truncation; no-row statements; `query` always rolls back (assert via a second connection); `execute` commits only when allowed and not `dry_run` |
 | `test_checks.py` | every operator; numeric-string comparison; missing cell → `ok:false`; truncated row count → `ok:null`; retry loop honours cap using a fake clock |
@@ -59,12 +59,23 @@ text, numeric, timestamp, UUID/GUID, binary, JSON and NULL columns.
 | `table_list` | schemas, views, pattern |
 | encoding | PostgreSQL SQL_ASCII regression: expect a clear error or documented requirement, not a bare `TypeError` (wrap `engine.build` first-connect failures as `E_CONNECT`/`E_INTERNAL` with the class name) |
 
+### Functional suites that exist today (`tests/functional/`)
+
+| File | Covers | Databases |
+|---|---|---|
+| `test_engine_pg.py` | `engine.ping`, timeout and read-only session setup, call timeout can only lower the profile's, `NullPool` really closes, wrong password / port / unknown database, SQL_ASCII regression (needs `SQLX_TEST_PG_ASCII_DB`) | PostgreSQL (`pg`, needs `SQLX_TEST_PG_URL`) |
+| `test_runner_functional.py` | `run_query` / `run_execute` against real servers: limits, truncation, rollback, commit visibility, `dry_run`, verbs | PostgreSQL, MySQL, MariaDB |
+| `test_sqlx_module_functional.py` | the module functions with `__salt__` injected: `query` (incl. an `sdb://` profile), error fidelity, wrong password without the password in the text, `execute` disabled / dry run / commit / verb refused, `check_query_result`, `check_row_count`, `ping`, `table_list`, the audit line without statement text | PostgreSQL, MySQL, MariaDB (`pg`, `mysql`, `mariadb` markers) |
+
+`tests/functional/modules/test_sqlx.py` is an empty placeholder. There is no Oracle or SQL Server functional suite (T1b), and no
+functional test yet starts a real Salt minion (T10, section 5).
+
 ## 5. Salt integration and REST
 
 Use `pytest-salt-factories`. 1) Call through `LocalClient().cmd(tgt, "sqlx.query", kwarg={...})` with JSON-typed kwargs
 (`params` as an object, `limit` as an int) — the same load path as `salt-api` minus HTTP. 2) `__pub_*` keys do not
 trigger `E_OPTION_UNKNOWN`; a typo'd option does. 3) With the real minion, a failing statement returns
-`ERROR: [E_SQL] ...` and retcode 1 (assert with `full_return`). 4) `sdb://` password resolution with a throwaway profile.
+`ERROR: [E_SQL] ...` and retcode 1 (assert with `full_return`); a validation failure returns `ERROR executing 'sqlx.query': [E_OPTION_INVALID] ...`, and `salt-call` prints `Error running 'sqlx.query': [E_...]` (SPEC section 8). Operators on the command line are YAML-quoted (`operator='">"'`, SPEC section 4). 4) `sdb://` password resolution with a throwaway profile.
 5) eauth regex on `profile` from SECURITY section 4 refuses a non-matching profile. 6) Manual smoke with `curl` from SPEC
 section 11; record the exact command in the README.
 

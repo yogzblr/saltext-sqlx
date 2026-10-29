@@ -59,12 +59,12 @@ failure is `[E_PROFILE_INVALID]`, names keys only and never contains a value.
 |---|---|
 | unknown key | rejected |
 | `dialect` | **required**; one of `postgresql`, `mysql`, `oracle`, `mssql` (section 7; whether `mariadb` becomes a fifth value is D10) |
-| `driver` | optional; defaults to the dialect's only driver (`postgresql` psycopg, `mysql` pymysql, `oracle` oracledb, `mssql` pymssql); any other value is rejected. The single source of truth for this table is `lib/dialects.py` (task T4 moves it there from `profiles.DIALECT_DRIVERS`) |
+| `driver` | optional; defaults to the dialect's only driver (`postgresql` psycopg, `mysql` pymysql, `oracle` oracledb, `mssql` pymssql); any other value is rejected. The single source of truth for this table is `lib/dialects.py` (`DIALECT_DRIVERS`); `profiles.py` imports it |
 | `host`, `database`, `username` | **required**, non-empty strings |
 | `port` | **required**, integer 1-65535 (a bool is not an integer) |
 | `password` | **optional**. If present: a non-empty string, and not the bare prefix `sdb://`. A literal or an `sdb://` reference; validated for shape only and resolved later (`lib/secrets.py`, ARCHITECTURE section 7). Absent stays absent in the validated profile |
-| `query` | optional mapping of string keys to str/int/float/bool values; `null` means `{}` |
-| `connect_args` | optional mapping with string keys; `null` means `{}`. Only the shape is checked here; the per-driver allowlist (section 7) is applied by the dialect adapter (T4) |
+| `query` | optional mapping of string keys to str/int/float/bool values; `null` means `{}`. Only the shape is checked here; the per-driver allowlist (section 7) is applied by the dialect adapter when the engine is built |
+| `connect_args` | optional mapping with string keys; `null` means `{}`. Only the shape is checked here; the per-driver allowlist (section 7) is applied by the dialect adapter when the engine is built |
 | `read_only`, `allow_execute`, `error_detail` | booleans; defaults `true`, `false`, `false` |
 | `execute_verbs` | list of single-word alphabetic strings; default `[INSERT, UPDATE, DELETE]`; every entry is **upper-cased** by validation; an empty list is accepted; duplicates are kept |
 | `statement_timeout_ms`, `connect_timeout_s`, `row_limit`, `max_bytes` | integer >= 1 (a bool is not an integer); defaults and hard maxima in section 6; **a value above the hard maximum is rejected** with `[E_PROFILE_INVALID]`, it is not clamped |
@@ -83,6 +83,10 @@ maximum (`options.apply_caps`); it is not an error (D9).
 All arguments are keyword-friendly and JSON-typed, so they pass unchanged through the Salt REST API
 (`"kwarg": {...}`). Validation is `options.validate(function, kwargs)`:
 
+- On the `salt` / `salt-call` command line every value is parsed as YAML, which mangles the comparison symbols: pass
+  operators **YAML-quoted**, for example `operator='"=="'`, `operator='">"'`, `operator='">="'` (single quotes for the shell,
+  double quotes for YAML). The REST API and `LocalClient` send JSON and need no extra quoting (section 11). The word
+  operators (`contains`, `is_null`, ...) need none.
 - Keys beginning `__` (Salt's `__pub_*`, `__kwarg__`) are dropped first.
 - Any other key outside the function's allowed set is `[E_OPTION_UNKNOWN]` (the message lists the key names only).
 - A missing required key, or a value of the wrong type or range, is `[E_OPTION_INVALID]`. For an optional key, `null` means
@@ -96,8 +100,8 @@ Allowed keywords per function (R = required; the type and default follow):
 |---|---|
 | `query` | `profile` R str, `sql` R non-empty str, `params` object with string keys (default none), `limit` int >= 1, `timeout_ms` int >= 1, `max_bytes` int >= 1 |
 | `execute` | `profile` R, `sql` R, `params`, `dry_run` bool (default `false`), `timeout_ms` int >= 1 |
-| `check_query_result` | `profile` R, `sql` R, `operator` R non-empty str, `expected` R (any JSON value; `null` is accepted), `params`, `row` int >= 0 (default 0), `column` int >= 0 (default 0), `retry_timeout_s` number >= 0 (default 0), `retry_pause_s` number >= 0 (default 1; the check itself needs > 0, section 4.3) |
-| `check_row_count` | `profile` R, `sql` R, `operator` R, `expected` R, `params`, `retry_timeout_s`, `retry_pause_s` |
+| `check_query_result` | `profile` R, `sql` R, `operator` R non-empty str, `expected` any JSON value (`null` is accepted); **required unless `operator` is `is_null` or `is_not_null`** (`options.NULL_OPERATORS`), `params`, `row` int >= 0 (default 0), `column` int >= 0 (default 0), `retry_timeout_s` number >= 0 (default 0), `retry_pause_s` finite number > 0 (default 1) |
+| `check_row_count` | `profile` R, `sql` R, `operator` R, `expected` R (the key must be present), `params`, `retry_timeout_s` (as above), `retry_pause_s` (as above) |
 | `ping` | `profile` R |
 | `table_list` | `profile` R, `schema` str, `pattern` str, `include_views` bool (default `false`) |
 
@@ -127,10 +131,28 @@ refused, so a result with no rows is not marked truncated even if `columns` alon
 conversions are in section 9.
 
 ### 4.2 `sqlx.execute(profile, sql, params=None, dry_run=False, timeout_ms=None)`
-Refused with `[E_EXECUTE_DISABLED]` unless the profile has `allow_execute: true`. Then: first keyword must be in
-`execute_verbs` else `[E_POLICY]`; runs in a transaction; commits only if `dry_run` is false. Returns
-`{"profile", "rows_affected", "committed": bool, "dry_run": bool, "elapsed_ms"}`. With `dry_run: true` the transaction is
-rolled back and `rows_affected` reports what would have changed (default for `dry_run` is a decision, D2).
+Refused with `[E_EXECUTE_DISABLED]` unless the profile has `allow_execute: true` (checked by the module before any secret
+is resolved or any connection is opened). Then, in `runner.run_execute`:
+
+- `dry_run` must be exactly `True` or `False` (a real `bool`); anything else, including a string or a number, is
+  `[E_OPTION_INVALID]`, so a malformed flag can never commit. The call-level default is `false` (D2).
+- The first keyword of the statement must be in `execute_verbs` (compared case-insensitively), else `[E_POLICY]`. A statement
+  that does not start with a keyword at all (`(select 1)`, `;drop table t`) is also `[E_POLICY]`. An empty or comment-only
+  statement is `[E_OPTION_INVALID]`.
+- The filter skips only whitespace, `--` line comments and `/* */` block comments before the keyword. A MySQL `#` comment is
+  not skipped, so a statement that starts with one fails with `[E_POLICY]`. A MySQL `/*! ... */` comment **is** skipped like
+  any block comment although MySQL executes its content; the filter looks at the keyword after it. This is a best-effort
+  filter, **not a security boundary** (a CTE, a `;` or a function call can still write): the database role limits what
+  `execute` can do.
+- The connection is opened with `read_only` **False**, whatever the profile says: `allow_execute: true` wins over
+  `read_only: true`, because an execute-enabled profile must be able to write (`sqlx_mod.execute`). The in-session
+  read-only guard is therefore not applied to `execute`; set `read_only: false` on such a profile to keep the profile
+  honest, and use a role that may write only what is intended.
+- The statement runs in a transaction that is committed only if `dry_run` is false. Any exception rolls the transaction back
+  and propagates.
+
+Returns `{"profile", "rows_affected", "committed": bool, "dry_run": bool, "elapsed_ms"}`. With `dry_run: true` the
+transaction is rolled back and `rows_affected` reports what would have changed.
 
 ### 4.3 `sqlx.check_query_result(profile, sql, operator, expected, params=None, row=0, column=0, retry_timeout_s=0, retry_pause_s=1)`
 Runs `sql` as in 4.1, takes `rows[row][column]`, compares with `expected` (`lib/checks.py`). Returns
@@ -139,8 +161,8 @@ is `ok: false`, **not** an error. A missing row or column is `ok: false` with `a
 The check does not look at `truncated`: it reads the cell from the rows that were returned.
 
 Operators: `==`, `!=`, `<`, `<=`, `>`, `>=`, `contains`, `not_contains`, `is_null`, `is_not_null`. Any other operator is
-`[E_OPTION_INVALID]`. `is_null` and `is_not_null` ignore `expected`. The library function takes `expected` as optional; the
-call validation of section 4 still requires the key (pass `null`), see "Known mismatches" under section 12.
+`[E_OPTION_INVALID]`. `is_null` and `is_not_null` ignore `expected`, and for those two operators the key may be left out
+(`options.validate` requires it for every other operator).
 
 Comparison rules:
 - Numbers: `int`, finite `float` (taken from its `repr`), finite `Decimal`, and strings that fully match
@@ -161,8 +183,8 @@ Retry semantics (`checks._retry`, shared with 4.4):
 - The first attempt is immediate. With `retry_timeout_s: 0` there is exactly one attempt.
 - The deadline is `retry_timeout_s` capped at 10 seconds (a larger value is capped, not rejected). `retry_timeout_s` must be a
   finite number >= 0.
-- `retry_pause_s` must be a finite number **greater than 0**, otherwise `[E_OPTION_INVALID]` (this is stricter than the
-  option-level check, which accepts 0). Before each further attempt the pause is shortened to the time remaining.
+- `retry_pause_s` must be a finite number **greater than 0**, otherwise `[E_OPTION_INVALID]`; `options.validate` and
+  `checks` apply the same rule. Before each further attempt the pause is shortened to the time remaining.
 - Only `ok: false` is retried, which includes `no_such_cell`. `ok: true` and `ok: null` (truncated, 4.4) are final.
 - An exception raised while running the query (any of section 8) is never retried; it propagates at once.
 - `attempts` is the number of attempts made.
@@ -178,7 +200,16 @@ Connects and runs the dialect's trivial statement (`SELECT 1`; Oracle `SELECT 1 
 `{"ok": true, "dialect", "server_version", "elapsed_ms"}`. Failures are errors with the usual codes.
 
 ### 4.6 `sqlx.table_list(profile, schema=None, pattern=None, include_views=False)`
-Uses `sqlalchemy.inspect(...)`. Returns `{"schema", "tables": [...], "views": [...]}`.
+Uses `sqlalchemy.inspect(...)` on a connection opened with the profile's own `read_only` setting. Returns
+`{"profile", "schema", "tables": [...], "views": [...]}`, with `tables` and `views` sorted.
+
+- `schema`: when absent (or an empty string) the inspector's default schema (`default_schema_name`) is used. The schema that was
+  used is returned in `schema`; it can be `null` if the dialect reports no default.
+- `pattern`: SQL `LIKE` syntax, `%` for any run of characters and `_` for exactly one, **anchored to the whole name**
+  (`ord%` matches `orders`, `ord` does not). Every other character is literal; there is no escape character, so a literal `%`
+  or `_` cannot be searched for. Matching is case-sensitive. It filters tables and views. An absent or empty `pattern` matches
+  everything.
+- `views`: `[]` unless `include_views` is true; with it, the schema's views (filtered by `pattern`).
 
 ## 5. Parameters and statement text
 
@@ -240,12 +271,21 @@ Notes, all **observed** unless stated.
 - A PostgreSQL database created as SQL_ASCII fails on the first connect with a bare `TypeError: cannot use a string pattern
   on a bytes-like object` (not a `DBAPIError`) [WS 7].
 - Choosing the MySQL/MariaDB read-only statement is a T4 decision; no tested statement is bypass-proof (WS 3).
-- The dialect-to-driver table (`postgresql` psycopg, `mysql` pymysql, `oracle` oracledb, `mssql` pymssql) currently lives in
-  `profiles.DIALECT_DRIVERS`. Task T4 moves it to `lib/dialects.py`; the single source of truth is `dialects.py`, and
-  `profiles.py` must import it from there.
-- Only `mysql` is a valid `dialect` value today; the `mariadb` row above is a flavour of it (D10).
-- `connect_args` keys are checked against a per-driver allowlist; `ssl_context`, callables and file paths outside the TLS
-  directory are rejected. (Design rule, not a database behaviour.)
+- The dialect-to-driver table (`postgresql` psycopg, `mysql` pymysql, `oracle` oracledb, `mssql` pymssql) lives in
+  `lib/dialects.py` (`DIALECT_DRIVERS`); `profiles.py` imports it.
+- Only `mysql` is a valid `dialect` value; the `mariadb` row above is a flavour of it (D10). The module passes the profile's
+  dialect name, so `errors.raise_for` and `errors.translate` receive `mysql` for MariaDB as well (the error table also accepts
+  `mariadb`, but the module never passes it).
+- Profile `query` entries and `connect_args` entries both reach the driver, so **both** are checked against the same
+  per-driver allowlist (`dialects.Adapter._check_args`); a key outside it, or a value that is not a plain string, number or
+  boolean, is `[E_POLICY]` naming the key only. Allowed today: `postgresql` `application_name`, `sslmode`,
+  `target_session_attrs`, `keepalives`, `keepalives_idle`, `keepalives_interval`, `keepalives_count`; `mysql` `charset`,
+  `read_timeout`, `write_timeout`, `ssl_disabled`, `ssl_verify_cert`, `ssl_verify_identity`; `oracle` `expire_time`,
+  `retry_count`, `retry_delay`, `ssl_server_dn_match`; `mssql` `appname`, `charset`, `tds_version`. `ssl_context` and callables
+  are rejected (not scalar), and **no path-bearing TLS option is allowed today** (no `sslrootcert`, `sslcert`, `sslkey`,
+  `ssl_ca`, ...), so `sslmode: verify-full` verifies against the driver's default CA bundle only and database mTLS client
+  certificates cannot be configured. That gap is decision D12. (Design rule, not a database behaviour.) The Oracle,
+  SQL Server and MySQL/MariaDB names are from vendor documentation, not observed (`UNVERIFIED(T1)` in `dialects.py`).
 - `mysqlclient` (GPL) is excluded. LGPL drivers are accepted by the owner as unmodified pip dependencies (decision
   recorded 2026-10-29).
 
@@ -255,14 +295,46 @@ section 5 still occur [WS 8]. Widening the pin remains decision D4.
 
 ## 8. Errors
 
-One path: any exception raised while connecting or executing is mapped to
-`CommandExecutionError("[E_CODE] <dialect> <sqlstate-or-vendor-code>: <message>")`. Salt returns this as
-`ERROR: [E_CODE] ...` with retcode 1. Validation failures raise `SaltInvocationError` with the same prefix style.
+One path (`lib/errors.py`): any exception raised while connecting or executing is mapped to
+`CommandExecutionError("[E_CODE] <dialect> <sqlstate-or-vendor-code>: <message>")`; the native part is left out when there is
+none. The module's `_run` sends every failure through `errors.raise_for`, and `engine.connection` does the same for connect,
+session-setup and ping failures (the engine no longer classifies errors itself).
+
+- An exception whose text already starts with a valid `[E_...]` (a code of the table below) is passed through by
+  `errors.describe` / `raise_for` with its class and text unchanged. That is how validation (`SaltInvocationError`: options,
+  profile shape, adapter allowlist, `runner` policy) and `CommandExecutionError` from policy and secrets
+  (`E_EXECUTE_DISABLED`, `E_SECRET`, `E_DRIVER_MISSING`) keep their class. A `SaltInvocationError` or
+  `CommandExecutionError` whose text does not start with a valid code becomes `E_INTERNAL` (class name only).
+- The message never contains the SQL text, the bound values, the URL or the password. `raise_for` clears the exception
+  chain, and `engine` removes the password (raw and URL-quoted) and any `scheme://...` text once more from the final message.
+- How Salt shows it differs by entry point. The retcode is 1 in every case. This is read from the Salt 3008.2 source
+  (`salt/cli/caller.py`, `salt/minion.py`); no minion was run with this module yet (task T10).
+
+| Raised as | `salt-call` | remote minion job (`salt '<tgt>' ...`, `LocalClient`, salt-api) |
+|---|---|---|
+| `CommandExecutionError` | stderr `Error running 'sqlx.query': [E_...] ...` (`caller.py` 237-241) | return value `ERROR: [E_...] ...` (`minion.py` 3024-3031) |
+| `SaltInvocationError` | the bare text `[E_...] ...` on stderr through `SystemExit` (`caller.py` 119-120) | return value `ERROR executing 'sqlx.query': [E_...] ...` (`minion.py` 3034-3041) |
+
+  Clients must therefore look for the `[E_CODE]` token in the text, not for a fixed prefix. The words `Passed invalid
+  arguments` that Salt prints are for a `TypeError` (a wrong Python signature), not for these errors.
+
 **Catching `DBAPIError` is not enough**: these reached the caller as other types (observed, WS 5-7):
 `TypeError` (PostgreSQL SQL_ASCII, first connect), `RuntimeError` and `AttributeError` (PyMySQL authentication),
 `ValueError` (PyMySQL with `exec_driver_sql` and a literal `%`), and `sqlalchemy.exc.InvalidRequestError` for a mis-read bind
 (`A value is required for bind parameter`). The error path therefore has to catch `Exception` around connect and execute.
-Those map to `E_INTERNAL` unless a rule below says otherwise.
+Those map to `E_INTERNAL` (class name only) unless a rule says otherwise. The rules in `errors.py`, all from observed
+cases: PostgreSQL SQL_ASCII `TypeError` -> `E_CONNECT` with a message asking for a UTF8 database; PyMySQL `RuntimeError` naming
+the `cryptography` package -> `E_DRIVER_MISSING`; PyMySQL first-connect `AttributeError` (`is_auth_switch_request`) -> `E_CONNECT`
+("retry the call"); `InvalidRequestError` `A value is required for bind parameter` and the `ValueError` / psycopg "only '%s',
+'%b', '%t' are allowed as placeholders" from a literal `%` -> `E_OPTION_INVALID` with a hint (section 5). A bare `OSError`
+raised while connecting (not wrapped by SQLAlchemy) is `E_INTERNAL`. For Oracle and SQL Server only the client-side
+connect-refused code is mapped (`DPY-6005`, `20009` -> `E_CONNECT`); **every Oracle and SQL Server authentication, SQL, timeout
+and read-only code is `E_INTERNAL` until task T1b** records the real ones.
+
+`mysql` is the dialect name passed for MariaDB too (section 7), so messages read `[E_...] mysql <vendor code>: ...` on both
+servers. Unless `error_detail` is true, MySQL/MariaDB messages have the duplicate-key value (`Duplicate entry '...'`) and the
+`Incorrect ... value: '...'` value replaced by `'...'`, and PostgreSQL 22P02 `invalid input syntax ...: "..."` is scrubbed the same
+way; PostgreSQL `DETAIL` is added only when `error_detail` is true.
 
 | Code | Meaning | Source (observed unless marked unverified) |
 |---|---|---|
@@ -270,11 +342,11 @@ Those map to `E_INTERNAL` unless a rule below says otherwise.
 | `E_PROFILE_INVALID` | missing, unknown, wrongly typed or inconsistent profile key; a profile value above a hard maximum; a `driver` that does not match the `dialect` | validation |
 | `E_OPTION_UNKNOWN` / `E_OPTION_INVALID` | unknown call keyword / missing, mistyped or out-of-range value, unknown operator. A call limit above a cap is **not** an error: it is clamped (section 6, D9) | validation |
 | `E_SECRET` | `sdb://` reference failed, resolved empty, resolved to a non-string, or was returned unresolved; the message carries the reference and the exception class name only | secrets |
-| `E_POLICY` | `execute` verb not in `execute_verbs`; forbidden driver arg | policy (a limit above a cap is not `E_POLICY`: it is clamped) |
+| `E_POLICY` | `execute` verb not in `execute_verbs`, or a statement that does not start with a keyword; a `query` / `connect_args` key outside the driver allowlist (section 7); a statement timeout above the hard maximum passed to the adapter | policy (a call limit above a cap is not `E_POLICY`: it is clamped) |
 | `E_EXECUTE_DISABLED` | `execute` on a profile without `allow_execute` | policy |
-| `E_DRIVER_MISSING` | driver package not installed | import. A missing optional dependency also surfaced as a bare `RuntimeError` naming `cryptography` (PyMySQL); mapping that to this code is a T5 choice |
+| `E_DRIVER_MISSING` | driver package not installed | import (`dialects.Adapter.load_driver`; the message names the pip extra only). The bare `RuntimeError` naming `cryptography` (PyMySQL authentication) maps here too |
 | `E_CONNECT` | network/TLS/host failure | PostgreSQL `psycopg.OperationalError`, no SQLSTATE, text `Connection refused`; MySQL/MariaDB `OperationalError` 2003 (no SQLSTATE); Oracle `oracledb.exceptions.OperationalError` `DPY-6005`; SQL Server `pymssql.exceptions.OperationalError` 20009 (the last two are client-side rows, no server needed) |
-| `E_AUTH_FAILED` | bad credentials | PostgreSQL: `psycopg.OperationalError` with **no SQLSTATE** (28P01 is not observable), only the text `FATAL:  password authentication failed`; MySQL/MariaDB: 1045 (SQLSTATE 28000). Access to an unknown/forbidden database as a non-admin gave 1044 (SQLSTATE 42000) on MySQL/MariaDB and `FATAL:  database ... does not exist` (no SQLSTATE) on PostgreSQL. Oracle `ORA-01017` and SQL Server 18456: **unverified** |
+| `E_AUTH_FAILED` | bad credentials | PostgreSQL: `psycopg.OperationalError` with **no SQLSTATE** (28P01 is not observable), only the text `FATAL:  password authentication failed`; MySQL/MariaDB: 1045 (SQLSTATE 28000). Access to an unknown/forbidden database as a non-admin gave 1044 (SQLSTATE 42000) on MySQL/MariaDB and `FATAL:  database ... does not exist` (no SQLSTATE) on PostgreSQL. Oracle `ORA-01017` and SQL Server 18456: **unverified**, and currently `E_INTERNAL` (see above) |
 | `E_SQL` | syntax error, unknown object/column, permission denied | PostgreSQL `ProgrammingError`, class 42. MySQL/MariaDB: 1064 and 1146 are `ProgrammingError`, but 1054 (unknown column) and 1142 (permission denied) are `OperationalError`; all have SQLSTATE class 42, so key on the code, not the class |
 | `E_SQL_DATA` | data exception (division by zero, bad cast) | PostgreSQL `DataError`, class 22. MySQL/MariaDB: 1365 (division by zero, only in data-changing statements; `SELECT 1/0` returns NULL) is `OperationalError`, SQLSTATE 22012; 1366 (bad value) is `DataError` with SQLSTATE `HY000` on MySQL and `22007` on MariaDB, so key on the vendor code |
 | `E_CONSTRAINT` | integrity violation | PostgreSQL 23505 `IntegrityError`; MySQL/MariaDB 1062 `IntegrityError`, SQLSTATE 23000 |
@@ -282,7 +354,7 @@ Those map to `E_INTERNAL` unless a rule below says otherwise.
 | `E_TIMEOUT` | statement timeout/cancel | PostgreSQL 57014 (`OperationalError`); MySQL 3024 (`HY000`); MariaDB 1969 (`70100`). MySQL does not raise for a table-less `SELECT SLEEP()` (WS 2). Oracle and SQL Server: **unverified** |
 | `E_INTERNAL` | anything else; message is the exception **class name only** | catch-all, including the raw exceptions listed above |
 
-Observed on PostgreSQL 16.15 (re-verified 2026-10-29; the five original rows are unchanged):
+Observed on PostgreSQL 16.15 (re-verified 2026-10-29):
 
 | Input | SQLAlchemy / driver class | SQLSTATE | Code |
 |---|---|---|---|
@@ -312,7 +384,7 @@ Observed on MySQL 8.0.46 and MariaDB 10.11.14 (PyMySQL 1.2.3; both servers unles
 | timeout | OperationalError / OperationalError | HY000 / 70100 | 3024 / 1969 | `E_TIMEOUT` |
 | wrong password | OperationalError / OperationalError | 28000 | 1045 | `E_AUTH_FAILED` |
 | port closed | OperationalError / OperationalError | none | 2003 | `E_CONNECT` |
-| client `read_timeout` expired | OperationalError / OperationalError | none | 2013 | not decided |
+| client `read_timeout` expired | OperationalError / OperationalError | none | 2013 | `E_TIMEOUT` (the text says "timed out"; any other 2013 is `E_CONNECT`; `errors._my`) |
 
 Oracle and SQL Server: only the connection-refused rows are observed (see `E_CONNECT`). All other classes and codes for
 them are **unverified**.
@@ -390,10 +462,11 @@ curl -sS -k https://salt-api.example:8000/run -H 'Content-Type: application/json
 |---|---|---|
 | D9 | A call value above a cap (`limit`, `timeout_ms`, `max_bytes`, `retry_timeout_s`): clamp silently, or reject? | **Clamp** (current code: `options.apply_caps`). Rejecting with `E_OPTION_INVALID` would tell the caller its request was not honoured; clamping is friendlier to agents but hides the truncation until `truncated` is read. Profile values above a hard maximum are already rejected. |
 | D10 | Is `mariadb` a separate `dialect` value, or detected at run time through `dialect.is_mariadb`? | Detect (`mysql` is the only value; WS 9 item 5 shows `is_mariadb` is `False` on MySQL and `True` on MariaDB). A separate value would make the choice of variable explicit in config and let `profiles.py` reject a wrong guess, at the cost of a fifth dialect and the same driver. |
-| D11 | Use PyMySQL `read_timeout` as a client-side backstop for MySQL/MariaDB statement timeouts? | Not decided. Observed: `read_timeout=1` raised `OperationalError` 2013 after 1.0 s (WS 9 item 5), which covers the cases the server variable misses on MySQL (table-less SELECT, DML), but whether the server keeps running the statement afterwards was NOT observed. It would need its own code mapping (the 2013 row in section 8 is "not decided"). |
+| D11 | Use PyMySQL `read_timeout` as a client-side backstop for MySQL/MariaDB statement timeouts? | Not decided. Observed: `read_timeout=1` raised `OperationalError` 2013 after 1.0 s (WS 9 item 5), which covers the cases the server variable misses on MySQL (table-less SELECT, DML), but whether the server keeps running the statement afterwards was NOT observed. The 2013 mapping exists in `errors._my` (see section 8) but the module sets no `read_timeout` itself (a profile may pass it in `connect_args`, section 7). |
 
-### Known mismatches between the libraries (not decisions; the stricter behaviour applies)
+### Open decisions added after wave 3 (assumption used if unanswered)
 
-- `retry_pause_s`: `options.validate` accepts 0, `checks` rejects 0 (`E_OPTION_INVALID`). Behaviour: must be > 0.
-- `expected` for `is_null` / `is_not_null`: `checks.check_query_result` makes it optional, `options.validate` requires the key
-  (a `null` value is accepted). Behaviour today: the caller must send the key. Resolving it is a T5/T7 choice.
+| ID | Decision | Assumption |
+|---|---|---|
+| D12 | Define a TLS certificate directory (CA bundle, client certificate and key) so that profiles can use database TLS with verification and mTLS? Needed for CloudXP. | Not decided; today **none**. The `query` / `connect_args` allowlist (section 7) contains no path-bearing option, so `sslmode: verify-full` (PostgreSQL) and `ssl_verify_cert` / `ssl_verify_identity` (MySQL/MariaDB) can only use the driver's default CA bundle, and a client certificate cannot be configured. A directory would let a profile name a file relative to it (for example `sslrootcert: ca.pem`), with the module joining and checking the path (no `..`, no absolute path, no symlink out, regular file); the directory would be minion configuration, never a caller argument. Until decided, do not add `sslrootcert`, `sslcert`, `sslkey` or `ssl_ca` to any allowlist. |
+| D13 | `MaskingFilter.add_secret` (called by `sqlx_mod._run` for every resolved password) only ever adds: the set of registered secrets gains one entry per distinct password and is never emptied for the life of the minion process (a memory and hygiene issue; retired passwords stay in memory and keep being masked). Clear or replace the registered secret after each call? | Not decided; today it is never cleared. Clearing after the call keeps the set small and drops stale passwords, but a log record emitted after the call (by another thread, or a late handler) would then no longer be masked by value; the key-based masking (`password|secret|token`) would still apply. Stricter is to keep it, so keep it until decided. |

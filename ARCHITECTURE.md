@@ -4,55 +4,70 @@
 
 ```
 src/saltext/sqlx/
-  modules/sqlx_mod.py      thin: __virtual__, public functions, Salt dunders, exception translation
+  modules/sqlx_mod.py      thin: __virtual__, public functions, the one `_run` call path, Salt dunders, audit line
   lib/
     options.py             validate (drops __*, unknown -> E_OPTION_UNKNOWN) and apply_caps (clamps to the lowest of
                            call, profile, hard maximum)
     profiles.py            validate_profile / load_profile for sqlx:profiles:<name> (config or pillar passed in)
     secrets.py             resolve_secret / resolve_profile_secrets (sdb:// via an injected getter), mask,
                            MaskingFilter (add_secret)
-    dialects.py            per-dialect adapter table (driver name, URL builder, connect args allowlist,
+    dialects.py            per-dialect adapter table (driver name, URL builder, query/connect_args allowlist,
                            session setup SQL, timeout hook, ping SQL, version query). Single source of truth for the
-                           dialect -> driver mapping: T4 moves profiles.DIALECT_DRIVERS here and profiles.py imports it
-    engine.py              build engine (NullPool) from a validated profile; apply session setup
-    runner.py              run_query / run_execute: transaction handling, fetchmany(limit+1), byte cap
+                           dialect -> driver mapping (DIALECT_DRIVERS); profiles.py imports it
+    engine.py              build_engine (NullPool) from a validated profile; managed_engine; connection (applies session
+                           setup, translates connect/setup/ping failures through errors.raise_for); ping
+    runner.py              run_query / run_execute: transaction handling, fetchmany(limit+1), byte cap, execute policy
     serialize.py           serialize_value / serialize_row / build_result (value -> strict JSON, limit and max_bytes)
-    errors.py              exception -> (code, message) mapping; the ONE error path
+    errors.py              translate / describe / raise_for: exception -> code and message; the ONE error path
     checks.py              operator table + retry loop; check_query_result / check_row_count take an injected run callable
   loader/ (copier-generated)  entry point: [project.entry-points."salt.loader"]
 tests/{unit,functional,integration}/
 ```
 
 Rules: `lib/` has **no Salt dunders** and no `__salt__` access; everything it needs is passed in (profile dict, a
-sdb getter, passed to `secrets.resolve_secret` / `resolve_profile_secrets`). `modules/sqlx_mod.py` stays under ~150 lines.
+sdb getter, passed to `secrets.resolve_secret` / `resolve_profile_secrets`). `modules/sqlx_mod.py` stays a thin shell (about 240 lines today, mostly docstrings
+and the audit line).
 
 ## 2. Call flow
 
 ```
-salt-api -> master -> minion job -> sqlx_mod.query(**kwargs)
+salt-api -> master -> minion job -> sqlx_mod.query(**kwargs)           # every function goes through sqlx_mod._run
   1  options.validate(function, kwargs)           # drop __*, unknown -> E_OPTION_UNKNOWN, bad value -> E_OPTION_INVALID
-  2  profiles.load_profile(name, config)          # E_PROFILE_UNKNOWN / E_PROFILE_INVALID
-     options.apply_caps(opts, profile)            # clamp limit/timeout_ms/max_bytes/retry_timeout_s silently
+  2  profiles.load_profile(name, __salt__["config.get"]("sqlx", {}))
+                                                  # E_PROFILE_UNKNOWN / E_PROFILE_INVALID
+     execute only: profile allow_execute false -> E_EXECUTE_DISABLED   (before any secret or connection)
   3  secrets.resolve_profile_secrets(profile, __salt__["sdb.get"])
                                                   # sdb:// -> value on a copy, E_SECRET on failure, never logged
-  4  dialects.adapter(profile.dialect)            # E_DRIVER_MISSING if import fails
-  5  engine.build(profile, adapter)               # NullPool, connect args from allowlist
-  6  with engine.connect() as conn:
-       adapter.session_setup(conn, profile)       # timeout; read-only guard (best effort)
-       runner.run_query(conn, sql, params, caps)  # text(sql), fetchmany(limit+1), ROLLBACK
-  7  serialize -> dict
-  except Exception as exc: errors.translate(exc, profile) -> raise CommandExecutionError("[E_..] ...")
-  finally: engine.dispose()
+     MaskingFilter.add_secret(password)           # the resolved value is masked in this module's log records
+  4  options.apply_caps(opts, profile)            # clamp limit/timeout_ms/max_bytes/retry_timeout_s silently
+  5  engine.connection(profile, password, timeout_ms, read_only)
+       dialects.adapter(dialect)                  # E_PROFILE_INVALID for an unknown dialect
+       engine.build_engine                        # adapter.load_driver (E_DRIVER_MISSING), adapter.url (URL.create),
+                                                  # adapter.connect_args (allowlist, E_POLICY), NullPool
+       adapter.session_setup(conn, profile, timeout_ms, read_only)   # timeout; read-only guard (best effort)
+  6  runner.run_query(conn, sql, params, limit=, max_bytes=)   # text(sql), fetchmany(limit+1), ROLLBACK
+     runner.run_execute(conn, sql, params, dry_run=, execute_verbs=)   # verb check, then commit unless dry_run
+  7  serialize.build_result -> dict (inside run_query); the module adds "profile"
+  except Exception as exc:
+       errors.translate(exc, dialect, error_detail=...)   # only to put the code in the audit line
+       errors.raise_for(exc, dialect, error_detail=...)   # raises CommandExecutionError("[E_..] ...")
+  finally: audit log line (SECURITY section 5); the engine is disposed by engine.connection / managed_engine
 ```
+
+`execute` calls `engine.connection(..., read_only=False)`, so the best-effort read-only guard is not applied to it
+(`allow_execute: true` wins over `read_only: true`, SPEC section 4.2).
 
 ## 3. Engine and transaction handling
 
 - `sqlalchemy.create_engine(url, poolclass=NullPool, connect_args=...)`; one engine per call, disposed in `finally`.
   Minion jobs are short, and a pool would hold sockets in a long-lived process.
-- `query`: execute, read, then **always** `conn.rollback()`. No `commit()` call exists on this path (source scan test).
-- `execute`: the only code path that may call `conn.commit()`, and only when `allow_execute and not dry_run`.
+- `query`: execute, read, then **always** `conn.rollback()`. No `commit()` call exists on this path (source scan test,
+  `tests/unit/lib/test_guard.py`).
+- `execute`: `runner.run_execute` is the only code path that may call `conn.commit()`, and only when `dry_run` is false. It
+  does not check `allow_execute`: `sqlx_mod._run` refuses with `E_EXECUTE_DISABLED` before a secret is resolved or a
+  connection is opened. `dry_run` must be a real bool, the first keyword must be in `execute_verbs`, and any exception rolls back.
 - Use `sqlalchemy.text(sql)` with bind params for all caller SQL. Do not use `exec_driver_sql` for caller SQL (the `%`
-  problem in section 4 of SPEC). The module's own statements (timeouts, read-only guard, ping) use `exec_driver_sql`
+  problem in section 5 of SPEC). The module's own statements (timeouts, read-only guard, ping) use `exec_driver_sql`
   with constant strings and integer values formatted by the module after `int()` validation.
 
 ## 4. Row reading
@@ -77,19 +92,31 @@ the other fields afterwards; they are not counted (SPEC section 4.1).
 ## 5. Error translation
 
 ```python
-def translate(exc, dialect):
-    orig = getattr(exc, "orig", exc)
-    code = sqlstate(orig) or vendor_code(orig)          # psycopg: orig.sqlstate; pymysql: orig.args[0]; oracledb: orig.args[0].code
-    msg  = primary_message(orig)                        # psycopg: orig.diag.message_primary; others: args
-    return map_to_E_code(dialect, code, type(exc)), msg
+errors.translate(exc, dialect, *, error_detail=False) -> (code, message)
+errors.describe(exc, dialect, error_detail=False)     -> Translation(code, native, message)   # namedtuple
+errors.raise_for(exc, dialect, error_detail=False)    # raises; message "[E_CODE] <dialect> <native>: <message>"
 ```
 
-Map on the vendor code first for the MySQL family (SQLSTATE is absent for client-side errors and differs between MySQL and
-MariaDB for the same code), on SQLSTATE for PostgreSQL, and only then on the SQLAlchemy class. Unknown → `E_INTERNAL` with the
-class name only. The `try` must catch `Exception`, not only `DBAPIError`: `TypeError`, `RuntimeError`, `AttributeError`,
-`ValueError` and `sqlalchemy.exc.InvalidRequestError` were observed reaching the caller (SPEC section 8). Take the message from
-`exc.orig`, never `str()` of the SQLAlchemy exception (it embeds the SQL and the bound values). Observed fields: psycopg 3
-`orig.sqlstate`, `orig.diag.message_primary`; PyMySQL `orig.args == (code, message)` and `orig.sqlstate`.
+`describe` does the work; `translate` returns its `code` and `message`; `raise_for` builds the exception. The order inside
+`describe`:
+
+1. A `SaltInvocationError` / `CommandExecutionError` whose text starts with a valid `[E_...]` is passed through (same class and
+   text, so validation, policy and secret errors keep their code); any other one is `E_INTERNAL`.
+2. A SQLAlchemy `DBAPIError`: take `exc.orig` (the driver exception) and hand it to the dialect function (`_pg` for
+   PostgreSQL, `_my` for `mysql` and `mariadb`, `_oracle`, `_mssql`). Map on the vendor code first for the MySQL family (SQLSTATE
+   is absent for client-side errors and differs between MySQL and MariaDB for the same code), on SQLSTATE for PostgreSQL (message
+   text only where PostgreSQL gives none), and never on the SQLAlchemy class alone. Unknown code -> `E_INTERNAL` with the driver
+   class name only.
+3. Anything else (`TypeError`, `RuntimeError`, `AttributeError`, `ValueError`, `InvalidRequestError`, `OSError`): the few
+   observed cases are mapped by `_raw` (SPEC section 8); the rest is `E_INTERNAL` with the class name only.
+
+The caller must catch `Exception`, not only `DBAPIError`; `sqlx_mod._run` and `engine.connection` do. The message comes from
+`exc.orig`, never from `str()` of the SQLAlchemy exception (it embeds the SQL and the bound values); it is whitespace-normalised
+and cut at 1000 characters, and row values echoed by the server are replaced by `...` unless `error_detail` is true. Observed
+fields: psycopg 3 `orig.sqlstate`, `orig.diag.message_primary`; PyMySQL `orig.args == (code, message)` and `orig.sqlstate`.
+`raise_for` raises from inside a handler and then clears `__cause__` and `__context__`, so the original text cannot reach the
+caller through chaining. The engine no longer classifies errors itself: `engine.connection` calls `raise_for` and only removes
+the password and any URL from the final text as a second line of defence.
 
 ## 6. Read-only: layers
 
@@ -98,7 +125,8 @@ class name only. The `try` must catch `Exception`, not only `DBAPIError`: `TypeE
    SQL can switch it off on PostgreSQL, MySQL and MariaDB (`SET TRANSACTION READ WRITE`, `START TRANSACTION READ WRITE`, or
    `COMMIT` then write; SECURITY section 2). Oracle and SQL Server: NOT RUN.
 3. `query` never commits.
-4. `execute` is off unless the profile enables it, and has a verb filter and `dry_run`.
+4. `execute` is off unless the profile enables it, and has a verb filter (best effort, not a boundary) and `dry_run`. It runs
+   without the session guard (`read_only=False`), so for `execute` the database role is the only read-only control.
 
 ## 7. Profile loading and secrets
 

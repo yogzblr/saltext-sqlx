@@ -29,4 +29,5 @@ Authoritative docs (read before editing code): @BUILD_PROMPT.md @SPEC.md @ARCHIT
 - Hard caps in code: rows 10 000, bytes 8 MiB, timeout 300 s, retry 10 s. Profile/call may only lower them.
 - Create PostgreSQL test databases as UTF8.
 - Catch `Exception`, not only `DBAPIError`. Take the message from `exc.orig`; never `str()` of a SQLAlchemy exception (it embeds SQL and bound values). Map on the vendor code first.
+- On the `salt` command line YAML-quote comparison operators: `operator='">"'` (SPEC section 4). `execute` runs without the session read-only guard; `allow_execute: true` wins over `read_only: true`.
 - Oracle and SQL Server are NOT RUN on real servers; do not guess their exception classes or timeout mechanisms (R18).
