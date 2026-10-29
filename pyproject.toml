@@ -68,6 +68,9 @@ dev_extra = [
     "black==26.5.1",
     "isort==8.0.1",
     "coverage==7.14.3",
+    # licence report for NOTICE (`pip-licenses --format=markdown`); the GPL gate itself is
+    # tests/security/test_licences.py and needs no extra package
+    "pip-licenses>=5.0",
 ]
 docs = [
   "sphinx",

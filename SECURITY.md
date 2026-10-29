@@ -86,6 +86,13 @@ external_auth:
 Give `execute` its own function entry and its own profile with a different DB account, so that read access never implies
 write access.
 
+Verified through `salt-api` (T11, `tests/security/test_eauth_salt_api.py`, `auto` eauth with these rule shapes; see
+`docs/SECURITY_REVIEW.md` section 5): a call whose `profile` keyword matches the regex runs (HTTP 200); any other profile, a
+profile passed positionally, a missing profile, an unlisted function and an unlisted user are all refused (HTTP 401). Two
+cautions from that run: an entry such as `- sqlx.ping` without `kwargs` is unrestricted and pings every profile, so give it a
+`profile` regex too if that matters; and Python's `$` also matches before a trailing newline, so `^(ro)$` lets `profile="ro\n"`
+through to the module, which then refuses it as an unknown profile (use `\Z` if you want the regex alone to decide).
+
 ## 5. Audit
 
 Log one line per call at INFO: function, profile, dialect, statement SHA-256 prefix (first 12 hex), row count or
@@ -94,13 +101,45 @@ when present so actions are attributable.
 
 ## 6. Pre-release checklist
 
+State after the T11 review (2026-10-29, `docs/SECURITY_REVIEW.md`). Evidence is in `tests/security/`; run
+`python -m pytest tests/security -q` and `python tests/security/licences.py --check`. PostgreSQL 16.15, MySQL 8.0.46 and MariaDB
+10.11.14 were live; Oracle and SQL Server were NOT RUN.
+
 - [ ] A read-only role test on every supported dialect proves writes fail at the database (not in the module)
-- [ ] Source scan: `commit(` appears only in `runner.run_execute`
-- [ ] No `exec_driver_sql` on caller SQL
-- [ ] Secret never appears in any log record, exception, or return (parametrised over every error path)
-- [ ] Call arguments cannot set host/port/driver/URL/connect_args
-- [ ] `connect_args` allowlist reviewed per driver
-- [ ] `error_detail: false` verified not to leak `DETAIL` on a unique violation (PostgreSQL only; on MySQL/MariaDB the value is in the primary message, so document it instead)
+  Proven on PostgreSQL, MySQL and MariaDB (`test_readonly_role.py`: guard off, the `ro` account is refused by the server for
+  UPDATE/DELETE/TRUNCATE/DROP/ALTER/CREATE/GRANT, and the section 2 bypass sequences still fail at the role).
+  **Exception: Oracle and SQL Server have no server in the build environment (T1b); tick when the owner has run the same test.**
+- [x] Source scan: `commit(` appears only in `runner.run_execute`
+  `test_source_scan.py::test_commit_only_in_run_execute` (AST scan; also no `begin`, `autocommit`, `isolation_level`).
+- [x] No `exec_driver_sql` on caller SQL
+  `test_source_scan.py`: every `exec_driver_sql` argument is a constant or an `int()`-formatted f-string; caller SQL goes through
+  `text()` with binds.
+- [x] Secret never appears in any log record, exception, or return (parametrised over every error path)
+  `test_secret_leak.py` (63 cases, three live servers, password full of metacharacters, `error_detail` true and false, `%s`/`{}`
+  in the SQL). Oracle and SQL Server: client-side error paths only. Documented exception unchanged: the server's own message
+  can echo a bound value (PG 22P02, MySQL/MariaDB 1366), scrubbed when `error_detail` is false.
+- [x] Call arguments cannot set host/port/driver/URL/connect_args
+  `test_call_surface.py`: every connection keyword is refused with `E_OPTION_UNKNOWN` and no socket is opened; dunder keys are
+  dropped; `params={"host": ...}` is only a bind.
+- [x] `connect_args` allowlist reviewed per driver
+  `test_connect_args.py`: allowlist snapshot for psycopg, PyMySQL, oracledb and pymssql; 60 dangerous keys refused in
+  `connect_args` and `query` on every dialect; values must be scalars; `URL.create` keeps host/port/user injection literal.
+- [x] `error_detail: false` verified not to leak `DETAIL` on a unique violation (PostgreSQL only; on MySQL/MariaDB the value is in the primary message, so document it instead)
+  `test_secret_leak.py::test_unique_violation_detail_off_vs_on`: with `false` the value is absent on all three servers
+  (`Duplicate entry '...'` on MySQL/MariaDB); with `true` it is present on PostgreSQL by design.
 - [ ] The Oracle and SQL Server probes have been run by the owner (T1b) and section 2 and SPEC sections 7-8 updated from them
-- [ ] eauth regex example from section 4 tested through `salt-api`
-- [ ] Dependency licences listed in `NOTICE` (MIT, BSD, Apache-2.0, LGPL accepted)
+  **Exception: open. Docker Hub, MCR and the Oracle registry returned HTTP 403 in the build environment. Owner action
+  (`tests-support/up.sh`, then `scripts/probes/`).**
+- [x] eauth regex example from section 4 tested through `salt-api`
+  `test_eauth_salt_api.py` (19 cases) with `auto` eauth, not PAM (no system accounts in the build environment; the
+  authorisation engine is shared). Results and two cautions are in section 4 above.
+- [x] Dependency licences listed in `NOTICE` (MIT, BSD, Apache-2.0, LGPL accepted)
+  `NOTICE` lists the declared dependencies and the full closure from real package metadata; `test_licences.py` fails on any GPL
+  or AGPL and on any LGPL outside `psycopg`, `psycopg-binary`, `pymssql`. No GPL present.
+
+### Defects found by the T11 review (open, not fixed in this task)
+
+D1 (PostgreSQL accepts multi-statement strings: defeats the read-only guard, the time cap, `execute_verbs` and `dry_run`) and the
+medium and low findings D2-D10 are listed with reproduction, file and suggested fix in `docs/SECURITY_REVIEW.md` section 3. Each
+has a strict `xfail` test in `tests/security/`. Until D1 is fixed, treat the DB role as the only control on PostgreSQL, as
+section 2 already says.
