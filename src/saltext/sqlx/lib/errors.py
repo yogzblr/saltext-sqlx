@@ -126,10 +126,23 @@ _PG_CLASS = {
 # No SQLSTATE: connect-phase errors, classified on message text (observed: cases wrong_password,
 # unreachable_port, unknown_database, connect_timeout_blackhole, driver_sql_percent_no_params).
 _PG_TEXT = (
+    # Authentication first: these libpq texts also arrive inside the generic "connection failed: ..." wrapper.
     ("password authentication failed", "E_AUTH_FAILED"),
+    ("fe_sendauth", "E_AUTH_FAILED"),  # "fe_sendauth: no password supplied" (WIRE_SHAPES section 13)
+    ("is not permitted to log in", "E_AUTH_FAILED"),  # role without LOGIN
     ("Connection refused", "E_CONNECT"),
     ("could not connect", "E_CONNECT"),
     ("server closed the connection", "E_CONNECT"),
+    # Section 13: connect-phase failures that carry no SQLSTATE and were E_INTERNAL. A connect timeout is a connect
+    # failure, not E_TIMEOUT (SPEC section 8: E_TIMEOUT is a statement timeout / cancel).
+    ("timeout expired", "E_CONNECT"),  # psycopg ConnectionTimeout: "connection timeout expired"
+    ("failed to resolve host", "E_CONNECT"),  # psycopg's own wording for a name that does not resolve
+    ("could not translate host name", "E_CONNECT"),  # libpq wording of the same failure
+    ("no pg_hba.conf entry", "E_CONNECT"),
+    ("pg_hba.conf rejects", "E_CONNECT"),
+    ("too many connections", "E_CONNECT"),
+    ("not currently accepting connections", "E_CONNECT"),
+    ("the database system is", "E_CONNECT"),  # starting up / shutting down / in recovery mode
     ("are allowed as placeholders", "E_OPTION_INVALID"),
     # TLS (docs/WIRE_SHAPES.md section 12; libpq 18.0.6 against PostgreSQL 16.15). Paths in these are removed by
     # ``tls.scrub`` in ``engine`` before the caller sees them.
@@ -141,6 +154,9 @@ _PG_TEXT = (
     ("server does not support SSL", "E_CONNECT"),
     ("private key file", "E_CONNECT"),  # could not load / has group or world access
     ("root certificate file", "E_CONNECT"),
+    # Last resort: psycopg words every libpq connect failure "connection failed: ...", so an unlisted libpq text is
+    # still a failed connect (the real text is kept), never E_INTERNAL.
+    ("connection failed:", "E_CONNECT"),
 )
 _PG_VALUE_TAIL = re.compile(r":\s*'.*'\s*$", re.DOTALL)
 _PG_DB_MISSING = re.compile(r'database ".*" does not exist')

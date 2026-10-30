@@ -839,3 +839,159 @@ def test_postgres_driver_data_error_keeps_the_value_with_error_detail():
 def test_overflow_error_is_a_data_error():
     code, message = errors.translate(OverflowError("date value out of range"), "postgresql")
     assert code == "E_SQL_DATA" and "out of range" in message
+
+
+# -- PostgreSQL connect failures without SQLSTATE (docs/WIRE_SHAPES.md section 13, observed 2026-10-30) -----------------
+
+_PG_CONN = 'connection failed: connection to server at "127.0.0.1", port 54329 failed: '
+_PG_CONNECT_ROWS = [
+    # (case, driver class name, driver message, expected code)
+    ("no_password", "OperationalError", _PG_CONN + "fe_sendauth: no password supplied", "E_AUTH_FAILED"),
+    (
+        "wrong_password",
+        "OperationalError",
+        _PG_CONN + 'FATAL:  password authentication failed for user "ro"',
+        "E_AUTH_FAILED",
+    ),
+    (
+        "role_cannot_login",
+        "OperationalError",
+        _PG_CONN + 'FATAL:  role "pgx_nologin" is not permitted to log in',
+        "E_AUTH_FAILED",
+    ),
+    ("connect_timeout", "ConnectionTimeout", "connection timeout expired", "E_CONNECT"),
+    (
+        "port_closed",
+        "OperationalError",
+        'connection failed: connection to server at "127.0.0.1", port 1 failed: Connection refused\n'
+        "\tIs the server running on that host and accepting TCP/IP connections?",
+        "E_CONNECT",
+    ),
+    (
+        "unknown_host",
+        "OperationalError",
+        "failed to resolve host 'no-such-host.invalid': [Errno -2] Name or service not known",
+        "E_CONNECT",
+    ),
+    (
+        "server_closed",
+        "OperationalError",
+        _PG_CONN + "server closed the connection unexpectedly\n\tThis probably means the server terminated "
+        "abnormally\n\tbefore or while processing the request.",
+        "E_CONNECT",
+    ),
+    (
+        "pg_hba_reject",
+        "OperationalError",
+        _PG_CONN + 'FATAL:  pg_hba.conf rejects connection for host "127.0.0.1", user "pgx_rej", '
+        'database "sqlx_test", no encryption',
+        "E_CONNECT",
+    ),
+    (
+        "pg_hba_no_entry",
+        "OperationalError",
+        _PG_CONN + 'FATAL:  no pg_hba.conf entry for host "127.0.0.1", user "rw", database "sqlx_test", '
+        "no encryption",
+        "E_CONNECT",
+    ),
+    (
+        "ssl_required",
+        "OperationalError",
+        _PG_CONN + "server does not support SSL, but SSL was required",
+        "E_CONNECT",
+    ),
+    (
+        "role_connection_limit",
+        "OperationalError",
+        _PG_CONN + 'FATAL:  too many connections for role "pgx_lim"',
+        "E_CONNECT",
+    ),
+    (
+        "database_refuses",
+        "OperationalError",
+        _PG_CONN + 'FATAL:  database "sqlx_test" is not currently accepting connections',
+        "E_CONNECT",
+    ),
+    (
+        "unknown_database",
+        "OperationalError",
+        _PG_CONN + 'FATAL:  database "nodb" does not exist',
+        "E_CONNECT",
+    ),
+]
+
+
+def _pg_connect_exc(cls_name, text):
+    orig = type(cls_name, (Exception,), {})(text)
+    orig.sqlstate = None
+    orig.diag = SimpleNamespace(
+        message_primary=None, message_hint=None, message_detail=None, sqlstate=None
+    )
+    return _wrap(orig, sa_exc.OperationalError)
+
+
+@pytest.mark.parametrize(
+    ("case", "cls_name", "text", "expected"), _PG_CONNECT_ROWS, ids=[r[0] for r in _PG_CONNECT_ROWS]
+)
+def test_postgres_connect_failures_keep_the_real_libpq_message(case, cls_name, text, expected):
+    exc = _pg_connect_exc(cls_name, text)
+    result = errors.describe(exc, "postgresql")
+    assert result.code == expected, case
+    assert result.native is None
+    assert result.message == errors._clean(text)  # the real message, whitespace collapsed, nothing else
+    with pytest.raises(CommandExecutionError) as err:
+        errors.raise_for(exc, "postgresql")
+    assert str(err.value) == f"[{expected}] postgresql: {errors._clean(text)}"
+
+
+def test_postgres_connect_failure_rows_are_in_wire_shapes_section_13():
+    doc = (REPO_ROOT / "docs" / "WIRE_SHAPES.md").read_text(encoding="utf-8")
+    section = doc.split("## 13. Connect failures with no SQLSTATE", 1)[1]
+    for case, _cls, text, _code in _PG_CONNECT_ROWS:
+        marker = text.rsplit("failed: ", 1)[-1].split("\n", 1)[0]
+        assert marker in section, f"{case}: {marker!r} is not recorded in WIRE_SHAPES section 13"
+
+
+def test_postgres_connect_timeout_is_not_e_timeout():
+    # SPEC section 8: E_TIMEOUT is a statement timeout / cancel; a connect timeout is E_CONNECT.
+    exc = _pg_connect_exc("ConnectionTimeout", "connection timeout expired")
+    assert errors.translate(exc, "postgresql")[0] == "E_CONNECT"
+
+
+def test_postgres_unrecognised_connect_failure_is_still_a_connect_failure():
+    # psycopg wraps every libpq connect failure as "connection failed: ..."; an unlisted libpq text is not E_INTERNAL.
+    exc = _pg_connect_exc("OperationalError", _PG_CONN + "some future libpq wording")
+    code, message = errors.translate(exc, "postgresql")
+    assert code == "E_CONNECT" and "some future libpq wording" in message
+
+
+def test_postgres_auth_text_wins_over_the_generic_connect_prefix():
+    exc = _pg_connect_exc("OperationalError", _PG_CONN + "fe_sendauth: no password supplied")
+    assert errors.translate(exc, "postgresql")[0] == "E_AUTH_FAILED"
+
+
+@pytest.mark.parametrize("text", ["something about a timeout", "connection is bad", "no route"])
+def test_postgres_unrelated_text_is_still_internal(text):
+    code, message = errors.translate(_pg_connect_exc("OperationalError", text), "postgresql")
+    assert (code, message) == ("E_INTERNAL", "OperationalError")
+
+
+def test_postgres_bare_timeout_expired_is_a_connect_failure():
+    # older psycopg wording of the same connect timeout (no "connection" prefix)
+    exc = _pg_connect_exc("ConnectionTimeout", "timeout expired")
+    assert errors.translate(exc, "postgresql") == ("E_CONNECT", "timeout expired")
+
+
+def test_mysql_family_connect_failures_are_not_internal():
+    # docs/WIRE_SHAPES.md section 13 (MySQL table): no change was needed.
+    for vendor, text, expected in (
+        (1045, "Access denied for user 'ro'@'localhost' (using password: NO)", "E_AUTH_FAILED"),
+        (2003, "Can't connect to MySQL server on '10.255.255.1' (timed out)", "E_CONNECT"),
+        (
+            2003,
+            "Can't connect to MySQL server on 'no-such-host.invalid' ([Errno -2] Name or service not known)",
+            "E_CONNECT",
+        ),
+    ):
+        exc = _wrap(_my(vendor, text, "28000" if vendor == 1045 else None), sa_exc.OperationalError)
+        assert errors.describe(exc, "mysql").code == expected
