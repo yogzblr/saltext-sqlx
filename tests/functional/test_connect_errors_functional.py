@@ -148,4 +148,6 @@ def test_server_closes_the_connection(cfg, server):
     with hangs_up() as port:
         text = fail(profile="wrongpw", port=port)
     assert text.startswith("[E_CONNECT]")
-    assert "closed the connection" in text or "Lost connection" in text or "Connection reset" in text
+    assert (
+        "closed the connection" in text or "Lost connection" in text or "Connection reset" in text
+    )

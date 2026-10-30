@@ -274,10 +274,22 @@ def test_driver_message_containing_password_is_scrubbed(monkeypatch, variant):
 @pytest.mark.parametrize(
     "text,code,words",
     [
-        ("connection failed: ... failed: fe_sendauth: no password supplied {pw}", "E_AUTH_FAILED", "no password supplied"),
+        (
+            "connection failed: ... failed: fe_sendauth: no password supplied {pw}",
+            "E_AUTH_FAILED",
+            "no password supplied",
+        ),
         ("connection timeout expired {pw}", "E_CONNECT", "connection timeout expired"),
-        ("failed to resolve host 'h': [Errno -2] Name or service not known {pw}", "E_CONNECT", "Name or service not known"),
-        ('connection failed: ... FATAL:  no pg_hba.conf entry for host "h", user "u" {pw}', "E_CONNECT", "no pg_hba.conf entry for host"),
+        (
+            "failed to resolve host 'h': [Errno -2] Name or service not known {pw}",
+            "E_CONNECT",
+            "Name or service not known",
+        ),
+        (
+            'connection failed: ... FATAL:  no pg_hba.conf entry for host "h", user "u" {pw}',
+            "E_CONNECT",
+            "no pg_hba.conf entry for host",
+        ),
     ],
 )
 def test_newly_mapped_connect_messages_are_real_and_scrubbed(monkeypatch, text, code, words):

@@ -846,7 +846,12 @@ def test_overflow_error_is_a_data_error():
 _PG_CONN = 'connection failed: connection to server at "127.0.0.1", port 54329 failed: '
 _PG_CONNECT_ROWS = [
     # (case, driver class name, driver message, expected code)
-    ("no_password", "OperationalError", _PG_CONN + "fe_sendauth: no password supplied", "E_AUTH_FAILED"),
+    (
+        "no_password",
+        "OperationalError",
+        _PG_CONN + "fe_sendauth: no password supplied",
+        "E_AUTH_FAILED",
+    ),
     (
         "wrong_password",
         "OperationalError",
@@ -876,7 +881,8 @@ _PG_CONNECT_ROWS = [
     (
         "server_closed",
         "OperationalError",
-        _PG_CONN + "server closed the connection unexpectedly\n\tThis probably means the server terminated "
+        _PG_CONN
+        + "server closed the connection unexpectedly\n\tThis probably means the server terminated "
         "abnormally\n\tbefore or while processing the request.",
         "E_CONNECT",
     ),
@@ -890,7 +896,8 @@ _PG_CONNECT_ROWS = [
     (
         "pg_hba_no_entry",
         "OperationalError",
-        _PG_CONN + 'FATAL:  no pg_hba.conf entry for host "127.0.0.1", user "rw", database "sqlx_test", '
+        _PG_CONN
+        + 'FATAL:  no pg_hba.conf entry for host "127.0.0.1", user "rw", database "sqlx_test", '
         "no encryption",
         "E_CONNECT",
     ),
@@ -938,7 +945,9 @@ def test_postgres_connect_failures_keep_the_real_libpq_message(case, cls_name, t
     result = errors.describe(exc, "postgresql")
     assert result.code == expected, case
     assert result.native is None
-    assert result.message == errors._clean(text)  # the real message, whitespace collapsed, nothing else
+    assert result.message == errors._clean(
+        text
+    )  # the real message, whitespace collapsed, nothing else
     with pytest.raises(CommandExecutionError) as err:
         errors.raise_for(exc, "postgresql")
     assert str(err.value) == f"[{expected}] postgresql: {errors._clean(text)}"
