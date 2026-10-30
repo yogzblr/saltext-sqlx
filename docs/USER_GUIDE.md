@@ -45,9 +45,9 @@ systemctl restart salt-minion
 salt 'db-minion-01' sys.list_functions sqlx        # query, execute, check_query_result, check_row_count, ping, table_list, psql_query
 ```
 
-If `sqlx` is missing, `salt 'db-minion-01' sys.doc sqlx` or `salt-call --local -l debug sys.list_modules` shows the reason:
-the module's `__virtual__` explains when SQLAlchemy is not importable. A missing database driver only affects profiles of
-that dialect (`[E_DRIVER_MISSING]`).
+If `sqlx` is missing, run `salt-call --local -l debug sys.list_modules` on the minion and look for the `sqlx` line in the
+loader output; the module is not offered when SQLAlchemy cannot be imported. A missing database driver only affects
+profiles of that dialect (`[E_DRIVER_MISSING]`).
 
 Notes:
 - A Salt upgrade replaces the onedir Python, so **reinstall** the extension afterwards.
@@ -64,7 +64,7 @@ profile; they do not send connection details (unless you opt in, section 8).
 sqlx:
   profiles:
     orders_pg:
-      dialect: postgresql            # postgresql | mysql | oracle | mssql  (mariadb is mysql)
+      dialect: postgresql            # postgresql | mysql | oracle | mssql  (use mysql for MariaDB)
       host: db1.internal
       port: 5432
       database: orders
