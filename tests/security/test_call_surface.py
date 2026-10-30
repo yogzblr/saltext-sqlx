@@ -168,7 +168,10 @@ def test_profile_argument_is_a_name_not_a_connection_string(salt, forbid_sockets
             continue
         with pytest.raises(SaltInvocationError) as exc:
             salt.query(name, "SELECT 1")
-        assert str(exc.value) == "[E_PROFILE_UNKNOWN] profile is not configured", name
+        if "\x00" in name:  # refused earlier, as an option (T11 D9)
+            assert str(exc.value).startswith("[E_OPTION_INVALID]"), name
+        else:
+            assert str(exc.value) == "[E_PROFILE_UNKNOWN] profile is not configured", name
     assert forbid_sockets == []
 
 

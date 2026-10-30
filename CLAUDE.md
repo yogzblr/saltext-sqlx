@@ -18,7 +18,7 @@ DatabaseLibrary; connection details live in **profiles**, never in the call.
 
 ## Hard rules (summary)
 - One error path (`lib/errors.py`); never return `[]`/`False` for a failure.
-- Callers pick a profile only. `query` never commits. `execute` needs `allow_execute: true` (it then runs without the session read-only guard).
+- Callers pick a profile only by default; call-time connection parameters exist only under `sqlx:_policy` (SPEC 3.2). `query` never commits. `execute` needs `allow_execute: true` (it then runs without the session read-only guard).
 - On the command line, YAML-quote comparison operators: `operator='">"'` (SPEC section 4).
 - The in-session read-only guard is bypassable (observed on PostgreSQL, MySQL and MariaDB); the DB role is the real control.
 - Catch `Exception`, not only `DBAPIError`; take the message from `exc.orig`, never `str()` of the SQLAlchemy exception (it embeds SQL and bound values); map on the vendor code first.

@@ -32,11 +32,15 @@ and the audit line).
 
 ```
 salt-api -> master -> minion job -> sqlx_mod.query(**kwargs)           # every function goes through sqlx_mod._run
+  0  overrides.prepare(function, kwargs, config) # split connection keywords off (feature off: unknown -> E_OPTION_UNKNOWN);
+                                                  # merge flat + connection; default_profile / ad-hoc name
   1  options.validate(function, kwargs)           # drop __*, unknown -> E_OPTION_UNKNOWN, bad value -> E_OPTION_INVALID
-  2  profiles.load_profile(name, __salt__["config.get"]("sqlx", {}))
-                                                  # E_PROFILE_UNKNOWN / E_PROFILE_INVALID
+  2  overrides.build_profile(call, name, config)  # no overrides: profiles.load_profile(name, config) unchanged.
+                                                  # else policy gates (fields, host/CIDR/resolved IPs, ports, dialects,
+                                                  # caps, read_only, ssl_mode, password form) -> E_POLICY, then
+                                                  # profiles.validate_profile on the merged profile (tls.py included)
      execute only: profile allow_execute false -> E_EXECUTE_DISABLED   (before any secret or connection)
-  3  secrets.resolve_profile_secrets(profile, __salt__["sdb.get"])
+  3  overrides.resolve_secrets(profile, __salt__["sdb.get"])   # = secrets.resolve_profile_secrets
                                                   # sdb:// -> value on a copy, E_SECRET on failure, never logged
      MaskingFilter.add_secret(password)           # the resolved value is masked in this module's log records
   4  options.apply_caps(opts, profile)            # clamp limit/timeout_ms/max_bytes/retry_timeout_s silently
@@ -159,3 +163,11 @@ Build URLs with `sqlalchemy.engine.URL.create(...)` so passwords with `@`, `:` o
 
 Each Salt job runs in its own process/thread; nothing is shared between calls, so no locks. `statement_timeout_ms`
 bounds server time; `connect_timeout_s` bounds connect time; the minion's own job timeout is the outer bound.
+
+## 10. Call-time connection parameters
+
+`lib/overrides.py` (policy, merge, gates) and `lib/psql_compat.py` (argument translation and result shape of
+`sqlx.psql_query`) are the only new modules; `sqlx_mod._run` calls `prepare`, `build_profile`, `resolve_secrets`, `overridden`
+and `target`, and `profiles.validate_profile` honours a per-profile `allow_call_params` list. Neither module has Salt dunders
+or driver imports; the policy mapping is passed in by the module. SPEC section 3.2 is the contract, SECURITY section 3 the
+threat table.

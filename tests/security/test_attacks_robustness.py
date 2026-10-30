@@ -15,7 +15,6 @@ from salt.exceptions import SaltInvocationError
 
 from tests.security import harness
 from tests.security.harness import observe
-from tests.security.test_attacks_query import defect
 
 
 def deep_list(n):
@@ -230,24 +229,31 @@ def test_table_list_never_crashes(server, salt, kwargs):
 # ---- reported defects -------------------------------------------------------------------------------------------------------------
 def test_check_result_is_strict_json_even_for_a_nan_expected(request, server, salt):
     """D6: ``expected`` is echoed back as sent; a NaN float is not valid JSON (SPEC section 9)."""
-    defect(
-        request,
-        server,
-        "D6",
-        "check_query_result echoes expected=NaN as a float NaN, which strict JSON cannot carry",
-    )
     out = salt.check_query_result("ro", "SELECT 1", "==", expected=float("nan"))
     json.dumps(out, allow_nan=False)
 
 
 def test_unknown_option_names_are_not_echoed_with_control_characters(request, server, salt):
     """D8: ``[E_OPTION_UNKNOWN]`` repeats the caller's key names verbatim (newlines, bidi controls, 100 000 characters)."""
-    defect(
-        request, server, "D8", "caller-chosen key names are echoed unsanitised into the error text"
-    )
     with pytest.raises(SaltInvocationError) as exc:
         salt.query(
             "ro", "SELECT 1", **{"a\r\nINFO forged log line": 1, "‮evil": 1, "k" * 100_000: 1}
         )
     text = str(exc.value)
     assert "\n" not in text and "\r" not in text and "‮" not in text and len(text) < 2000
+
+
+def test_values_python_cannot_hold_are_a_data_error_not_internal(server, salt):
+    """D7: psycopg raises DataError client-side for 'infinity' and for years after 9999; it must read as E_SQL_DATA."""
+    if server.key != "postgresql":
+        pytest.skip("psycopg DataError for dates beyond year 9999 is PostgreSQL-specific")
+    for sql in (
+        "SELECT 'infinity'::timestamp",
+        "SELECT '-infinity'::date",
+        "SELECT '5874897-12-31'::date",
+    ):
+        with pytest.raises(CommandExecutionError) as exc:
+            salt.query("ro", sql)
+        text = str(exc.value)
+        observe("robustness", f"postgresql {sql}", text)
+        assert text.startswith("[E_SQL_DATA]") and "infinity" not in text and "5874897" not in text

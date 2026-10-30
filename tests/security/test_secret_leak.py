@@ -295,5 +295,8 @@ def test_oracle_and_sqlserver_client_side_failures_do_not_leak(caplog, dialect, 
     with harness.injected({"p": profile}) as module:
         for fn, args in ((module.ping, ()), (module.query, (f"SELECT 1 /* {SQL_MARK} */",))):
             exc, texts = run(lambda f=fn, a=args: f("p", *a), caplog)
-            assert str(exc).startswith(("[E_CONNECT]", "[E_INTERNAL]")), str(exc)
+            # Without the driver installed (pip extra absent) the call stops earlier, with E_DRIVER_MISSING.
+            assert str(exc).startswith(
+                ("[E_CONNECT]", "[E_INTERNAL]", "[E_DRIVER_MISSING]")
+            ), str(exc)
             no_secret(texts, META_PW, "Zq7", SQL_MARK, "://")

@@ -132,6 +132,7 @@ markers = [
     "mariadb: needs the MariaDB test server",
     "oracle: needs the Oracle test server (NOT RUN in the build environment)",
     "mssql: needs the SQL Server test server (NOT RUN in the build environment)",
+    "tls: needs the TLS test servers (tests-support/tls/up.sh: PostgreSQL 54339, MySQL 33071, MariaDB 33072)",
 ]
 
 [tool.isort]

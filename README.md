@@ -16,7 +16,7 @@ On a Salt onedir install use `salt-pip install ...` instead of `pip`.
 ## Usage
 
 The execution module has the virtualname `sqlx`. Connection details live in profiles under
-`sqlx:profiles:<name>` in minion config or pillar; callers select a profile only. `SPEC.md` is the contract.
+`sqlx:profiles:<name>` in minion config or pillar; callers select a profile only by default (call-time parameters are opt-in, see "Call-time connection parameters"). `SPEC.md` is the contract.
 
 Profile example (SPEC section 3):
 
@@ -37,6 +37,30 @@ sqlx:
       connect_timeout_s: 10
       row_limit: 500                       # default 500, hard max 10000
 ```
+
+TLS with a certificate directory (SPEC section 3.1, decision D12). The operator sets the root once; a profile names a
+directory below it. Nothing about it can be chosen by a caller:
+
+```yaml
+sqlx:
+  _policy:
+    ssl_certs_dir_root: /etc/salt/sqlx-certs        # required for any ssl_certs_dir, else [E_POLICY]
+  profiles:
+    orders_pg_tls:
+      dialect: postgresql                           # also mysql (MySQL and MariaDB); oracle is UNVERIFIED; mssql is refused
+      host: db1.internal                            # must be in the server certificate's SANs for verify-full
+      port: 5432
+      database: orders
+      username: salt_ro
+      password: sdb://vault/orders_pg               # omit for certificate-only accounts
+      ssl_certs_dir: /etc/salt/sqlx-certs/orders_pg # ca.pem (required); client.pem + client.key (optional, mutual TLS)
+      ssl_mode: verify-full                         # default; or verify-ca (checks the chain, not the host name)
+      # ssl_files: {ca: ca.crt, cert: client.crt, key: client.key}   # only if your file names differ
+```
+
+Keep private keys at mode `0600` (or `0640` owned by root); a key with group or world access is refused. Verified on
+PostgreSQL 16, MySQL 8.0 and MariaDB 10.11 against throw-away certificates (`tests-support/tls/`). **Oracle and SQL Server
+TLS are unverified**: Oracle's argument mapping is unit-tested only, and `ssl_certs_dir` is rejected for SQL Server.
 
 ```bash
 salt 'db-minion-01' sqlx.ping profile=orders_pg
@@ -86,6 +110,62 @@ curl -sS http://127.0.0.1:51565/run -H 'Content-Type: application/json' -d '[{"c
 
 `params` arrives as an object and `limit` as an integer. A request for a profile the user is not allowed
 (`mysql_ro`) returns cherrypy's HTML error page and no job runs.
+
+### Call-time connection parameters (opt-in)
+
+By default a call names a profile and nothing else. An operator can allow chosen fields to be supplied at call time (and a
+Salt-compatible `sqlx.psql_query`) with a policy in the minion config or pillar. Nothing changes until it is set:
+
+```yaml
+sqlx:
+  default_profile: orders_pg
+  profiles:
+    orders_pg: {dialect: postgresql, host: db1.corp.example, port: 5432, database: orders, username: ro, password: sdb://vault/orders_ro}
+  _policy:
+    allow_call_params: [host, port, database, username, password]   # explicit names; "*" is not accepted
+    allowed_hosts: [db1.corp.example, db2.corp.example, 10.20.0.0/16]  # required when host is allowed
+```
+
+Real invocations (PostgreSQL test server; `password` is an `sdb://` reference, a literal is `[E_POLICY]` unless the
+operator sets `allow_call_literal_password`). Output lines are abridged JSON from real runs:
+
+```bash
+# flat keywords; port is YAML-typed, so port=5432 is an integer
+salt-call --local sqlx.ping host=127.0.0.1 port=54329 username=ro database=sqlx_test password=sdb://cli_sdb/cli_pw
+#   {"ok": true, "dialect": "postgresql", "server_version": "16.15 ...", "profile": "pg_dead"}
+
+# one nested object (YAML/JSON parsed by Salt); give sql= by keyword when you also pass connection=
+salt-call --local sqlx.query sql="select current_user as who" connection='{"host":"127.0.0.1","port":54329,"username":"ro","database":"sqlx_test","password":"sdb://cli_sdb/cli_pw"}'
+#   {"columns": ["who"], "rows": [["ro"]], "row_count": 1, "truncated": false, "profile": "pg_dead"}
+
+# Salt-shaped psql_query: list of dicts, values as text, NULL as null
+salt-call --local sqlx.psql_query "select 1 as one, null as nothing" user=ro host=127.0.0.1 port=54329 maintenance_db=sqlx_test password=sdb://cli_sdb/cli_pw
+#   [{"one": "1", "nothing": null}]
+
+# refused
+salt-call --local sqlx.ping host=192.0.2.9
+#   Passed invalid arguments: [E_POLICY] 'host' is not in sqlx:_policy:allowed_hosts.
+salt-call --local sqlx.ping host=127.0.0.1 port=54329 username=ro database=sqlx_test password=literalpw
+#   Passed invalid arguments: [E_POLICY] 'password' from a call must be an sdb:// reference (a literal would be stored in the job cache and on the event bus).
+salt-call --local sqlx.psql_query "select 1" runas=postgres
+#   Passed invalid arguments: [E_OPTION_INVALID] runas is not supported; sqlx does not use psql or an OS user.
+```
+
+Through `salt-api` (`tests/integration/params_path`, `file` eauth, kwargs are JSON-typed, `port` is a number):
+
+```bash
+curl -sS http://127.0.0.1:36005/run -H 'Content-Type: application/json' -d '[{"client": "local", "tgt": "minion-qkq5Ke", "fun": "sqlx.query", "kwarg": {"host": "127.0.0.1", "port": 54329, "username": "ro", "database": "sqlx_test", "password": "sdb://t10_sdb/t10_pg_ro_password", "profile": "pg_dead", "sql": "select current_user"}, "eauth": "file", "username": "t10_alice", "password": "t10_alice_pw_5b1e"}]'
+```
+```json
+{"return": [{"minion-qkq5Ke": {"columns": ["current_user"], "rows": [["ro"]], "row_count": 1, "truncated": false, "elapsed_ms": 1, "profile": "pg_dead"}}]}
+```
+
+Pitfalls: `salt-call` shows the function docstring for a `SaltInvocationError` and logs the message (run with `--log-level=error`
+to see it); a quoted `port='5432'` is a string and is refused, never coerced; when a `connection=` object is given, name `sql=`
+(a bare first word is taken as `profile`); `salt ... host=db2` is subject to `external_auth` regex limits on `host`,
+`connection`, `username` and the other fields (SECURITY section 4), and kwargs a rule does not name are not restricted by eauth,
+so the minion policy is the real control. Hard rules no policy relaxes, the per-field table and the `psql_query` differences
+from `postgres.psql_query` are in `SPEC.md` sections 3.2 and 4.7; the threat table is in `SECURITY.md` section 3.
 
 ### Authorization and what Salt stores
 

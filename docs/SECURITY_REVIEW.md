@@ -5,7 +5,7 @@ Hostile review of `saltext.sqlx` at `origin/build/base` (`cd2891a`), 2026-10-29.
 PyMySQL 1.2.3, Salt 3008.5, CPython 3.13) through the PUBLIC module functions with an injected `__salt__`, and is reproducible:
 
 ```bash
-python -m pytest tests/security -q -s      # 724 passed, 109 skipped (server-specific variants), 36 xfailed (strict)
+python -m pytest tests/security -q -s      # at cd2891a: 724 passed, 109 skipped, 36 xfailed (strict); after the fixes (section 3a): 0 xfailed
 python tests/security/licences.py --check  # exit 0; exit 1 on any GPL/AGPL or unaccepted LGPL
 ```
 
@@ -229,6 +229,28 @@ none took more than 30 s (wall-clock asserted; except D4 in class 4). Server val
 | `TIME '838:59:59'` | n/a | `'34 days, 22:59:59'` | same |
 
 Not crashes but reported: D6 (NaN echoed as a float), D8 (key names echoed), D9 (NUL silently truncates the statement on PG).
+
+## 3a. Fix status (branch `fix/hardening-t11`)
+
+All 36 strict `xfail` tests now pass and their `defect(...)` markers are gone. The attack log in section 2 and the defect
+table below describe the code at `cd2891a`; this table is what changed.
+
+| # | Status | Fix | Measured before -> after |
+|---|---|---|---|
+| D1 | **Fixed** | psycopg `prepare_threshold=0` (module-owned connect arg, `lib/dialects.py` PostgreSQL adapter): extended protocol, PostgreSQL refuses `a; b` with 42601. MySQL/MariaDB were already safe (PyMySQL multi-statements off, 1064); re-verified. | `COMMIT; INSERT` persisted the row, `SET statement_timeout = 0; SELECT pg_sleep(3)` ran 3.0 s under a 0.8 s cap, `INSERT; COMMIT` with `dry_run=True` persisted -> all three `[E_SQL] postgresql 42601: cannot insert multiple commands into a prepared statement`, nothing persisted |
+| D2 | **Fixed (caller's wait), server work not stopped** | PyMySQL `read_timeout = statement_timeout_ms/1000 + 1` s (module-owned; a lower profile value is honoured). Statements that lift the server limit are not refused (a text scan would also refuse `SHOW VARIABLES LIKE 'max_statement_time'`). | MySQL hint `SLEEP(3)` 3.1 s OK -> 1.9 s `E_TIMEOUT 2013`; MariaDB `SET STATEMENT ... =0` 3.0 s OK -> 1.8 s `E_TIMEOUT`; MySQL `INSERT ... SELECT SLEEP(2)` 2.0 s OK -> 1.8 s `E_TIMEOUT`. Observed: the server keeps executing the statement after the client gives up, then rolls back (0 rows persisted) |
+| D3 | **Fixed for row count; one huge value is at the driver floor** | `runner.run_query` streams: psycopg server-side cursor for PostgreSQL `SELECT`/`VALUES`/`TABLE`/read-only `WITH`, PyMySQL `SSCursor` for MySQL/MariaDB (`stream_results`), unread MySQL rows abandoned with `conn.invalidate()` instead of drained; `serialize.build_result` drops a row holding a value longer than `max_bytes` without JSON-encoding it. | PG 10 M rows: 363 MB peak -> 71 MB (baseline 71-73). MariaDB 8 M rows: 786 MB, 15.4 s -> 72 MB, 0.07 s. PG one 100 MB value: 532 MB -> 341 MB; a bare psycopg cursor peaks at 325 MB for the same value, so the remaining cost is libpq receive buffer + PGresult + decoded str. Test bound for that case raised from +250 to +300 MB for that reason |
+| D4 | **Fixed** | `_like(pattern, name)` in `modules/sqlx_mod.py` is an iterative matcher with one backtrack point; no regex. Cross-checked against the old translation on 3000 random pairs | `%a`*12+`b` vs a 54-character name: not finished after 6 s -> 0.1 s end to end |
+| D5 | **Fixed** | `runner._leading`: a leading `/*!` or `/*M!` comment, or a leading block comment that contains `/*`, is `[E_POLICY]` on every dialect; `/*+ ... */` and plain comments are still skipped | nested-comment `DELETE` and the three executable-comment forms: ran -> refused, nothing changed |
+| D6 | **Fixed** | `checks._finish` echoes `expected` through `serialize.serialize_value` | `NaN` float -> `"NaN"`; `json.dumps(..., allow_nan=False)` passes |
+| D7 | **Fixed** | `errors._pg`: a psycopg client-side `DataError` (no SQLSTATE) is `E_SQL_DATA`, value dropped unless `error_detail`; `OverflowError` is `E_SQL_DATA` | `'infinity'::timestamp`: `E_INTERNAL DataError` -> `[E_SQL_DATA] postgresql: timestamp too large (after year 10K)` (real psycopg text, no SQLSTATE) |
+| D8 | **Fixed** | `options.validate`: `ascii(name)[:40]`, at most 5 names, then `and N more` | 100 000-character key + CR/LF + bidi key: message under 400 characters, no raw control characters |
+| D9 | **Fixed** | `options.validate`: a NUL in `profile`, `sql`, `operator`, `schema` or `pattern` is `[E_OPTION_INVALID]` (`expected` and `params` values are not checked) | PG silently ran a prefix -> refused before any connection |
+| D10 | **Fixed** | `options.MIN_RETRY_PAUSE_S = 0.05` applied in `apply_caps` | `retry_pause_s=1e-9`, 1 s window: 100 / 31 / 49 attempts -> at most 20 |
+| D11 | **Documented** | `execute` docstring, `runner.run_execute`, `options` schema comment, SPEC 4.2: `dry_run=None` means "not given" and commits | n/a |
+
+Side effects worth knowing: `execute` now also refuses a leading `/*!`, `/*M!` or nested comment with `E_POLICY` (SPEC 4.2); a NUL in the profile name is `E_OPTION_INVALID` instead of `E_PROFILE_UNKNOWN`; `E_OPTION_UNKNOWN` quotes the names (`'limt'`).
+Not fixed: a statement that is not a plain `SELECT`/`VALUES`/`TABLE`/read-only `WITH` on PostgreSQL (`SHOW`, `EXPLAIN`, `INSERT ... RETURNING`, `SELECT ... INTO`) is still read buffered, as are Oracle and SQL Server (pymssql has no server-side cursor); none of these was measured (Oracle/SQL Server not run).
 
 ## 3. Defects
 

@@ -14,9 +14,9 @@ Rules honoured here:
 * The module's own SQL is constant text plus at most one integer that went through ``int()`` (ARCHITECTURE
   section 3). Caller SQL never passes through this module.
 
-Only PostgreSQL behaviour is verified. Every statement or mechanism for the other dialects comes from
-documentation (SPEC section 7) and is marked ``UNVERIFIED(T1)``; each mechanism sits in its own small function so
-that T1's recorded facts can replace it without touching anything else. This module has no Salt dunders.
+PostgreSQL, MySQL and MariaDB behaviour is verified (docs/WIRE_SHAPES.md). Every statement or mechanism for Oracle
+and SQL Server comes from documentation (SPEC section 7) and is marked ``UNVERIFIED(T1)``; each mechanism sits in
+its own small function so that recorded facts can replace it without touching anything else. This module has no Salt dunders.
 """
 
 import importlib
@@ -27,6 +27,7 @@ from salt.exceptions import SaltInvocationError
 from sqlalchemy.engine import URL
 
 from saltext.sqlx.lib import options
+from saltext.sqlx.lib import tls
 
 #: dialect -> the only driver allowed with it (SPEC section 7). Single source of truth.
 DIALECT_DRIVERS = {
@@ -122,6 +123,7 @@ class Adapter:
         self._check_args(query, "query")
         values = {k: (str(v).lower() if isinstance(v, bool) else str(v)) for k, v in query.items()}
         values.update(self._extra_query(profile))
+        values.update(tls.query_args(self.name, profile))  # module-produced, not allowlist-checked
         return URL.create(
             self.drivername,
             username=profile["username"],
@@ -142,6 +144,7 @@ class Adapter:
         self._check_args(extra, "connect_args")
         args = dict(extra)
         args.update(self._timeout_connect_args(profile))
+        args.update(tls.connect_args(self.name, profile))  # module-produced, not allowlist-checked
         return args
 
     # -- session ---------------------------------------------------------------------------------
@@ -197,7 +200,17 @@ class PostgreSQL(Adapter):
     _version_sql = "SHOW server_version"
 
     def _timeout_connect_args(self, profile):
-        return {"connect_timeout": profile["connect_timeout_s"]}
+        # ``prepare_threshold=0`` makes psycopg use the extended query protocol for EVERY statement, and PostgreSQL
+        # refuses a string with more than one statement there (42601 "cannot insert multiple commands into a prepared
+        # statement"). With the default (simple protocol when there are no parameters) ``COMMIT; INSERT ...`` or
+        # ``SET statement_timeout = 0; ...`` ran as written, which defeated the read-only guard, the time cap, the
+        # ``execute`` verb filter and ``dry_run`` (T11 defect D1). Module-owned: not settable from a profile.
+        args = {"connect_timeout": profile["connect_timeout_s"], "prepare_threshold": 0}
+        if profile.get("password_dropped"):
+            # A call retargeted the connection and the profile's password was withheld: an explicitly empty password
+            # stops libpq from using $PGPASSWORD, and an unreadable passfile from using ~/.pgpass (SPEC section 3.2).
+            args.update(password="", passfile="/nonexistent/sqlx-no-passfile")
+        return args
 
     def _set_timeout(self, conn, ms):
         conn.exec_driver_sql(f"SET statement_timeout = {int(ms)}")
@@ -214,8 +227,8 @@ class MySQL(Adapter):
     module = "pymysql"
     pip_extra = "mysql"
     drivername = "mysql+pymysql"
-    # UNVERIFIED(T1): which URL-query / connect arguments SQLAlchemy 2.0 passes through to PyMySQL unchanged
-    # (in particular bool coercion of ssl_*), and PyMySQL's own names for them.
+    # Verified (docs/WIRE_SHAPES.md sections 2, 6 and 12): these URL-query / connect arguments reach PyMySQL under
+    # these names.
     allowed_args = frozenset(
         {
             "charset",
@@ -228,25 +241,40 @@ class MySQL(Adapter):
     )
     _version_sql = "SELECT VERSION()"
 
+    #: Seconds added to the statement timeout before the client gives up (T11 D2).
+    READ_TIMEOUT_MARGIN_S = 1.0
+
     def _timeout_connect_args(self, profile):
-        # UNVERIFIED(T1): PyMySQL ``connect_timeout`` (seconds) from documentation.
-        return {"connect_timeout": profile["connect_timeout_s"]}
+        # ``read_timeout`` is the client-side backstop for the server-side limit (T11 D2): the statement itself can
+        # lift ``MAX_EXECUTION_TIME`` (``/*+ MAX_EXECUTION_TIME(n) */``) or ``max_statement_time`` (``SET STATEMENT``),
+        # and MySQL's variable does not cover INSERT ... SELECT. The margin lets the server's own error (3024 /
+        # 1969, ``E_TIMEOUT`` with the real message) arrive first in the normal case; otherwise the driver raises
+        # 2013 "timed out", which ``errors._my`` also maps to ``E_TIMEOUT``. A lower ``read_timeout`` in the profile
+        # is honoured; a higher one is not.
+        backstop = int(profile["statement_timeout_ms"]) / 1000 + self.READ_TIMEOUT_MARGIN_S
+        for source in (profile.get("connect_args"), profile.get("query")):
+            given = (source or {}).get("read_timeout")
+            if isinstance(given, (int, float)) and not isinstance(given, bool) and given > 0:
+                backstop = min(backstop, given)
+        return {"connect_timeout": profile["connect_timeout_s"], "read_timeout": backstop}
 
     def _set_timeout(self, conn, ms):
         if getattr(conn.dialect, "is_mariadb", False):
-            # UNVERIFIED(T1): MariaDB ``max_statement_time`` takes seconds (decimals allowed), from documentation;
-            # it applies to every statement type. Needs MariaDB >= 10.1.
+            # Verified on MariaDB 10.11.14 (WIRE_SHAPES section 2): ``max_statement_time`` takes seconds (decimals
+            # allowed) and cancels every statement type, INSERT ... SELECT included (1969). A statement can lift it
+            # with ``SET STATEMENT max_statement_time=0 FOR ...``; ``read_timeout`` is the backstop (T11 D2).
             conn.exec_driver_sql(
                 f"SET SESSION max_statement_time = {int(ms) // 1000}.{int(ms) % 1000:03d}"
             )
         else:
-            # UNVERIFIED(T1): MySQL >= 5.7.8 ``MAX_EXECUTION_TIME`` in ms, from documentation; it applies to SELECT
-            # statements only, so DML is not bounded by it.
+            # Verified on MySQL 8.0.46 (WIRE_SHAPES section 2): ``MAX_EXECUTION_TIME`` in ms applies to SELECT only
+            # (3024; a table-less SELECT SLEEP is cut silently) and not to DML. A hint can override it. The
+            # ``read_timeout`` connect argument is the backstop for both (T11 D2).
             conn.exec_driver_sql(f"SET SESSION MAX_EXECUTION_TIME = {int(ms)}")
 
     def _set_read_only(self, conn):
-        # UNVERIFIED(T1): from documentation. It affects transactions started after the statement, and whether
-        # the implicit transaction SQLAlchemy/PyMySQL opened is covered is not known.
+        # Verified (WIRE_SHAPES section 3): refuses writes with 1792 in the transaction SQLAlchemy/PyMySQL opens
+        # implicitly, but statements in the caller's SQL can undo it. The database role is the control.
         conn.exec_driver_sql("SET SESSION TRANSACTION READ ONLY")
 
 

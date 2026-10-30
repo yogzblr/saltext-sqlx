@@ -194,6 +194,7 @@ def test_public_functions_are_exactly_spec_section_4():
         if not n.startswith("_") and callable(v) and getattr(v, "__module__", None) == mod.__name__
     }
     assert public == {
+        "psql_query",
         "query",
         "execute",
         "check_query_result",
@@ -676,3 +677,58 @@ def test_audit_for_ping_and_table_list_has_no_statement_hash(fake, caplog):
     caplog.set_level(logging.INFO)
     mod.ping(profile="pg_ro")
     assert "sql_sha256=-" in audit_lines(caplog)[0].getMessage()
+
+
+# --- table_list pattern matcher (T11 D4) ------------------------------------------------------------
+def _like_oracle(pattern, name):
+    import re as _re  # pylint: disable=import-outside-toplevel
+
+    parts = {"%": ".*", "_": "."}
+    return bool(
+        _re.fullmatch("".join(parts.get(c) or _re.escape(c) for c in pattern), name, _re.DOTALL)
+    )
+
+
+@pytest.mark.parametrize(
+    "pattern,name,expected",
+    [
+        ("ord%", "orders", True),
+        ("ord%", "xorders", False),
+        ("%ers", "orders", True),
+        ("%rde%", "orders", True),
+        ("item_", "items", True),
+        ("item_", "item", False),
+        ("item_", "itemss", False),
+        ("o.ders", "orders", False),
+        ("o.ders", "o.ders", True),
+        ("%", "", True),
+        ("", "", True),
+        ("", "x", False),
+        ("_", "", False),
+        ("a%b%c", "aXbYc", True),
+        ("a%b%c", "aXbY", False),
+        ("%%a", "ba", True),
+        ("ORD%", "orders", False),
+    ],
+)
+def test_like_matches_sql_like_semantics(pattern, name, expected):
+    assert mod._like(pattern, name) is expected
+
+
+def test_like_agrees_with_the_regex_translation_on_random_input():
+    import random  # pylint: disable=import-outside-toplevel
+
+    rng = random.Random(1234)
+    for _ in range(3000):
+        pattern = "".join(rng.choice("ab%_.") for _ in range(rng.randint(0, 7)))
+        name = "".join(rng.choice("ab.") for _ in range(rng.randint(0, 8)))
+        assert mod._like(pattern, name) is _like_oracle(pattern, name), (pattern, name)
+
+
+def test_like_is_not_exponential_on_the_redos_pattern():
+    import time as _time  # pylint: disable=import-outside-toplevel
+
+    start = _time.perf_counter()
+    assert mod._like("%a" * 12 + "b", "t11_" + "a" * 50) is False
+    assert mod._like("%a" * 200 + "b", "a" * 5000) is False
+    assert _time.perf_counter() - start < 1.0

@@ -494,3 +494,45 @@ def test_version_oracle_uses_driver_attribute():
 def test_version_is_always_text():
     assert dialects.adapter("mysql").version(FakeConn(scalar=8)) == "8"
     assert dialects.adapter("mysql").version(FakeConn(scalar=None)) == ""
+
+
+# --- T11 D1: PostgreSQL must reject multi-statement strings -------------------------------------
+def test_postgresql_connect_args_force_the_extended_protocol():
+    """``prepare_threshold=0`` is what makes PostgreSQL refuse ``a; b`` (T11 D1); it is module-owned."""
+    assert dialects.adapter("postgresql").connect_args(make())["prepare_threshold"] == 0
+
+
+def test_prepare_threshold_cannot_be_set_from_a_profile():
+    prof = make(connect_args={"prepare_threshold": 5})
+    _policy(dialects.adapter("postgresql").connect_args, prof)
+
+
+# --- T11 D2: PyMySQL read_timeout is the client-side backstop ------------------------------------
+def test_mysql_read_timeout_is_statement_timeout_plus_margin():
+    args = dialects.adapter("mysql").connect_args(make("mysql", statement_timeout_ms=800))
+    assert args["read_timeout"] == pytest.approx(1.8)
+
+
+def test_mysql_read_timeout_follows_the_effective_statement_timeout():
+    args = dialects.adapter("mysql").connect_args(make("mysql", statement_timeout_ms=30000))
+    assert args["read_timeout"] == pytest.approx(31.0)
+
+
+@pytest.mark.parametrize("where", ["connect_args", "query"])
+def test_mysql_profile_may_lower_but_not_raise_read_timeout(where):
+    lower = dialects.adapter("mysql").connect_args(make("mysql", **{where: {"read_timeout": 5}}))
+    assert lower["read_timeout"] == 5
+    higher = dialects.adapter("mysql").connect_args(make("mysql", **{where: {"read_timeout": 999}}))
+    assert higher["read_timeout"] == pytest.approx(31.0)
+
+
+@pytest.mark.parametrize("dialect", ["postgresql", "oracle", "mssql"])
+def test_only_the_mysql_family_gets_read_timeout(dialect):
+    assert "read_timeout" not in dialects.adapter(dialect).connect_args(make(dialect))
+
+
+def test_postgresql_withheld_password_blocks_the_libpq_environment_and_passfile():
+    args = dialects.adapter("postgresql").connect_args(make("postgresql", password_dropped=True))
+    assert args["password"] == "" and args["passfile"].startswith("/nonexistent/")
+    plain = dialects.adapter("postgresql").connect_args(make("postgresql"))
+    assert "password" not in plain and "passfile" not in plain

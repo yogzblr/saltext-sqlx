@@ -26,8 +26,10 @@ error path (section 8), so every database fails the same, readable way.
 
 ## 3. Profiles
 
-Profiles live under `sqlx:profiles:<name>` in minion config or pillar. **Callers choose a profile; they do not supply
-connection details** (D1).
+Profiles live under `sqlx:profiles:<name>` in minion config or pillar. **By default callers choose a profile and do not
+supply connection details** (D1: profile-only by default). An operator can opt in to call-time connection parameters
+under a policy that lives only in minion config or pillar (section 3.2); with nothing configured the behaviour is exactly
+the profile-only one.
 
 ```yaml
 sqlx:
@@ -50,6 +52,12 @@ sqlx:
       row_limit: 500                       # default 500, hard max 10000
       max_bytes: 1048576                   # response size cap, default 1 MiB, hard max 8 MiB
       error_detail: false                  # include the server's DETAIL line in errors (can contain row data)
+      # TLS with a certificate directory (D12, below; needs sqlx:_policy:ssl_certs_dir_root):
+      # ssl_certs_dir: /etc/salt/sqlx-certs/orders_pg   # absolute, under the policy root; holds ca.pem [client.pem client.key]
+      # ssl_mode: verify-full                           # default when a directory is set; or verify-ca
+      # ssl_files: {ca: ca.pem, cert: client.pem, key: client.key}   # optional plain file names inside the directory
+  _policy:                                  # not a profile; read by profiles.load_profile
+    ssl_certs_dir_root: /etc/salt/sqlx-certs
 ```
 
 Validation (`lib/profiles.py`, `validate_profile`; the source of truth if this text and the code ever differ). Every
@@ -66,6 +74,7 @@ failure is `[E_PROFILE_INVALID]`, names keys only and never contains a value.
 | `query` | optional mapping of string keys to str/int/float/bool values; `null` means `{}`. Only the shape is checked here; the per-driver allowlist (section 7) is applied by the dialect adapter when the engine is built |
 | `connect_args` | optional mapping with string keys; `null` means `{}`. Only the shape is checked here; the per-driver allowlist (section 7) is applied by the dialect adapter when the engine is built |
 | `read_only`, `allow_execute`, `error_detail` | booleans; defaults `true`, `false`, `false` |
+| `ssl_certs_dir`, `ssl_mode`, `ssl_files` | **optional, profile-only TLS settings (D12)**; rules in section 3.1. `ssl_mode` and `ssl_files` without `ssl_certs_dir` are rejected. The validated profile gains `ssl_certs_dir` (as given) and `tls` (resolved real paths; internal, never shown in a message) |
 | `execute_verbs` | list of single-word alphabetic strings; default `[INSERT, UPDATE, DELETE]`; every entry is **upper-cased** by validation; an empty list is accepted; duplicates are kept |
 | `statement_timeout_ms`, `connect_timeout_s`, `row_limit`, `max_bytes` | integer >= 1 (a bool is not an integer); defaults and hard maxima in section 6; **a value above the hard maximum is rejected** with `[E_PROFILE_INVALID]`, it is not clamped |
 
@@ -74,9 +83,132 @@ disclose other profile names); a `profiles` value that is not a mapping, or a pr
 `[E_PROFILE_INVALID]`. Only the requested profile is validated. The result is a fresh copy with defaults filled in and
 `name` added.
 
+### 3.1 TLS certificate directory (`lib/tls.py`, decision D12)
+
+Callers still never supply connection details: `ssl_certs_dir`, `ssl_mode` and `ssl_files` are profile keys, and the driver
+arguments they produce are built by the module (`tls.query_args` / `tls.connect_args`, applied by the dialect adapter after
+the allowlist check). A profile may **not** also set the keys the TLS layer owns in `query` / `connect_args` (PostgreSQL
+`sslmode`, `sslrootcert`, `sslcert`, `sslkey`, `sslcertmode`; MySQL `ssl_ca`, `ssl_cert`, `ssl_key`, `ssl_verify_cert`,
+`ssl_verify_identity`, `ssl_disabled`; Oracle `ssl_server_dn_match`, `protocol`, `wallet_location`): `[E_PROFILE_INVALID]`
+naming the key. The per-driver allowlist (section 7) is unchanged and still default-deny: no path-bearing key was added to it.
+
+| Rule | Result |
+|---|---|
+| `sqlx:_policy:ssl_certs_dir_root` (read from the same `config.get("sqlx")` mapping that holds `profiles`) | the directory must resolve (`realpath`) to the root or below it. Root missing, not absolute, or not an existing directory: `[E_POLICY]`. `sqlx:_policy` not a mapping: `[E_PROFILE_INVALID]` |
+| `ssl_certs_dir` | absolute string without `..`; relative or `..`: `[E_PROFILE_INVALID]`. Resolves outside the root (including through a symlink): `[E_POLICY]`. Missing or not a directory: `[E_PROFILE_INVALID]` |
+| `ssl_mode` | `verify-full` (default when a directory is set) or `verify-ca`. `disable`, `prefer`, `allow` are refused with a directory. `require` is refused too: on MySQL/MariaDB it encrypts without verifying the server, and on PostgreSQL libpq treats `require` plus a root certificate as `verify-ca` (observed: `sslmode=require` with a wrong `sslrootcert` fails with `certificate verify failed`), so it adds nothing |
+| `ssl_files` | optional mapping, keys `ca`, `cert`, `key`; each value a plain file name (no `/`, `\`, `..`, empty or NUL). Unknown key or bad name: `[E_PROFILE_INVALID]`. Not accepted for `oracle` |
+| default names | `ca.pem` (fallback `ca.crt`), `client.pem` (fallback `client.crt`), `client.key`. A fallback is used only when it is the only candidate; if both `ca.pem` and `ca.crt` (or both client names) exist: `[E_PROFILE_INVALID]` asking for `ssl_files`. A name given in `ssl_files` disables the fallback and must exist |
+| required / paired files | CA missing: `[E_PROFILE_INVALID]` naming the file name only. A client certificate without its key, or a key without its certificate: `[E_PROFILE_INVALID]`. No client pair at all is fine (server authentication only) |
+| every file | must resolve under the root (a file symlink to somewhere else under the root is allowed, one that leaves it is `[E_POLICY]`), be a regular file (`[E_PROFILE_INVALID]`) and be openable by the minion (`[E_PROFILE_INVALID]`, "not readable") |
+| private key mode | owner-only (`0600`/`0400`), or `0640` when owned by root (libpq's own rule). Any world access or group write/execute, or a group-readable key not owned by root: `[E_POLICY]` saying to `chmod 600` (or 640 when root-owned). Checked from `stat`; PyMySQL does not check key modes itself, PostgreSQL's libpq does |
+| contents | **never read** by the module (only name, location, type, mode and openability are checked) and never in a message or log |
+| order | everything above runs in `validate_profile` (called by `load_profile`), before the secret is resolved and before any network call |
+| `mssql` | `[E_PROFILE_INVALID] ... 'ssl_certs_dir' is not supported for mssql yet`. pymssql 2.4.6 `connect()` has only `encryption` (`off`/`request`/`require`); it takes no CA file or client certificate, and FreeTDS reads its own configuration file, which this module does not manage |
+
+Mapping to the drivers (`tls.py`; the file arguments are the real paths found above):
+
+| Dialect | Arguments | Where |
+|---|---|---|
+| `postgresql` / psycopg 3 (libpq) | `sslmode` (`verify-full` or `verify-ca`), `sslrootcert`, and with a client pair `sslcert` and `sslkey`; without a pair `sslcertmode=disable`, so that libpq does not present `~/.postgresql/postgresql.crt` or `$PGSSLCERT` | URL query |
+| `mysql` (MySQL and MariaDB) / PyMySQL | `ssl_ca`, `ssl_verify_cert=True`, `ssl_verify_identity=True` for `verify-full` and `False` for `verify-ca`, and with a client pair `ssl_cert`, `ssl_key` | `connect_args`, not the URL: SQLAlchemy moves URL-query `ssl_ca`/`ssl_cert`/`ssl_key` into PyMySQL's deprecated `ssl` dict, which PyMySQL then ignores as soon as an `ssl_verify_*` keyword is also present (PyMySQL 1.2.3 `connections.py`) |
+| `oracle` / python-oracledb thin | `protocol="tcps"`, `wallet_location=<directory>`, `ssl_server_dn_match=True` for `verify-full`, `False` for `verify-ca`; the directory must contain `ewallet.pem` | `connect_args`. **UNVERIFIED(T1b)**: no Oracle server was available; only the argument mapping is unit-tested. The `ewallet.pem` name, the `wallet_password` case (an encrypted wallet is not supported: no password key exists) and the `verify-ca` meaning of `ssl_server_dn_match=False` come from the python-oracledb documentation |
+| `mssql` | refused (above) | **UNVERIFIED**: never run |
+
 Call arguments may **lower** `row_limit` (`limit`), `statement_timeout_ms` (`timeout_ms`) and `max_bytes`, never raise them.
 A call value above the profile value or the hard maximum is **clamped silently** to the lowest of call, profile and hard
 maximum (`options.apply_caps`); it is not an error (D9).
+
+### 3.2 Call-time connection parameters (`lib/overrides.py`, decision D1)
+
+**Off by default.** Without `sqlx:_policy:allow_call_params` (absent, `null` or `[]`) every connection keyword below is
+`[E_OPTION_UNKNOWN]` exactly as before, `psql_query`'s connection arguments are `[E_POLICY]`, and no code path of this
+section runs. The policy is read by the module from `__salt__["config.get"]("sqlx")` and passed into `lib/` (no Salt
+dunders there); it is never taken from the call, and a call that names `_policy` is `[E_OPTION_UNKNOWN]`.
+
+**Call keywords** (on `query`, `execute`, `check_query_result`, `check_row_count`, `ping`, `table_list`, and the
+equivalents on `psql_query`): `connection` (an object) and the flat keywords `dialect`, `driver`, `host`, `port`, `database`,
+`username`, `password`, `ssl_mode`, `ssl_certs_dir`, `ssl_files`, `query`, `connect_args`, `connect_timeout_s`,
+`statement_timeout_ms`, `read_only`. Flat keywords and `connection` are merged; a key present in both (with a non-null
+value) is `[E_OPTION_INVALID]`. An unknown key inside `connection` is `[E_OPTION_UNKNOWN]`; `connection` that is not an object is
+`[E_OPTION_INVALID]`. `port` must be an integer (a quoted `"5432"` is refused, never coerced). `profile` stays and means
+"the base profile to overlay"; when it is absent `sqlx:default_profile` is used. `profile` may be omitted altogether only when
+`allow_adhoc_connection` is true and the call supplies `dialect`, `host`, `database` and `username`; otherwise
+`[E_PROFILE_UNKNOWN]`/`[E_OPTION_INVALID]`/`[E_POLICY]` as before. `mariadb` is accepted as a `dialect` value and means `mysql` (D10).
+
+**Policy** (`sqlx:_policy`, minion config or pillar):
+
+| Key | Meaning |
+|---|---|
+| `allow_call_params` | list of field names (from the keyword list above) a caller may set. Default `[]` = feature off. `"*"` and unknown names are refused (`[E_POLICY]`, the module fails closed). A profile may carry its own `allow_call_params`; it can only **narrow** the global list (the intersection is used) |
+| `allowed_hosts` | **required** (non-empty) when `host` is in `allow_call_params` or `allow_adhoc_connection` is true. Entries: exact names, `fnmatch` globs (`*.corp.example`), IP addresses, CIDR ranges. An entry made only of `*`/`?` is refused (`[E_POLICY]`); `0.0.0.0/0` is accepted as a CIDR but cannot lift the denied ranges below |
+| `allowed_ports` | optional list of ports or `"low-high"` ranges; a call port outside it is `[E_POLICY]` |
+| `allowed_dialects` | optional list; a call (or ad-hoc) dialect outside it is `[E_POLICY]` |
+| `allow_adhoc_connection` | default `false`; see above. An ad-hoc connection can never execute (it has no profile, so no `allow_execute`) |
+| `allow_call_literal_password` | default `false`; see "Secrets" |
+| `inherit_password` | default `false`; see "Credential relay". **Deviation from the owner's design, recorded in section 12 (D14)** |
+
+**Host checks** (run before any secret is resolved or socket opened, only for a `host` that came from the call; the base
+profile's own host is operator configuration and is not checked): the text must be a plain host name or IP (`[A-Za-z0-9._:-]`,
+no `@`, `/`, `#`, whitespace, NUL); then (1) an IP literal must be inside a CIDR/IP entry (or be matched by a name entry);
+(2) a name matching a name/glob entry is allowed, any other name is resolved (`getaddrinfo`) **only if the list contains a CIDR
+or IP** and is allowed only if every resolved address is inside the list (a name that does not resolve and is not listed is
+`[E_POLICY]`; a listed name that does not resolve is `[E_CONNECT]`); (3) whatever allowed it, every resolved address is
+checked against the denied ranges `0.0.0.0/8`, `127.0.0.0/8`, `169.254.0.0/16` (the cloud metadata address
+`169.254.169.254` is inside it), `224.0.0.0/4`, `::`, `::1`, `fe80::/10`, `ff00::/8`, `fd00:ec2::254`; a denied address is allowed
+only by an IP/CIDR entry that lies **inside** that range (for loopback: `127.0.0.1` or `127.0.0.0/8` in the list, never a name,
+a glob, or `0.0.0.0/0`). IPv4-mapped IPv6 is unwrapped; a scope id is dropped. The driver resolves the name again when it
+connects, so a DNS record that changes between the check and the connect is a residual risk (SECURITY section 3).
+Messages name the key only, never the host.
+
+**Per-field rules** (every row is `[E_POLICY]` unless another code is named):
+
+| Field | Rule |
+|---|---|
+| any field | must be listed in the effective `allow_call_params` (global, narrowed by the profile's own list) |
+| `host`, `port`, `dialect`, `username` | `host`/`port`: checks above. A call that changes `host`, `port`, `username` or `dialect` relative to the base profile does **not** inherit the profile's `password` (the connection is made without one) unless the call supplies `password` or `inherit_password` is true. For PostgreSQL the adapter also passes an explicitly empty `password` and an unreadable `passfile`, so libpq does not answer the target's password request from the minion's `$PGPASSWORD` or `~/.pgpass` (observed: without this the fake server received `$PGPASSWORD`). Ad-hoc connections without a `password` get the same treatment |
+| `database`, `driver` | text; `driver` must be one of the dialect's drivers (profile validation); `dialect` change drops the base `driver` |
+| `password` | must start with `sdb://` (resolved on the minion through `sdb.get`, `[E_SECRET]` if it fails) unless `allow_call_literal_password: true`; a literal with the policy off is `[E_POLICY]` naming the key only |
+| `read_only` | may only be `true`; `false` is refused; non-boolean is `[E_OPTION_INVALID]` |
+| `statement_timeout_ms`, `connect_timeout_s` | may only **lower** the profile value (clamped to the lowest of call, profile, hard maximum) |
+| `ssl_mode` | may only tighten: `verify-full` > `verify-ca`; weakening relative to the base profile's `ssl_mode` (default `verify-full` when it has a certificate directory) is refused; `ssl_mode` without a certificate directory is rejected by TLS validation (`[E_PROFILE_INVALID]`) |
+| `ssl_certs_dir`, `ssl_files` | go through `lib/tls.py` unchanged: absolute, no `..`, realpath under `sqlx:_policy:ssl_certs_dir_root` (`[E_POLICY]` otherwise), plain file names, key mode, file types |
+| `query`, `connect_args` | merged over the profile's own entries; every key must be in the per-driver allowlist (section 7, default deny) and may not be a TLS-owned key (`[E_POLICY]`/`[E_PROFILE_INVALID]`) |
+
+**Hard rules no policy relaxes.** A call can never set `row_limit`, `allow_execute`, `execute_verbs`, `error_detail` or `_policy`:
+they are not in the schema and are `[E_OPTION_UNKNOWN]` (the profile-only keys stay profile-only). The existing call options
+`limit`, `timeout_ms` and `max_bytes` can only lower the cap (D9). `read_only` can be turned on, never off. Caps can only be
+lowered. `execute` still needs `allow_execute: true` on the **base profile** and the verb filter.
+
+**Secrets and audit.** A resolved password is never in a message, log record, return or audit line. The audit line (SECURITY
+section 5) gains `overrides=<comma list of field names>` (`-` when none) and `target=<host>:<port>` (the one actually used;
+`-` when the call was refused before a profile was built). A literal `password` that the policy allows is added to the log
+masking filter. Salt stores the job load (and prints it at debug level in the minion log) before the extension sees it, so a
+`password=sdb://...` reference, or a literal, is in the master job cache and on the event bus: this is why a literal is refused
+by default (verified: `tests/integration/params_path`).
+
+### 4.7 `sqlx.psql_query(query, user=None, host=None, port=None, maintenance_db=None, password=None, runas=None, write=False, profile=None)`
+
+Look-alike of Salt 3008 `postgres.psql_query(query, user=None, host=None, port=None, maintenance_db=None, password=None,
+runas=None, write=False)` (the same first eight parameters in the same order; `profile` is added). Mapping: `query` -> `sql`,
+`user` -> `username`, `maintenance_db` -> `database`, `host`, `port`, `password` as in section 3.2. `profile` defaults to
+`sqlx:default_profile` and must name a postgresql profile (`[E_OPTION_INVALID]` otherwise). Other keywords of `query`/`execute`
+(`params`, `limit`, `timeout_ms`, `max_bytes`, `dry_run`, and the flat connection keywords) are accepted. Using `user`, `host`,
+`port`, `maintenance_db` or `password` needs the policy (`[E_POLICY]` when the feature is off or the field is not listed);
+the call with only `query` (and a profile) always works.
+
+Differences from `postgres.psql_query`, all deliberate:
+
+| Aspect | `postgres.psql_query` | `sqlx.psql_query` |
+|---|---|---|
+| mechanism | runs the `psql` binary as `runas` (OS user) | SQLAlchemy and the profile's driver; no `psql`, no OS user. For a retargeted connection without its own password libpq's `$PGPASSWORD` and `~/.pgpass` are switched off (see section 3.2); an unchanged profile keeps libpq's normal behaviour |
+| `runas` | OS user to run `psql` as | any non-`None` value is `[E_OPTION_INVALID] runas is not supported; sqlx does not use psql or an OS user` |
+| failure | returns `[]`/`False`/the `psql` stderr as data | raises `[E_...]` with the real database error (`CommandExecutionError`, or `SaltInvocationError` for argument/policy errors); never returns an empty list for a failure |
+| `write=True` | allows DML | goes through the `execute` path: needs `allow_execute: true` on the profile and the verb filter; returns one row `{"rows_affected": "<n>"}`; never bypasses them. `write=False` runs in a transaction that is rolled back |
+| result | list of dicts, column -> str or `None` | the same shape: values are text, `NULL` is `None`, booleans are `t`/`f`, JSON values are compact JSON text; a trailing `;` is removed like Salt does. Rows beyond the row or byte cap are dropped without a flag (use `sqlx.query` to see `truncated`) |
+| `password` | literal | an `sdb://` reference unless `allow_call_literal_password` |
+| `host`/`port`/`user`/`maintenance_db` | free | policy-gated (section 3.2), not free |
+| multi-statement | `psql -c` may run several | single statement; the read-only guard is bypassable on PostgreSQL (SECURITY section 2) |
 
 ## 4. Functions
 
@@ -126,6 +258,13 @@ written as is) of `columns` plus the length of the compact JSON of `rows`, nothi
 (`profile`, `row_count`, `truncated`, `elapsed_ms`) and the key names are not counted. Rows are added in order while the
 running total stays within `max_bytes`; the first row that would exceed it, and every row after it, is dropped and
 `truncated` is true. If even the first row does not fit, the result has `rows: []`, `row_count: 0`, `truncated: true`.
+Memory (T11 D3): on PostgreSQL (`SELECT`, `VALUES`, `TABLE`, and `WITH` without `INSERT`/`UPDATE`/`DELETE`/`MERGE`) the rows are
+read through a server-side cursor and on MySQL/MariaDB through PyMySQL's unbuffered `SSCursor`, so only `limit + 1` rows
+leave the server; if rows are left unread on MySQL/MariaDB the connection is dropped rather than drained. Other statements
+(`SHOW`, `EXPLAIN`, `INSERT ... RETURNING`, `SELECT ... INTO`) and Oracle/SQL Server are read buffered. A single value
+larger than `max_bytes` is dropped without being JSON-encoded, but the driver still receives it whole (measured: a 100 MB
+`text` value costs about 270 MB of RSS, the floor of a bare psycopg cursor); on MySQL/MariaDB `max_allowed_packet` bounds
+it, on PostgreSQL select `left(col, n)`.
 `limit` is checked first: when another row exists beyond `limit`, `truncated` is true. The `columns` list is never itself
 refused, so a result with no rows is not marked truncated even if `columns` alone is larger than `max_bytes`. Value
 conversions are in section 9.
@@ -135,15 +274,22 @@ Refused with `[E_EXECUTE_DISABLED]` unless the profile has `allow_execute: true`
 is resolved or any connection is opened). Then, in `runner.run_execute`:
 
 - `dry_run` must be exactly `True` or `False` (a real `bool`); anything else, including a string or a number, is
-  `[E_OPTION_INVALID]`, so a malformed flag can never commit. The call-level default is `false` (D2).
+  `[E_OPTION_INVALID]`, so a malformed flag can never commit. The call-level default is `false` (D2). **`dry_run=None`
+  means "not given", not "safe"**: it takes the default and the statement is COMMITTED (T11 D11). Pass `dry_run=True`
+  explicitly to roll back.
 - The first keyword of the statement must be in `execute_verbs` (compared case-insensitively), else `[E_POLICY]`. A statement
   that does not start with a keyword at all (`(select 1)`, `;drop table t`) is also `[E_POLICY]`. An empty or comment-only
   statement is `[E_OPTION_INVALID]`.
-- The filter skips only whitespace, `--` line comments and `/* */` block comments before the keyword. A MySQL `#` comment is
-  not skipped, so a statement that starts with one fails with `[E_POLICY]`. A MySQL `/*! ... */` comment **is** skipped like
-  any block comment although MySQL executes its content; the filter looks at the keyword after it. This is a best-effort
-  filter, **not a security boundary** (a CTE, a `;` or a function call can still write): the database role limits what
-  `execute` can do.
+- The filter skips only whitespace, `--` line comments and plain `/* */` block comments (`/*+ ... */` included) before
+  the keyword. A MySQL `#` comment is not skipped, so a statement that starts with one fails with `[E_POLICY]`. A leading
+  `/*!` or `/*M!` comment (MySQL and MariaDB execute its content) and a leading block comment that contains `/*`
+  (PostgreSQL nests block comments, MySQL does not, so the two servers disagree where the verb starts) are refused with
+  `[E_POLICY]` on every dialect (T11 D5). This is a best-effort filter, **not a security boundary** (a CTE or a function
+  call can still write): the database role limits what `execute` can do.
+- One statement per call. On PostgreSQL the connection uses psycopg's extended protocol (`prepare_threshold=0`, set by the
+  module and not settable from a profile), so a string with a second statement (`INSERT ...; COMMIT`) fails with
+  `[E_SQL] postgresql 42601: cannot insert multiple commands into a prepared statement`; PyMySQL does not enable
+  multi-statements, so MySQL and MariaDB answer 1064 (T11 D1). A trailing `;` is accepted.
 - The connection is opened with `read_only` **False**, whatever the profile says: `allow_execute: true` wins over
   `read_only: true`, because an execute-enabled profile must be able to write (`sqlx_mod.execute`). The in-session
   read-only guard is therefore not applied to `execute`; set `read_only: false` on such a profile to keep the profile
@@ -254,8 +400,8 @@ unverified except where stated. They must be run by the owner on a machine with 
 | dialect | driver (pip extra) | URL | Licence (package metadata) | timeout mechanism | in-session read-only |
 |---|---|---|---|---|---|
 | `postgresql` | `psycopg[binary]` (extra `postgres`) | `postgresql+psycopg://` | LGPL-3.0-only | `SET statement_timeout = <ms>`: cancels at the limit, SQLSTATE 57014. **observed** [WS 2] | `SET TRANSACTION READ ONLY`: refuses writes (25006) but **bypassable** (SECURITY.md section 2). **observed** [WS 3] |
-| `mysql` | `PyMySQL` (extra `mysql`) | `mysql+pymysql://` | MIT | `SET SESSION MAX_EXECUTION_TIME=<ms>`: raises 3024 (SQLSTATE `HY000`) for a SELECT that reads tables; a table-less `SELECT SLEEP(n)` is cut short **silently** (returns 1, no error); `INSERT ... SELECT` is **not limited**. **observed** on 8.0.46 only [WS 2]. The earlier "MySQL >= 5.7.8" is **unverified**. | `SET SESSION TRANSACTION READ ONLY`: refuses writes (1792, SQLSTATE 25006) but **bypassable** by four statements. `START TRANSACTION READ ONLY` resists the most statements but is also bypassable. **observed** [WS 3] |
-| `mariadb` | `PyMySQL` (extra `mysql`) | `mysql+pymysql://` (SQLAlchemy sets `dialect.is_mariadb`, `False` on MySQL and `True` on MariaDB; use it to pick the variable) | MIT | `SET SESSION max_statement_time=<seconds>`: fractional values accepted; raises 1969 (SQLSTATE `70100`) for SELECT and for `INSERT ... SELECT`. **observed** on 10.11.14 [WS 2]. `MAX_EXECUTION_TIME` does not exist here (1193). | `SET SESSION TRANSACTION READ ONLY`: refuses writes (1792) but **bypassable**; the session variable is `tx_read_only` (`transaction_read_only` does not exist, 1193). **observed** [WS 3] |
+| `mysql` | `PyMySQL` (extra `mysql`) | `mysql+pymysql://` | MIT | `SET SESSION MAX_EXECUTION_TIME=<ms>`: raises 3024 (SQLSTATE `HY000`) for a SELECT that reads tables; a table-less `SELECT SLEEP(n)` is cut short **silently** (returns 1, no error); `INSERT ... SELECT` is **not limited** by it; a statement can also override it with `/*+ MAX_EXECUTION_TIME(n) */`. The module therefore also sets PyMySQL `read_timeout` = timeout + 1 s (a lower profile value is honoured), which ends the caller's wait with 2013 / `E_TIMEOUT` (T11 D2). **observed** on 8.0.46 only [WS 2]. The earlier "MySQL >= 5.7.8" is **unverified**. | `SET SESSION TRANSACTION READ ONLY`: refuses writes (1792, SQLSTATE 25006) but **bypassable** by four statements. `START TRANSACTION READ ONLY` resists the most statements but is also bypassable. **observed** [WS 3] |
+| `mariadb` | `PyMySQL` (extra `mysql`) | `mysql+pymysql://` (SQLAlchemy sets `dialect.is_mariadb`, `False` on MySQL and `True` on MariaDB; use it to pick the variable) | MIT | `SET SESSION max_statement_time=<seconds>`: fractional values accepted; raises 1969 (SQLSTATE `70100`) for SELECT and for `INSERT ... SELECT`; `SET STATEMENT max_statement_time=0 FOR ...` overrides it, so `read_timeout` (timeout + 1 s) is the backstop here too (T11 D2). **observed** on 10.11.14 [WS 2]. `MAX_EXECUTION_TIME` does not exist here (1193). | `SET SESSION TRANSACTION READ ONLY`: refuses writes (1792) but **bypassable**; the session variable is `tx_read_only` (`transaction_read_only` does not exist, 1193). **observed** [WS 3] |
 | `oracle` | `oracledb` thin mode (extra `oracle`) | `oracle+oracledb://` | UPL-1.0 OR Apache-2.0 | `connection.call_timeout` (ms): **unverified** (NOT RUN) | `SET TRANSACTION READ ONLY` as first statement: **unverified** (NOT RUN) |
 | `mssql` | `pymssql` (extra `mssql`) | `mssql+pymssql://` | LGPL-2.1 | `timeout` / `login_timeout` connect args (s): **unverified** (NOT RUN) | none, role only: **unverified** (NOT RUN) |
 
@@ -282,10 +428,12 @@ Notes, all **observed** unless stated.
   `target_session_attrs`, `keepalives`, `keepalives_idle`, `keepalives_interval`, `keepalives_count`; `mysql` `charset`,
   `read_timeout`, `write_timeout`, `ssl_disabled`, `ssl_verify_cert`, `ssl_verify_identity`; `oracle` `expire_time`,
   `retry_count`, `retry_delay`, `ssl_server_dn_match`; `mssql` `appname`, `charset`, `tds_version`. `ssl_context` and callables
-  are rejected (not scalar), and **no path-bearing TLS option is allowed today** (no `sslrootcert`, `sslcert`, `sslkey`,
-  `ssl_ca`, ...), so `sslmode: verify-full` verifies against the driver's default CA bundle only and database mTLS client
-  certificates cannot be configured. That gap is decision D12. (Design rule, not a database behaviour.) The Oracle,
-  SQL Server and MySQL/MariaDB names are from vendor documentation, not observed (`UNVERIFIED(T1)` in `dialects.py`).
+  are rejected (not scalar), and **no path-bearing TLS option is in any allowlist**: a profile cannot put `sslrootcert`,
+  `sslcert`, `sslkey` or `ssl_ca`/`ssl_cert`/`ssl_key` into `query` or `connect_args`. Certificates are configured only
+  through `ssl_certs_dir` (section 3.1), which produces those arguments inside the module (decision D12). Without
+  `ssl_certs_dir`, `sslmode: verify-full` verifies against the driver's default CA bundle only. (Design rule, not a
+  database behaviour.) The Oracle, SQL Server and MySQL/MariaDB names are from vendor documentation, not observed
+  (`UNVERIFIED(T1)` in `dialects.py`), except the PyMySQL TLS keyword names used by section 3.1, which were observed.
 - `mysqlclient` (GPL) is excluded. LGPL drivers are accepted by the owner as unmodified pip dependencies (decision
   recorded 2026-10-29).
 
@@ -330,6 +478,16 @@ the `cryptography` package -> `E_DRIVER_MISSING`; PyMySQL first-connect `Attribu
 raised while connecting (not wrapped by SQLAlchemy) is `E_INTERNAL`. For Oracle and SQL Server only the client-side
 connect-refused code is mapped (`DPY-6005`, `20009` -> `E_CONNECT`); **every Oracle and SQL Server authentication, SQL, timeout
 and read-only code is `E_INTERNAL` until task T1b** records the real ones.
+
+**TLS failures** (observed, `docs/WIRE_SHAPES.md` section 12; the real driver message is kept, with paths reduced to file names by
+`tls.scrub` in `engine`): PostgreSQL libpq text `SSL error: ...` (unknown CA, expired certificate on either side, `alert unknown ca`),
+`... does not match host name ...`, `pg_hba.conf rejects connection ... no encryption`, `server does not support SSL`, `... private key
+file ...` and `root certificate file ... does not exist` -> `E_CONNECT`; `connection requires a valid client certificate` and
+`certificate authentication failed for user ...` -> `E_AUTH_FAILED`. MySQL/MariaDB: 2003 (certificate verify failed, hostname
+mismatch) and 2013 (TLS alert from the server) -> `E_CONNECT`; 3159 (`require_secure_transport`) -> `E_CONNECT`; 1045 for an `X509`
+or `SSL`-only account used without a client certificate or without TLS -> `E_AUTH_FAILED` (the server gives no TLS-specific reason);
+PyMySQL's own `ssl.SSLError` (unusable key, key/certificate mismatch) and `FileNotFoundError`/`PermissionError` for a TLS file ->
+`E_CONNECT` (the file name in the OS error is dropped).
 
 `mysql` is the dialect name passed for MariaDB too (section 7), so messages read `[E_...] mysql <vendor code>: ...` on both
 servers. Unless `error_detail` is true, MySQL/MariaDB messages have the duplicate-key value (`Duplicate entry '...'`) and the
@@ -447,7 +605,7 @@ curl -sS -k https://salt-api.example:8000/run -H 'Content-Type: application/json
 
 | ID | Decision | Assumption |
 |---|---|---|
-| D1 | Allow ad-hoc connection details in the call? | No. Profile only. |
+| D1 | Allow connection details in the call? | **Profile only by default; opt-in call-time parameters under policy** (owner decision 2026-10-29, section 3.2). Off unless `sqlx:_policy:allow_call_params` lists field names; ad-hoc connections need `allow_adhoc_connection`. |
 | D2 | Default for `execute(dry_run)` | `false` (matches Robot); consider `true` for agent use. |
 | D3 | Rewrite SQL to escape literal colons? | No; document `\:`. |
 | D4 | Support SQLAlchemy 2.1.x | Pin `<2.1` until tested. |
@@ -462,11 +620,12 @@ curl -sS -k https://salt-api.example:8000/run -H 'Content-Type: application/json
 |---|---|---|
 | D9 | A call value above a cap (`limit`, `timeout_ms`, `max_bytes`, `retry_timeout_s`): clamp silently, or reject? | **Clamp** (current code: `options.apply_caps`). Rejecting with `E_OPTION_INVALID` would tell the caller its request was not honoured; clamping is friendlier to agents but hides the truncation until `truncated` is read. Profile values above a hard maximum are already rejected. |
 | D10 | Is `mariadb` a separate `dialect` value, or detected at run time through `dialect.is_mariadb`? | Detect (`mysql` is the only value; WS 9 item 5 shows `is_mariadb` is `False` on MySQL and `True` on MariaDB). A separate value would make the choice of variable explicit in config and let `profiles.py` reject a wrong guess, at the cost of a fifth dialect and the same driver. |
-| D11 | Use PyMySQL `read_timeout` as a client-side backstop for MySQL/MariaDB statement timeouts? | Not decided. Observed: `read_timeout=1` raised `OperationalError` 2013 after 1.0 s (WS 9 item 5), which covers the cases the server variable misses on MySQL (table-less SELECT, DML), but whether the server keeps running the statement afterwards was NOT observed. The 2013 mapping exists in `errors._my` (see section 8) but the module sets no `read_timeout` itself (a profile may pass it in `connect_args`, section 7). |
+| D11 | Use PyMySQL `read_timeout` as a client-side backstop for MySQL/MariaDB statement timeouts? | **Yes, implemented (T11 D2).** `read_timeout = statement_timeout_ms / 1000 + 1` s, module-owned; a profile may lower it, not raise it. Observed on MySQL 8.0.46: after the client gives up with 2013 the server keeps running the statement until it finishes, then rolls back (0 rows persisted for an `INSERT ... SELECT SLEEP(8)`). The backstop bounds the caller's wait, not the server's work. |
 
 ### Open decisions added after wave 3 (assumption used if unanswered)
 
 | ID | Decision | Assumption |
 |---|---|---|
-| D12 | Define a TLS certificate directory (CA bundle, client certificate and key) so that profiles can use database TLS with verification and mTLS? Needed for CloudXP. | Not decided; today **none**. The `query` / `connect_args` allowlist (section 7) contains no path-bearing option, so `sslmode: verify-full` (PostgreSQL) and `ssl_verify_cert` / `ssl_verify_identity` (MySQL/MariaDB) can only use the driver's default CA bundle, and a client certificate cannot be configured. A directory would let a profile name a file relative to it (for example `sslrootcert: ca.pem`), with the module joining and checking the path (no `..`, no absolute path, no symlink out, regular file); the directory would be minion configuration, never a caller argument. Until decided, do not add `sslrootcert`, `sslcert`, `sslkey` or `ssl_ca` to any allowlist. |
+| D12 | **Decided (owner) and implemented**: a TLS certificate directory so that profiles can use database TLS with verification and mutual TLS. | Profile keys `ssl_certs_dir`, `ssl_mode` (`verify-full` default, `verify-ca`), `ssl_files` (`ca`, `cert`, `key` as plain file names); default names `ca.pem`/`ca.crt`, `client.pem`/`client.crt`, `client.key`; the directory must resolve under `sqlx:_policy:ssl_certs_dir_root` (minion config or pillar), else `[E_POLICY]`; key files with group/world access are refused. Full rules and the per-driver mapping are in section 3.1. **Verified on real servers** (throw-away PKI, `tests-support/tls`): PostgreSQL 16.15 (libpq 18.0.6, psycopg 3.3.6), MySQL 8.0.46 and MariaDB 10.11.14 (PyMySQL 1.2.3): verify-full with and without a client certificate, mutual TLS, wrong CA, hostname not in the SANs, expired client and server certificate, client certificate from another CA, client certificate required but missing, plain connection to a TLS-only server, vanished or corrupt key file; error shapes in `docs/WIRE_SHAPES.md` section 12. **NOT verified**: Oracle (argument mapping only, `UNVERIFIED(T1b)`), SQL Server (refused as unsupported), `verify-ca` on Oracle, certificate revocation (no CRL support), encrypted private keys (there is no passphrase key; not tested), TLS 1.2-only or cipher policy (driver defaults). Open: whether the policy should also require the directory itself not to be group/world-writable (not checked today). |
 | D13 | `MaskingFilter.add_secret` (called by `sqlx_mod._run` for every resolved password) only ever adds: the set of registered secrets gains one entry per distinct password and is never emptied for the life of the minion process (a memory and hygiene issue; retired passwords stay in memory and keep being masked). Clear or replace the registered secret after each call? | Not decided; today it is never cleared. Clearing after the call keeps the set small and drops stale passwords, but a log record emitted after the call (by another thread, or a late handler) would then no longer be masked by value; the key-based masking (`password|secret|token`) would still apply. Stricter is to keep it, so keep it until decided. |
+| D14 | Should a call that retargets the connection (`host`, `port`, `username` or `dialect` differs from the base profile) keep the base profile's password? (Added with section 3.2.) | **No** (deviation from the owner's design, which did not mention it): the password is dropped unless the call supplies `password` or `sqlx:_policy:inherit_password: true`. Reason: otherwise `profile=prod host=<listed but attacker-influenced name>` sends the production password to another server (credential relay). Costs one extra argument for legitimate retargeting. |

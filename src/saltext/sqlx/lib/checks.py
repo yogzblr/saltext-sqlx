@@ -16,6 +16,8 @@ from decimal import Decimal
 
 from salt.exceptions import SaltInvocationError
 
+from saltext.sqlx.lib import serialize
+
 #: Hard cap for ``retry_timeout_s`` (SPEC section 6). The caller may only lower it.
 MAX_RETRY_TIMEOUT_S = 10
 
@@ -142,7 +144,7 @@ def _finish(outcome, operator, expected, attempts):
     result = {
         "ok": outcome["ok"],
         "actual": outcome["actual"],
-        "expected": expected,
+        "expected": serialize.serialize_value(expected),  # NaN / Infinity are not valid JSON (T11 D6)
         "operator": operator,
         "attempts": attempts,
     }

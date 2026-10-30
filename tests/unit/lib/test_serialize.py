@@ -332,3 +332,20 @@ def test_module_has_no_salt_dunders():
     assert "__salt__" not in src
     assert "__opts__" not in src
     assert "sqlalchemy" not in src
+
+
+# --- T11 D3: a value longer than max_bytes is dropped without encoding it ------------------------
+def test_value_longer_than_the_byte_cap_drops_the_row_without_encoding_it(monkeypatch):
+    calls = []
+    real = serialize.serialize_row
+    monkeypatch.setattr(serialize, "serialize_row", lambda row: calls.append(row) or real(row))
+    out = serialize.build_result(["c"], [("x" * 5000,), (1,)], 10, 1000)
+    assert out == {"columns": ["c"], "rows": [], "row_count": 0, "truncated": True}
+    assert not calls
+
+
+def test_value_just_inside_the_byte_cap_is_still_measured_exactly():
+    out = serialize.build_result(["c"], [("x" * 80,)], 10, 100)
+    assert out["row_count"] == 1 and out["truncated"] is False
+    out = serialize.build_result(["c"], [(b"x" * 500,)], 10, 100)
+    assert out["row_count"] == 0 and out["truncated"] is True

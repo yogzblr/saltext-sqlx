@@ -12,6 +12,7 @@ import re
 import time
 
 from salt.exceptions import CommandExecutionError
+from salt.exceptions import SaltInvocationError
 
 try:
     import sqlalchemy
@@ -20,7 +21,9 @@ try:
     from saltext.sqlx.lib import engine
     from saltext.sqlx.lib import errors
     from saltext.sqlx.lib import options
-    from saltext.sqlx.lib import profiles
+    from saltext.sqlx.lib import overrides
+    from saltext.sqlx.lib import profiles  # pylint: disable=unused-import
+    from saltext.sqlx.lib import psql_compat
     from saltext.sqlx.lib import runner
     from saltext.sqlx.lib import secrets
 
@@ -47,19 +50,24 @@ def _run(function, work, kwargs):  # pylint: disable=inconsistent-return-stateme
     started = time.perf_counter()
     user = kwargs.get("__pub_user")
     info = {"fn": function, "profile": "-", "dialect": "-", "sha": "-", "rows": "-", "code": "OK"}
+    info.update(ov="-", target="-")
     info["user"] = re.sub(r"\W", "_", str(user)) if user else "-"
     profile = {"dialect": "unknown", "error_detail": False}
     try:
-        opts = options.validate(function, kwargs)
-        profile = profiles.load_profile(opts["profile"], __salt__["config.get"]("sqlx", {}))
+        config = __salt__["config.get"]("sqlx", {})
+        # Call-time connection parameters are opt-in and policy-gated (SPEC section 3.2); no-ops when unused.
+        call = overrides.prepare(function, kwargs, config)
+        opts = options.validate(function, call.kwargs)
+        profile = overrides.build_profile(call, opts["profile"], config)
         info.update(profile=profile["name"], dialect=profile["dialect"])
+        info.update(ov=overrides.overridden(profile), target=overrides.target(profile))
         if "sql" in opts:
             info["sha"] = hashlib.sha256(opts["sql"].encode("utf-8")).hexdigest()[:12]
         if function == "execute" and not profile["allow_execute"]:
             raise CommandExecutionError(
                 f"[E_EXECUTE_DISABLED] profile '{profile['name']}' does not set allow_execute: true"
             )
-        resolved = secrets.resolve_profile_secrets(profile, __salt__["sdb.get"])
+        resolved = overrides.resolve_secrets(profile, __salt__["sdb.get"])
         _MASK.add_secret(resolved.get("password"))
         result = work(options.apply_caps(opts, profile), resolved)
         result["profile"] = profile["name"]
@@ -73,7 +81,7 @@ def _run(function, work, kwargs):  # pylint: disable=inconsistent-return-stateme
         info["ms"] = int((time.perf_counter() - started) * 1000)
         log.info(  # SECURITY section 5: never the SQL, the params, the rows or a secret
             "sqlx audit function=%(fn)s profile=%(profile)s dialect=%(dialect)s sql_sha256=%(sha)s "
-            "rows=%(rows)s elapsed_ms=%(ms)s outcome=%(code)s user=%(user)s",
+            "rows=%(rows)s elapsed_ms=%(ms)s outcome=%(code)s user=%(user)s overrides=%(ov)s target=%(target)s",
             info,
         )
 
@@ -85,12 +93,26 @@ def _query(opts, resolved):
         )
 
 
+def _execute(opts, resolved):
+    # An execute-enabled profile must be able to write, so the best-effort read-only guard is not applied.
+    with engine.connection(resolved, resolved.get("password"), opts["timeout_ms"], False) as conn:
+        return runner.run_execute(
+            conn,
+            opts["sql"],
+            opts["params"],
+            dry_run=opts["dry_run"],
+            execute_verbs=resolved["execute_verbs"],
+        )
+
+
 def query(profile=None, sql=None, **kwargs):
     """
     Run one statement in a transaction that is always rolled back.
 
     Keywords: ``params`` (object of bind values), ``limit``, ``timeout_ms``, ``max_bytes`` (each can only lower
-    the profile's cap). Returns ``profile``, ``columns``, ``rows``, ``row_count``, ``truncated``, ``elapsed_ms``.
+    the profile's cap). Call-time connection parameters (``connection={...}`` or ``host``, ``port``, ``database``,
+    ``username``, ``password``, ...) work only if the operator enables them in ``sqlx:_policy`` (SPEC section 3.2).
+    Returns ``profile``, ``columns``, ``rows``, ``row_count``, ``truncated``, ``elapsed_ms``.
 
     CLI Example:
 
@@ -105,7 +127,9 @@ def execute(profile=None, sql=None, **kwargs):
     """
     Run one data-changing statement. Refused with ``[E_EXECUTE_DISABLED]`` unless the profile has ``allow_execute``.
 
-    Keywords: ``params``, ``dry_run`` (default false; true rolls back), ``timeout_ms``.
+    Keywords: ``params``, ``dry_run`` (default false; true rolls back), ``timeout_ms``. ``dry_run=None`` means
+    "not given", NOT "safe": it takes the default and the statement is COMMITTED. Pass ``dry_run=True`` to roll back.
+    One statement per call; a second statement after ``;`` is refused by the driver.
 
     CLI Example:
 
@@ -114,20 +138,7 @@ def execute(profile=None, sql=None, **kwargs):
         salt '*' sqlx.execute profile=orders_rw sql="update orders set status = 'x' where id = 1" dry_run=True
     """
 
-    def work(opts, resolved):
-        # An execute-enabled profile must be able to write, so the best-effort read-only guard is not applied.
-        with engine.connection(
-            resolved, resolved.get("password"), opts["timeout_ms"], False
-        ) as conn:
-            return runner.run_execute(
-                conn,
-                opts["sql"],
-                opts["params"],
-                dry_run=opts["dry_run"],
-                execute_verbs=resolved["execute_verbs"],
-            )
-
-    return _run("execute", work, dict(kwargs, profile=profile, sql=sql))
+    return _run("execute", _execute, dict(kwargs, profile=profile, sql=sql))
 
 
 def check_query_result(profile=None, sql=None, operator=None, **kwargs):
@@ -204,10 +215,30 @@ def ping(profile=None, **kwargs):
     )
 
 
-def _like(pattern):
-    """A SQL ``LIKE`` pattern (``%`` and ``_``) as a regular expression."""
-    parts = {"%": ".*", "_": "."}
-    return re.compile("".join(parts.get(c) or re.escape(c) for c in pattern), re.DOTALL)
+def _like(pattern, name):
+    """
+    True when ``name`` matches the SQL ``LIKE`` ``pattern`` (``%`` any run, ``_`` one character, case-sensitive).
+
+    Iterative matcher with one backtrack point (the last ``%``), O(len(pattern) * len(name)) in the worst case. A
+    regular expression built from the pattern backtracks without bound on ``%a%a%a...b`` (T11 D4).
+    """
+    p = n = 0
+    star = mark = -1
+    while n < len(name):
+        if p < len(pattern) and pattern[p] == "%":
+            star, mark = p, n
+            p += 1
+        elif p < len(pattern) and pattern[p] in ("_", name[n]):
+            p += 1
+            n += 1
+        elif star >= 0:
+            mark += 1
+            p, n = star + 1, mark
+        else:
+            return False
+    while p < len(pattern) and pattern[p] == "%":
+        p += 1
+    return p == len(pattern)
 
 
 def table_list(profile=None, **kwargs):
@@ -225,7 +256,8 @@ def table_list(profile=None, **kwargs):
     """
 
     def work(opts, resolved):
-        match = _like(opts["pattern"]).fullmatch if opts["pattern"] else lambda _name: True
+        pattern = opts["pattern"]
+        match = (lambda name: _like(pattern, name)) if pattern else (lambda _name: True)
         with engine.connection(resolved, resolved.get("password")) as conn:
             inspector = sqlalchemy.inspect(conn)
             schema = opts["schema"] or inspector.default_schema_name
@@ -238,3 +270,59 @@ def table_list(profile=None, **kwargs):
         }
 
     return _run("table_list", work, dict(kwargs, profile=profile))
+
+
+def _postgres_only(work):
+    def wrapped(opts, resolved):
+        if resolved["dialect"] != "postgresql":
+            raise SaltInvocationError(
+                "[E_OPTION_INVALID] sqlx.psql_query needs a postgresql profile"
+            )
+        return work(opts, resolved)
+
+    return wrapped
+
+
+def psql_query(  # pylint: disable=too-many-arguments,too-many-positional-arguments,redefined-outer-name
+    query,
+    user=None,
+    host=None,
+    port=None,
+    maintenance_db=None,
+    password=None,
+    runas=None,
+    write=False,
+    profile=None,
+    **kwargs,
+):
+    """
+    Look-alike of Salt's ``postgres.psql_query`` that goes through sqlx (profile, policy, real errors).
+
+    ``user`` is the username, ``maintenance_db`` the database; ``host``, ``port`` and ``password`` (an ``sdb://``
+    reference unless the policy allows literals) are call-time parameters and need ``sqlx:_policy:allow_call_params``.
+    ``profile`` defaults to ``sqlx:default_profile`` and must be a postgresql profile. ``runas`` is refused. ``write=True``
+    goes through the ``execute`` path (``allow_execute`` and the verb filter apply). Returns a list of dicts
+    (column to text or ``None``; rows beyond the row or byte cap are dropped silently, ``sqlx.query`` shows the ``truncated`` flag); a failure raises ``[E_...]`` instead of returning ``[]``. Differences: SPEC section 4.7.
+
+    CLI Example:
+
+    .. code-block:: bash
+
+        salt '*' sqlx.psql_query 'select * from pg_stat_activity' profile=orders_pg
+        salt '*' sqlx.psql_query 'select 1' host=db2.corp.example port=5432 user=svc maintenance_db=orders
+    """
+    given = {
+        "user": user,
+        "host": host,
+        "port": port,
+        "maintenance_db": maintenance_db,
+        "password": password,
+    }
+    function, call = psql_compat.translate(query, runas, write, extra=kwargs, **given)
+    overrides.require_enabled(
+        __salt__["config.get"]("sqlx", {}), psql_compat.supplied_names(**given)
+    )
+    result = _run(
+        function, _postgres_only(_execute if write else _query), dict(call, profile=profile)
+    )
+    return psql_compat.shape(result, write)
