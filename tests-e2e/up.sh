@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Bring the end-to-end stack up: PKI, databases (one at a time, each waited for), account setup, Salt master + minions.
-# Usage: tests-e2e/up.sh [service ...]     (default: every service; e.g. `up.sh pg mysql` for a subset of databases)
+# Usage: tests-e2e/up.sh [service ...]     (default: every service; e.g. `up.sh pg mysql` for a subset of databases;
+#        `up.sh local` adds the same-host minions for the running databases)
 # Logs: $SQLX_E2E_LOGS (default ~/e2e-logs). Data: $SQLX_E2E_DATA (default ~/e2e-data; must be on the Linux filesystem).
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -43,6 +44,16 @@ for svc in "${dbs[@]}"; do
   fi
 done
 
+if [[ " $* " == *" local "* ]]; then
+  # same-host minions for every database container that is running (see docker-compose.yml)
+  for db in pg mysql mariadb oracle mssql; do
+    [ -n "$(dc ps -q "$db" 2>/dev/null)" ] || continue
+    dc --profile local up -d "minion-local-$db" >>"$logs/up.log" 2>&1
+    wait_healthy "minion-local-$db" 600 && echo "== minion-local-$db: healthy"
+  done
+  exit 0
+fi
+
 if [ $# -eq 0 ] || [[ " $* " == *" salt "* ]]; then
   echo "== salt: building and starting master, minion, minion-policy"
   dc build master >>"$logs/up.log" 2>&1
@@ -50,7 +61,7 @@ if [ $# -eq 0 ] || [[ " $* " == *" salt "* ]]; then
   for s in master minion minion-policy; do wait_healthy "$s" 600; echo "== $s: healthy"; done
   # The minions authenticate to the master (auto_accept) shortly after start; wait until both answer.
   for _ in $(seq 1 40); do
-    if dc exec -T master salt --out=txt -t 10 'minion*' test.ping 2>/dev/null | grep -c True | grep -q 2; then
+    if [ "$(dc exec -T master salt --out=txt -t 10 -L minion,minion-policy test.ping 2>/dev/null | grep -c True)" -eq 2 ]; then
       echo "== salt: both minions answer"; exit 0
     fi
     sleep 3

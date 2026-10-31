@@ -117,6 +117,24 @@ Dialect notes (observed end to end):
   detected. TLS with `ssl_certs_dir` is not supported (`[E_PROFILE_INVALID]`).
 - **MySQL/MariaDB**: `select 1/0` returns NULL, not an error; `/*! ... */` comments are executed by the server.
 
+### Minion on the database server itself
+
+Supported and tested end to end on all five databases (`tests-e2e`, `up.sh local`: a minion sharing each database
+container's network): use `host: 127.0.0.1` (or `localhost`) and the server's TCP port. The module always connects over
+TCP; Unix sockets and peer / OS authentication are not used.
+
+- **PostgreSQL: check `pg_hba.conf` first.** `initdb` and the official images write `host all all 127.0.0.1/32 trust`
+  (and `::1/128 trust`). With that rule a local connection logs in as the profile's user with **any password or none**
+  (observed), so the profile password protects nothing and a profile naming a superuser gets one. Set the loopback lines
+  to `scram-sha-256` (or remove them) on any host that runs a minion; then a wrong password is `[E_AUTH_FAILED]` again.
+- MySQL / MariaDB: an account must match the local client (`'ro'@'%'` worked; anonymous `''@'localhost'` accounts can
+  shadow it, so drop them). Oracle and SQL Server: nothing special; authentication was enforced as over the network.
+- `verify-full` TLS needs `localhost` / `127.0.0.1` in the server certificate; over loopback TLS is often unnecessary.
+- With call-time parameters enabled, a caller-supplied loopback `host` is refused unless `allowed_hosts` lists the IP
+  (`127.0.0.1`); profiles are not affected.
+- A minion on the database host shares the machine with the data files: a compromised minion is more than a compromised
+  SQL account. Keep the read-only role minimal anyway.
+
 ### TLS to the database (certificate directory)
 
 ```yaml

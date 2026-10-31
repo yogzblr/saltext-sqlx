@@ -4,4 +4,4 @@
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 export SQLX_E2E_DATA="${SQLX_E2E_DATA:-$HOME/e2e-data}"
-docker compose -f "$here/docker-compose.yml" down -v --remove-orphans
+docker compose -f "$here/docker-compose.yml" --profile local down -v --remove-orphans

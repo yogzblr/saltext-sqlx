@@ -26,6 +26,7 @@ reinstalls the extension from the read-only bind mount of the repository).
 | `pg-tls`, `mysql-tls`, `mariadb-tls` | `postgres:16`, `mysql:8.0`, `mariadb:10.11` | TLS-only servers (the Sakila images have no TLS); certificate SANs are the service names, the `*-tls-alias` network names are not in them |
 | `master` | `sqlx-e2e-salt:3008.5` (built from `salt/Dockerfile`) | salt-master + salt-api (rest_cherrypy, plain HTTP, 127.0.0.1:8000), `file` eauth |
 | `minion` | same | profiles of `salt/minion.d/10-sqlx.conf`, no call-time policy |
+| `minion-local-<db>` | same (`up.sh local`) | one per database, in that container's network namespace (`network_mode: service:<db>`): the minion runs on the database host and uses `127.0.0.1` / `localhost` (`salt/minion-local.d/`, `test_e2e_local.py`) |
 | `minion-policy` | same | the same profiles plus `salt/minion-policy.d/20-policy.conf` (call-time parameters for a host list) |
 
 There is no official `saltproject/salt` image (the Docker Hub repository does not exist, checked 2026-10-31), so the image

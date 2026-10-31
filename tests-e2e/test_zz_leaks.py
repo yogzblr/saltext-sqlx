@@ -34,8 +34,14 @@ def test_no_secret_in_job_cache_or_master_log(salt):  # pylint: disable=unused-a
     assert _grep("master", "/var/cache/salt/master /var/log/salt") == {}
 
 
-@pytest.mark.parametrize("minion", ["minion", "minion-policy"])
+@pytest.mark.parametrize(
+    "minion",
+    ["minion", "minion-policy"]
+    + [f"minion-local-{db}" for db in ("pg", "mysql", "mariadb", "oracle", "mssql")],
+)
 def test_no_secret_in_minion_cache_or_log(salt, minion):  # pylint: disable=unused-argument
+    if minion.startswith("minion-local-") and not compose("ps", "-q", minion).stdout.strip():
+        pytest.skip(f"{minion} is not running (tests-e2e/up.sh local)")
     assert _grep(minion, "/var/cache/salt/minion /var/log/salt") == {}
 
 

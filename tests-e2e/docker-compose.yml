@@ -108,6 +108,65 @@ services:
       - ./salt/e2e-secrets.yaml:/etc/salt/e2e-secrets.yaml:ro
       - ${SQLX_E2E_DATA:?run tests-e2e/up.sh}/pki:/etc/salt/sqlx-certs:ro
 
+  # ------------------------------------------------------------------ Same-host minions (up.sh local)
+  # Each shares the network namespace of one database container: 127.0.0.1 / localhost is that database server,
+  # as for a minion installed on the database VM itself. They reach the master by name through the same namespace.
+  minion-local-pg:
+    image: sqlx-e2e-salt:3008.5
+    command: ["minion-entrypoint.sh"]
+    profiles: [local]
+    network_mode: "service:pg"
+    depends_on: {master: {condition: service_healthy}, pg: {condition: service_healthy}}
+    volumes:
+      - ..:/src:ro
+      - ./salt/minion-local.d/pg.conf:/etc/salt/minion.d/10-local.conf:ro
+      - ./salt/e2e-secrets.yaml:/etc/salt/e2e-secrets.yaml:ro
+    healthcheck: {test: ["CMD-SHELL", "salt-call --local --out=txt sys.list_functions sqlx | grep -q sqlx.query"], interval: 5s, retries: 60, start_period: 20s}
+  minion-local-mysql:
+    image: sqlx-e2e-salt:3008.5
+    command: ["minion-entrypoint.sh"]
+    profiles: [local]
+    network_mode: "service:mysql"
+    depends_on: {master: {condition: service_healthy}, mysql: {condition: service_healthy}}
+    volumes:
+      - ..:/src:ro
+      - ./salt/minion-local.d/mysql.conf:/etc/salt/minion.d/10-local.conf:ro
+      - ./salt/e2e-secrets.yaml:/etc/salt/e2e-secrets.yaml:ro
+    healthcheck: {test: ["CMD-SHELL", "salt-call --local --out=txt sys.list_functions sqlx | grep -q sqlx.query"], interval: 5s, retries: 60, start_period: 20s}
+  minion-local-mariadb:
+    image: sqlx-e2e-salt:3008.5
+    command: ["minion-entrypoint.sh"]
+    profiles: [local]
+    network_mode: "service:mariadb"
+    depends_on: {master: {condition: service_healthy}, mariadb: {condition: service_healthy}}
+    volumes:
+      - ..:/src:ro
+      - ./salt/minion-local.d/mariadb.conf:/etc/salt/minion.d/10-local.conf:ro
+      - ./salt/e2e-secrets.yaml:/etc/salt/e2e-secrets.yaml:ro
+    healthcheck: {test: ["CMD-SHELL", "salt-call --local --out=txt sys.list_functions sqlx | grep -q sqlx.query"], interval: 5s, retries: 60, start_period: 20s}
+  minion-local-oracle:
+    image: sqlx-e2e-salt:3008.5
+    command: ["minion-entrypoint.sh"]
+    profiles: [local]
+    network_mode: "service:oracle"
+    depends_on: {master: {condition: service_healthy}, oracle: {condition: service_healthy}}
+    volumes:
+      - ..:/src:ro
+      - ./salt/minion-local.d/oracle.conf:/etc/salt/minion.d/10-local.conf:ro
+      - ./salt/e2e-secrets.yaml:/etc/salt/e2e-secrets.yaml:ro
+    healthcheck: {test: ["CMD-SHELL", "salt-call --local --out=txt sys.list_functions sqlx | grep -q sqlx.query"], interval: 5s, retries: 60, start_period: 20s}
+  minion-local-mssql:
+    image: sqlx-e2e-salt:3008.5
+    command: ["minion-entrypoint.sh"]
+    profiles: [local]
+    network_mode: "service:mssql"
+    depends_on: {master: {condition: service_healthy}, mssql: {condition: service_healthy}}
+    volumes:
+      - ..:/src:ro
+      - ./salt/minion-local.d/mssql.conf:/etc/salt/minion.d/10-local.conf:ro
+      - ./salt/e2e-secrets.yaml:/etc/salt/e2e-secrets.yaml:ro
+    healthcheck: {test: ["CMD-SHELL", "salt-call --local --out=txt sys.list_functions sqlx | grep -q sqlx.query"], interval: 5s, retries: 60, start_period: 20s}
+
 networks:
   e2e:
     driver: bridge
