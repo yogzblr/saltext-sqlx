@@ -1,6 +1,6 @@
 # saltext-sqlx
 Salt execution module that runs SQL on PostgreSQL, MySQL/MariaDB, Oracle and SQL Server and returns the database's real
-error. **Start with [docs/USER_GUIDE.md](docs/USER_GUIDE.md)** (install, profiles, usage, errors, eauth); `SPEC.md` is the contract.
+error. **Start with [docs/USER_GUIDE.md](docs/USER_GUIDE.md)** (install, connecting, usage, errors, eauth); `SPEC.md` is the contract.
 
 ## Install
 
@@ -16,8 +16,14 @@ On a Salt onedir install use `salt-pip install ...` instead of `pip`.
 
 ## Usage
 
-The execution module has the virtualname `sqlx`. Connection details live in profiles under
-`sqlx:profiles:<name>` in minion config or pillar; callers select a profile only by default (call-time parameters are opt-in, see "Call-time connection parameters"). `SPEC.md` is the contract.
+The execution module has the virtualname `sqlx`. A call reaches a database in one of two ways:
+
+- it names a **profile**, configured under `sqlx:profiles:<name>` in minion config or pillar (below); or
+- it sends the **connection details itself** (dialect, host, port, database, username, `sdb://` password, TLS,
+  timeouts) from the `salt` CLI, `salt-call` or salt-api, over a profile or with no profile at all. A minion policy
+  switches this on and limits it; see "Connection details in the call".
+
+`SPEC.md` is the contract.
 
 Profile example (SPEC section 3):
 
@@ -112,10 +118,47 @@ curl -sS http://127.0.0.1:51565/run -H 'Content-Type: application/json' -d '[{"c
 `params` arrives as an object and `limit` as an integer. A request for a profile the user is not allowed
 (`mysql_ro`) returns cherrypy's HTML error page and no job runs.
 
-### Call-time connection parameters (opt-in)
+### Connection details in the call
 
-By default a call names a profile and nothing else. An operator can allow chosen fields to be supplied at call time (and a
-Salt-compatible `sqlx.psql_query`) with a policy in the minion config or pillar. Nothing changes until it is set:
+Off until the operator lists the fields a call may send in `sqlx:_policy:allow_call_params` (minion config or pillar;
+never from the call). Every connection field can be listed; with `allow_adhoc_connection: true` a call needs no profile:
+
+```yaml
+sqlx:
+  _policy:
+    allow_call_params: [dialect, driver, host, port, database, username, password, ssl_mode, ssl_certs_dir,
+                        ssl_files, query, connect_args, connect_timeout_s, statement_timeout_ms, read_only]
+    allow_adhoc_connection: true
+    allowed_hosts: [db1.internal, db2.internal, 10.20.0.0/16]   # required: names, globs, IPs, CIDRs
+    allowed_ports: [5432, 3306, 1521, 1433]                       # optional
+```
+
+Ad-hoc calls (no profile) send `dialect`, `host`, `database` and `username` (and usually `port` and an `sdb://`
+`password`). Verified on all five databases through `salt`, `salt-call` and salt-api on a minion with no profiles
+(`tests-e2e/test_e2e_adhoc.py`); outputs below are from that run (Sakila data):
+
+```bash
+salt minion-adhoc sqlx.ping dialect=postgresql host=pg port=5432 database=sakila username=ro password=sdb://e2e_sdb/ro_pw
+#   {"ok": true, "dialect": "postgresql", "server_version": "18.4", "elapsed_ms": 185, "profile": "(adhoc)"}
+salt-call sqlx.query sql="select count(*) as n from film" connection='{"dialect":"postgresql","host":"pg","port":5432,"database":"sakila","username":"ro","password":"sdb://e2e_sdb/ro_pw"}'
+#   {"columns": ["n"], "rows": [[1000]], "row_count": 1, "truncated": false, "elapsed_ms": 15, "profile": "(adhoc)"}
+salt minion-adhoc sqlx.execute sql="delete from film where film_id = -1" dialect=postgresql host=pg port=5432 database=sakila username=ro password=sdb://e2e_sdb/ro_pw
+#   ERROR: [E_EXECUTE_DISABLED] profile '(adhoc)' does not set allow_execute: true
+```
+
+```bash
+curl -sS http://127.0.0.1:8000/run -H 'Content-Type: application/json' -d '[{"client": "local", "tgt": "minion-adhoc", "fun": "sqlx.query", "kwarg": {"dialect": "postgresql", "host": "pg", "port": 5432, "database": "sakila", "username": "ro", "password": "sdb://e2e_sdb/ro_pw", "sql": "select film_id, title from film where film_id <= CAST(:n AS INTEGER) order by film_id", "params": {"n": 2}}, "eauth": "file", "username": "e2e_full", "password": "..."}]'
+```
+```json
+{"return": [{"minion-adhoc": {"columns": ["film_id", "title"], "rows": [[1, "ACADEMY DINOSAUR"], [2, "ACE GOLDFINGER"]], "row_count": 2, "truncated": false, "elapsed_ms": 6, "profile": "(adhoc)"}}]}
+```
+
+A call can never run `execute` without a profile that sets `allow_execute: true`, never set `row_limit`,
+`allow_execute`, `execute_verbs` or `error_detail`, and can only lower timeouts and caps, turn `read_only` on and
+tighten `ssl_mode`. Keep writes on profiles.
+
+A call can also **overlay** a profile: it names `profile=` (or the minion sets `sqlx:default_profile`) and sends only the
+fields to change. A policy for that, narrower than the one above:
 
 ```yaml
 sqlx:
@@ -165,7 +208,9 @@ Pitfalls: `salt-call` shows the function docstring for a `SaltInvocationError` a
 to see it); a quoted `port='5432'` is a string and is refused, never coerced; when a `connection=` object is given, name `sql=`
 (a bare first word is taken as `profile`); `salt ... host=db2` is subject to `external_auth` regex limits on `host`,
 `connection`, `username` and the other fields (SECURITY section 4), and kwargs a rule does not name are not restricted by eauth,
-so the minion policy is the real control. Hard rules no policy relaxes, the per-field table and the `psql_query` differences
+so the minion policy is the real control. For ad-hoc calls pin `host` (and `dialect`) in the eauth rule, since there is
+no `profile` to match; such a rule refuses a call that hides its details in `connection=` (observed, HTTP 401), so callers
+use the flat keywords. The user guide, section 6, has the rule. Hard rules no policy relaxes, the per-field table and the `psql_query` differences
 from `postgres.psql_query` are in `SPEC.md` sections 3.2 and 4.7; the threat table is in `SECURITY.md` section 3.
 
 ### Authorization and what Salt stores
