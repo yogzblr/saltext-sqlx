@@ -107,6 +107,14 @@ services:
       - ./salt/minion-policy.d/20-policy.conf:/etc/salt/minion.d/20-policy.conf:ro
       - ./salt/e2e-secrets.yaml:/etc/salt/e2e-secrets.yaml:ro
       - ${SQLX_E2E_DATA:?run tests-e2e/up.sh}/pki:/etc/salt/sqlx-certs:ro
+  # No profiles at all: every connection detail comes from the call (salt/minion-adhoc.d, test_e2e_adhoc.py).
+  minion-adhoc:
+    <<: *minion
+    hostname: minion-adhoc
+    volumes:
+      - ..:/src:ro
+      - ./salt/minion-adhoc.d/10-adhoc.conf:/etc/salt/minion.d/10-adhoc.conf:ro
+      - ./salt/e2e-secrets.yaml:/etc/salt/e2e-secrets.yaml:ro
 
   # ------------------------------------------------------------------ Same-host minions (up.sh local)
   # Each shares the network namespace of one database container: 127.0.0.1 / localhost is that database server,

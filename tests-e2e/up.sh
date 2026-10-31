@@ -55,14 +55,14 @@ if [[ " $* " == *" local "* ]]; then
 fi
 
 if [ $# -eq 0 ] || [[ " $* " == *" salt "* ]]; then
-  echo "== salt: building and starting master, minion, minion-policy"
+  echo "== salt: building and starting master, minion, minion-policy, minion-adhoc"
   dc build master >>"$logs/up.log" 2>&1
-  dc up -d master minion minion-policy >>"$logs/up.log" 2>&1
-  for s in master minion minion-policy; do wait_healthy "$s" 600; echo "== $s: healthy"; done
-  # The minions authenticate to the master (auto_accept) shortly after start; wait until both answer.
+  dc up -d master minion minion-policy minion-adhoc >>"$logs/up.log" 2>&1
+  for s in master minion minion-policy minion-adhoc; do wait_healthy "$s" 600; echo "== $s: healthy"; done
+  # The minions authenticate to the master (auto_accept) shortly after start; wait until all three answer.
   for _ in $(seq 1 40); do
-    if [ "$(dc exec -T master salt --out=txt -t 10 -L minion,minion-policy test.ping 2>/dev/null | grep -c True)" -eq 2 ]; then
-      echo "== salt: both minions answer"; exit 0
+    if [ "$(dc exec -T master salt --out=txt -t 10 -L minion,minion-policy,minion-adhoc test.ping 2>/dev/null | grep -c True)" -eq 3 ]; then
+      echo "== salt: all three minions answer"; exit 0
     fi
     sleep 3
   done
