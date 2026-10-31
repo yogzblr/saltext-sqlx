@@ -154,7 +154,9 @@ sqlx:
 ```
 
 Rules: the directory must be under the policy root (symlink escapes are refused); the CA file is required; a client
-certificate needs its key and the other way round; a private key readable by group or others is refused (`chmod 600`).
+certificate needs its key and the other way round; a private key readable by group or others is refused (`chmod 600`). On a Windows minion client keys are refused
+(their access cannot be checked there): use a directory with the CA file only, for server verification without a client
+certificate.
 File names default to `ca.pem`, `client.pem`, `client.key`; override with `ssl_files: {ca: ..., cert: ..., key: ...}`.
 Verified on PostgreSQL, MySQL and MariaDB; Oracle wallet mapping is unverified; SQL Server is refused.
 

@@ -8,7 +8,11 @@ Uses real package metadata (``tests/security/licences.py``). The same check runs
 
 import importlib.metadata as md
 import pathlib
-import tomllib
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python 3.10: tomllib is 3.11+
+    tomllib = None  # pylint: disable=invalid-name
 
 import pytest
 
@@ -88,6 +92,7 @@ def test_gate_fails_on_an_lgpl_nobody_accepted():
     assert not licences.violations([("pymssql", "2.4.6", "LGPL-2.1", "lgpl")])
 
 
+@pytest.mark.skipif(tomllib is None, reason="tomllib needs Python 3.11+")
 def test_gpl_driver_mysqlclient_is_neither_installed_nor_declared():
     with pytest.raises(md.PackageNotFoundError):
         md.distribution("mysqlclient")

@@ -42,7 +42,9 @@ def job(call):
     return {"ok": ok, "bad": bad}
 
 
-def test_password_is_not_in_the_job_cache_or_logs(job, master, minion):  # pylint: disable=unused-argument
+def test_password_is_not_in_the_job_cache_or_logs(
+    job, master, minion
+):  # pylint: disable=unused-argument
     cache = master.config["cachedir"]
     assert _files_containing(cache, RO_PASSWORD) == []
     assert RO_PASSWORD not in pathlib.Path(master.config["log_file"]).read_text(encoding="utf-8")
@@ -71,7 +73,9 @@ def test_job_return_does_not_carry_the_sql_or_the_secret(job, master, salt_run_c
         assert RO_PASSWORD.encode() not in path.read_bytes()
 
 
-def test_minion_audit_line_has_the_hash_and_not_the_sql(job, minion):  # pylint: disable=unused-argument
+def test_minion_audit_line_has_the_hash_and_not_the_sql(
+    job, minion
+):  # pylint: disable=unused-argument
     text = pathlib.Path(minion.config["log_file"]).read_text(encoding="utf-8")
     audit = [line for line in text.splitlines() if "sqlx audit" in line]
     assert audit, "no audit line in the minion log"

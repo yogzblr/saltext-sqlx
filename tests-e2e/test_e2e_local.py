@@ -9,10 +9,10 @@ import contextlib
 
 import pytest
 from conftest import DBS
-from conftest import compose
 from conftest import SECRETS
 from conftest import assert_error
 from conftest import assert_ok
+from conftest import compose
 from dbs import sql
 
 DIALECT = {

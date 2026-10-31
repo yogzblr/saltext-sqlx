@@ -120,6 +120,11 @@ exclude_patterns = [
     ".gitlab-ci",
     ".gitignore",
     "sitevars.rst",
+    # Not pages of the published docs: inputs of scripts/probes/render_wire_shapes.py and project working notes.
+    "wire_shapes",
+    "CLAUDE_CODE_PROMPT.md",
+    "PACK_README.md",
+    "SECURITY_REVIEW.md",
 ]
 
 autosummary_generate = False

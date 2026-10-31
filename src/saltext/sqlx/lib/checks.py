@@ -144,7 +144,8 @@ def _finish(outcome, operator, expected, attempts):
     result = {
         "ok": outcome["ok"],
         "actual": outcome["actual"],
-        "expected": serialize.serialize_value(expected),  # NaN / Infinity are not valid JSON (T11 D6)
+        # NaN / Infinity are not valid JSON (T11 D6)
+        "expected": serialize.serialize_value(expected),
         "operator": operator,
         "attempts": attempts,
     }

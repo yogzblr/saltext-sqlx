@@ -39,7 +39,8 @@ def serialize_value(value):  # pylint: disable=too-many-return-statements
     if value is None or isinstance(value, bool):
         return value
     if isinstance(value, str):
-        return value if type(value) is str else str.__str__(value)  # pylint: disable=unidiomatic-typecheck
+        # pylint: disable-next=unidiomatic-typecheck
+        return value if type(value) is str else str.__str__(value)
     if isinstance(value, int):
         return value if type(value) is int else int(value)  # pylint: disable=unidiomatic-typecheck
     if isinstance(value, float):

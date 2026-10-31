@@ -9,6 +9,7 @@ Salt extension to run SQL on PostgreSQL, MySQL/MariaDB, Oracle and SQL Server vi
   :hidden:
 
   topics/installation
+  USER_GUIDE
 
 .. toctree::
   :maxdepth: 2
@@ -16,6 +17,7 @@ Salt extension to run SQL on PostgreSQL, MySQL/MariaDB, Oracle and SQL Server vi
   :hidden:
 
   ref/modules/index
+  ref/lib/index
 
 .. toctree::
   :maxdepth: 2
@@ -23,6 +25,7 @@ Salt extension to run SQL on PostgreSQL, MySQL/MariaDB, Oracle and SQL Server vi
   :hidden:
 
   changelog
+  WIRE_SHAPES
 
 
 Indices and tables

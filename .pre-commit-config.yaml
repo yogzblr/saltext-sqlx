@@ -75,7 +75,7 @@ repos:
         exclude: src/saltext/sqlx/(__init__|version).py
 
   - repo: https://github.com/psf/black
-    rev: 87928e6d6761a4a6d22250e1fee5601b3998086e  # 26.5.1
+    rev: 258e7dbf348bc23cb70b8cdf693481c04634ebcc  # 26.10.1
     hooks:
       - id: black
         args: [-l 100]
@@ -88,7 +88,7 @@ repos:
         args: [--skip-errors]
         files: ^(docs/.*\.rst|src/saltext/sqlx/.*\.py)$
         additional_dependencies:
-          - black==26.5.1
+          - black==26.10.1
   # <---- Formatting -----------------------------------------------------------------------------
 
   # ----- Security ------------------------------------------------------------------------------>

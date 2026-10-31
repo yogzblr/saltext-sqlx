@@ -12,6 +12,8 @@ Rules kept here:
 * File **contents are never read** (not even to check the format) and never appear in a message; messages name a file
   by its plain name only, never by path. ``scrub`` removes paths from driver messages as a second line of defence.
 * A file symlink is followed with ``realpath`` and the target must still be under the root.
+* A client private key is accepted only after its Unix file mode passes ``key_mode_ok``; Windows has no such modes,
+  so a Windows minion refuses every client key (``[E_POLICY]``). A CA-only directory works there.
 * No driver imports and no Salt dunders (R15). The only Salt import is the exception class, as in ``profiles.py``.
 
 Oracle TLS is UNVERIFIED(T1b): Oracle ran in T1b, but without a TCPS listener; see ``OracleTLS`` below. SQL Server is
@@ -38,6 +40,8 @@ POLICY_KEY = "ssl_certs_dir_root"
 SSL_MODES = ("verify-full", "verify-ca")
 _WEAK_MODES = ("disable", "prefer", "allow")
 _DEFAULT_MODE = "verify-full"
+# os.stat on Windows reports only the read-only bit, never who may read a file, so a key's access cannot be checked.
+_WINDOWS = os.name == "nt"
 
 #: role -> candidate default file names (first is the documented one; the second is the unambiguous fallback)
 _DEFAULTS = {
@@ -179,7 +183,7 @@ def _directory(name, raw, root):
     given = raw["ssl_certs_dir"]
     if not isinstance(given, str) or not given or "\x00" in given or not os.path.isabs(given):
         _invalid(name, "'ssl_certs_dir' must be an absolute directory path")
-    if ".." in given.split(os.sep):
+    if ".." in given.replace(os.altsep or os.sep, os.sep).split(os.sep):  # Windows takes "/" too
         _invalid(name, "'ssl_certs_dir' must not contain '..'")
     real = os.path.realpath(given)
     if not _under(real, root):
@@ -244,6 +248,12 @@ def _files(name, directory, root, wanted, dialect):
             name,
             f"client certificate '{shown['cert']}' and private key '{shown['key']}' must both exist "
             "(a client certificate needs its key and a key needs its certificate)",
+        )
+    if paths["key"] and _WINDOWS:
+        _policy_error(
+            name,
+            f"private key file '{shown['key']}' cannot be used on a Windows minion, where its access cannot be "
+            "checked; use a directory without a client certificate and key (server verification only)",
         )
     if paths["key"] and not key_mode_ok(os.stat(paths["key"])):
         _policy_error(
