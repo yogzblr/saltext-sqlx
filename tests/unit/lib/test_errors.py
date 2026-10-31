@@ -460,6 +460,10 @@ def _my(code, message, sqlstate=None, cls_name="OperationalError"):
         (1366, "HY000", "E_SQL_DATA"),
         (1366, "22007", "E_SQL_DATA"),
         (1062, "23000", "E_CONSTRAINT"),
+        # T1b (MySQL 9.7.1, MariaDB 12.3.2): NOT NULL column left out in strict mode, SQLSTATE HY000; explicit NULL is 1048
+        (1364, "HY000", "E_CONSTRAINT"),
+        (1048, "23000", "E_CONSTRAINT"),
+        (1452, "23000", "E_CONSTRAINT"),
         (1792, "25006", "E_READ_ONLY"),
         (3024, "HY000", "E_TIMEOUT"),
         (1969, "70100", "E_TIMEOUT"),

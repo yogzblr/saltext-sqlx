@@ -223,6 +223,9 @@ _MY_CODES = {
     1792: "E_READ_ONLY",
     3159: "E_CONNECT",  # MySQL require_secure_transport=ON and the client did not use TLS (observed)
     1062: "E_CONSTRAINT",
+    1048: "E_CONSTRAINT",  # column cannot be null (explicit NULL), SQLSTATE 23000 (T1b)
+    1364: "E_CONSTRAINT",  # NOT NULL column without a default left out (strict mode), SQLSTATE HY000 (T1b)
+    1452: "E_CONSTRAINT",  # foreign key: cannot add or update a child row, SQLSTATE 23000 (T1b)
     1064: "E_SQL",
     1146: "E_SQL",
     1054: "E_SQL",
