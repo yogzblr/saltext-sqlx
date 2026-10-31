@@ -157,6 +157,13 @@ external_auth:
   `host=192.0.2.9` through eauth; the minion policy then refuses it with `[E_POLICY]`). Pin `host`, `port`, `username`,
   `password`, `dialect`, `database` and `connection` for every user and function that matters, and treat the minion-side
   `allowed_hosts` and `allow_call_params` as the control that holds when a rule is incomplete.
+* **Ad-hoc calls** (no profile, `allow_adhoc_connection: true`) have no `profile` to match, so a rule must pin `host` (and
+  `dialect`). Re-verified end to end on Salt 3008.5 (`tests-e2e/test_e2e_adhoc.py`, user `adhoc_ops` with
+  `host: '^(pg|mysql)$'` and `dialect: '^(postgresql|mysql)$'`): a host or dialect outside the rule, a call without
+  `host`, and a call with its details in `connection=` are HTTP 401 with no job. Each regex is matched on its own: the
+  same rule let `host=pg` with `dialect=mysql` through (the minion then failed to talk MySQL to the PostgreSQL port,
+  `[E_TIMEOUT]`). eauth cannot tie a host to a dialect or port; `allowed_hosts`, `allowed_ports` and `allowed_dialects`
+  on the minion are the controls for combinations.
 
 ## 5. Audit
 

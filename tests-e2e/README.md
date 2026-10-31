@@ -11,7 +11,7 @@ tests-e2e/down.sh                    # stop everything and remove the volumes
 
 `up.sh pg mysql` starts a subset; `up.sh salt` only the Salt part. Logs go to `$SQLX_E2E_LOGS` (default `~/e2e-logs`),
 the throw-away PKI to `$SQLX_E2E_DATA` (default `~/e2e-data`; it must be on the Linux filesystem, never `/mnt/c`).
-After a code change: `docker compose -f tests-e2e/docker-compose.yml restart minion minion-policy` (the entrypoint
+After a code change: `docker compose -f tests-e2e/docker-compose.yml restart minion minion-policy minion-adhoc` (the entrypoint
 reinstalls the extension from the read-only bind mount of the repository).
 
 ## What runs
@@ -28,6 +28,7 @@ reinstalls the extension from the read-only bind mount of the repository).
 | `minion` | same | profiles of `salt/minion.d/10-sqlx.conf`, no call-time policy |
 | `minion-local-<db>` | same (`up.sh local`) | one per database, in that container's network namespace (`network_mode: service:<db>`): the minion runs on the database host and uses `127.0.0.1` / `localhost` (`salt/minion-local.d/`, `test_e2e_local.py`) |
 | `minion-policy` | same | the same profiles plus `salt/minion-policy.d/20-policy.conf` (call-time parameters for a host list) |
+| `minion-adhoc` | same | no profiles: `salt/minion-adhoc.d/10-adhoc.conf` allows every call-time field and ad-hoc connections to the five databases (`test_e2e_adhoc.py`; eauth user `adhoc_ops` pins `host`/`dialect`) |
 
 There is no official `saltproject/salt` image (the Docker Hub repository does not exist, checked 2026-10-31), so the image
 is built from the Salt Project onedir tarball 3008.5. **Its Python is 3.14.7**, not 3.11; every driver wheel
