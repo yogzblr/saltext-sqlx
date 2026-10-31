@@ -40,6 +40,13 @@ def policy(root):
     return {"ssl_certs_dir_root": str(root)}
 
 
+# A client key is accepted only after its Unix file mode is checked; Windows minions refuse every client key
+# (test_windows_refuses_client_keys), so the tests that need an accepted key cannot run there.
+UNIX_MODES = pytest.mark.skipif(
+    os.name == "nt", reason="client keys are refused on Windows (no Unix file modes)"
+)
+
+
 def make_dir(root, name="db1", ca="ca.pem", cert="client.pem", key="client.key", key_mode=0o600):
     """Create ``root/name`` with the given files (None = absent). Contents are a marker, never parsed."""
     path = root / name
@@ -86,6 +93,7 @@ def test_ssl_mode_and_files_need_a_directory(extra):
 
 
 # -- the happy path and the default names -------------------------------------------------------------------------
+@UNIX_MODES
 def test_defaults_mtls(root, policy):
     path = make_dir(root)
     out = load(prof(path), policy)["tls"]
@@ -101,9 +109,10 @@ def test_defaults_mtls(root, policy):
 
 def test_ca_only_directory_has_no_client_identity(root, policy):
     out = load(prof(make_dir(root, cert=None, key=None)), policy)["tls"]
-    assert out["cert"] is None and out["key"] is None and out["ca"].endswith("/ca.pem")
+    assert out["cert"] is None and out["key"] is None and out["ca"].endswith(os.sep + "ca.pem")
 
 
+@UNIX_MODES
 def test_fallback_names_crt(root, policy):
     out = load(prof(make_dir(root, ca="ca.crt", cert="client.crt")), policy)["tls"]
     assert out["ca"].endswith("/ca.crt") and out["cert"].endswith("/client.crt")
@@ -123,6 +132,7 @@ def test_ambiguous_client_cert_names_are_refused(root, policy):
     assert "client.pem" in text and "client.crt" in text
 
 
+@UNIX_MODES
 def test_ssl_files_override_default_names(root, policy):
     path = make_dir(root, ca="root.pem", cert="me.pem", key="me.key")
     raw = prof(path, ssl_files={"ca": "root.pem", "cert": "me.pem", "key": "me.key"})
@@ -136,6 +146,7 @@ def test_ssl_files_explicit_name_disables_fallback(root, policy):
     assert "'ca.pem'" in text
 
 
+@UNIX_MODES
 @pytest.mark.parametrize("mode", ["verify-full", "verify-ca"])
 def test_modes(root, policy, mode):
     assert load(prof(make_dir(root), ssl_mode=mode), policy)["tls"]["mode"] == mode
@@ -220,6 +231,7 @@ def test_directory_symlink_escaping_root(root, policy, tmp_path):
     fails("E_POLICY", prof(link), policy)
 
 
+@UNIX_MODES
 def test_directory_symlink_inside_root_is_followed(root, policy):
     path = make_dir(root, "real")
     (root / "alias").symlink_to(path)
@@ -232,6 +244,7 @@ def test_root_itself_may_hold_the_files(root, policy):
     assert load(prof(root), policy)["tls"]["dir"] == os.path.realpath(root)
 
 
+@UNIX_MODES
 def test_root_given_through_a_symlink(tmp_path):
     real = tmp_path / "real"
     real.mkdir()
@@ -307,6 +320,7 @@ def test_ssl_files_unknown_key_and_shape(root, policy):
     fails("E_PROFILE_INVALID", prof(path, ssl_files=["ca.pem"]), policy)
 
 
+@UNIX_MODES
 def test_ssl_files_null_means_defaults(root, policy):
     assert load(prof(make_dir(root), ssl_files=None), policy)["tls"]["ca"].endswith("ca.pem")
 
@@ -345,6 +359,7 @@ def test_explicit_names_that_do_not_exist(root, policy):
 
 
 # -- key permissions ----------------------------------------------------------------------------------------------------
+@UNIX_MODES
 @pytest.mark.parametrize("mode", [0o644, 0o664, 0o604, 0o666, 0o640 | 0o010, 0o620])
 def test_key_with_group_or_world_access_is_policy_error(root, policy, mode):
     path = make_dir(root, key_mode=mode)
@@ -352,9 +367,25 @@ def test_key_with_group_or_world_access_is_policy_error(root, policy, mode):
     assert "client.key" in text and "chmod" in text and "600" in text
 
 
+@UNIX_MODES
 @pytest.mark.parametrize("mode", [0o600, 0o400])
 def test_owner_only_key_is_accepted(root, policy, mode):
     assert load(prof(make_dir(root, key_mode=mode)), policy)["tls"]["key"]
+
+
+def test_windows_refuses_client_keys(root, policy, monkeypatch):
+    # os.stat on Windows reports only the read-only bit, so every key would look world-readable: refuse with the
+    # real reason instead of a chmod hint that cannot help.
+    monkeypatch.setattr(tls, "_WINDOWS", True)
+    path = make_dir(root)
+    text = fails("E_POLICY", prof(path), policy, absent=(str(path), "chmod"))
+    assert "client.key" in text and "Windows" in text and "without a client certificate" in text
+
+
+def test_windows_accepts_a_ca_only_directory(root, policy, monkeypatch):
+    monkeypatch.setattr(tls, "_WINDOWS", True)
+    out = load(prof(make_dir(root, cert=None, key=None)), policy)["tls"]
+    assert out["cert"] is None and out["key"] is None and out["ca"].endswith(os.sep + "ca.pem")
 
 
 def stat_of(mode, uid):
@@ -393,6 +424,7 @@ def test_unreadable_files_are_refused(root, policy, monkeypatch):
     assert "client.key" in text and "not readable" in text
 
 
+@UNIX_MODES
 def test_file_contents_are_never_read(root, policy, monkeypatch):
     path = make_dir(root)
 
@@ -425,6 +457,7 @@ def test_tls_keys_in_query_or_connect_args_conflict(root, policy, dialect, where
     assert key in text and "ssl_mode" in text
 
 
+@UNIX_MODES
 def test_non_tls_query_keys_are_left_alone(root, policy):
     out = load(prof(make_dir(root), query={"application_name": "x"}), policy)
     assert out["query"] == {"application_name": "x"}
@@ -462,7 +495,7 @@ def test_oracle_needs_the_wallet_and_takes_no_ssl_files(root, policy):
     assert "ewallet.pem" in text
     (path / "ewallet.pem").write_text("w")
     out = load(prof(path, "oracle"), policy)["tls"]
-    assert out["ca"].endswith("/ewallet.pem") and out["cert"] is None and out["key"] is None
+    assert out["ca"].endswith(os.sep + "ewallet.pem") and out["cert"] is None and out["key"] is None
     text = fails("E_PROFILE_INVALID", prof(path, "oracle", ssl_files={"ca": "ewallet.pem"}), policy)
     assert "oracle" in text
 
@@ -476,6 +509,7 @@ def tls_profile(root, policy, dialect, mode="verify-full", **dirkw):
     return load(prof(path, dialect, ssl_mode=mode), policy)
 
 
+@UNIX_MODES
 def test_postgresql_mapping_mtls(root, policy):
     p = tls_profile(root, policy, "postgresql")
     real = p["tls"]["dir"]
@@ -495,6 +529,7 @@ def test_postgresql_mapping_server_auth_only_disables_default_client_cert(root, 
     assert "sslcert" not in args and "sslkey" not in args
 
 
+@UNIX_MODES
 @pytest.mark.parametrize("mode,identity", [("verify-full", True), ("verify-ca", False)])
 def test_mysql_mapping(root, policy, mode, identity):
     p = tls_profile(root, policy, "mysql", mode=mode)
@@ -532,6 +567,7 @@ def test_mapping_is_empty_without_tls_and_mssql_never_maps():
         assert not tls.query_args(dialect, plain) and not tls.connect_args(dialect, plain)
 
 
+@UNIX_MODES
 def test_adapters_apply_the_mapping(root, policy):
     pg = tls_profile(root, policy, "postgresql")
     url = dialects.adapter("postgresql").url(pg, "pw")
@@ -554,6 +590,7 @@ def test_adapter_fails_closed_for_unresolved_tls_config():
 
 
 # -- load_profile reads sqlx:_policy ----------------------------------------------------------------------------------------
+@UNIX_MODES
 def test_load_profile_uses_policy_from_the_sqlx_mapping(root, policy):
     path = make_dir(root)
     config = {"_policy": policy, "profiles": {"p": prof(path)}}
@@ -572,6 +609,7 @@ def test_policy_section_is_not_a_profile(policy):
 
 
 # -- no path or key material in anything we say ----------------------------------------------------------------------------------
+@UNIX_MODES
 def test_scrub_replaces_paths_with_file_names(root, policy):
     p = tls_profile(root, policy, "postgresql")
     real = p["tls"]["dir"]
@@ -589,6 +627,7 @@ def test_scrub_leaves_text_alone_without_tls():
     assert tls.scrub("see /var/log/x.log", plain) == "see /var/log/x.log"
 
 
+@UNIX_MODES
 def test_scrub_handles_each_path_separator_context(root, policy):
     p = tls_profile(root, policy, "mysql")
     real = p["tls"]["dir"]
