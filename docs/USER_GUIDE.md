@@ -201,6 +201,11 @@ $body = ConvertTo-Json -Depth 5 @(@{
 Invoke-RestMethod -Method Post -Uri 'https://salt-api.example:8000/run' -ContentType 'application/json' -Body $body
 ```
 
+Verified from Windows PowerShell against the e2e salt-api (Docker Desktop, port published on 127.0.0.1, so reachable as
+`http://localhost:8000`; plain HTTP there, never on a real master): `sqlx.ping` with `eauth = 'file'` returned
+`{"return": [{"minion": {"ok": true, "dialect": "postgresql", "server_version": "18.4", ...}}]}`. Pipe the result to
+`ConvertTo-Json -Depth 6` to see nested values; PowerShell shows them as `@{...}` otherwise.
+
 ## 5. Reading errors
 
 A failure always carries a code and the database's own text, never the SQL, bound values or secrets:
