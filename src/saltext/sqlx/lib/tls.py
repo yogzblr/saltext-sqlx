@@ -14,7 +14,8 @@ Rules kept here:
 * A file symlink is followed with ``realpath`` and the target must still be under the root.
 * No driver imports and no Salt dunders (R15). The only Salt import is the exception class, as in ``profiles.py``.
 
-Oracle and SQL Server are UNVERIFIED(T1b): no server was available; see ``OracleTLS`` below and ``validate``.
+Oracle TLS is UNVERIFIED(T1b): Oracle ran in T1b, but without a TCPS listener; see ``OracleTLS`` below. SQL Server is
+refused in ``validate`` (observed end to end in T1b).
 """
 
 import os
@@ -323,7 +324,7 @@ def connect_args(dialect, profile):
             args.update(ssl_cert=conf["cert"], ssl_key=conf["key"])
         return args
     if dialect == "oracle":
-        # UNVERIFIED(T1b): names from the python-oracledb thin-mode documentation; no Oracle server was available.
+        # UNVERIFIED(T1b): names from the python-oracledb thin-mode documentation; the T1b Oracle server had no TCPS listener.
         return {
             "protocol": "tcps",
             "wallet_location": conf["dir"],

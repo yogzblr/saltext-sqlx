@@ -14,9 +14,9 @@ Rules honoured here:
 * The module's own SQL is constant text plus at most one integer that went through ``int()`` (ARCHITECTURE
   section 3). Caller SQL never passes through this module.
 
-PostgreSQL, MySQL and MariaDB behaviour is verified (docs/WIRE_SHAPES.md). Every statement or mechanism for Oracle
-and SQL Server comes from documentation (SPEC section 7) and is marked ``UNVERIFIED(T1)``; each mechanism sits in
-its own small function so that recorded facts can replace it without touching anything else. This module has no Salt dunders.
+PostgreSQL, MySQL and MariaDB behaviour is verified (docs/WIRE_SHAPES.md, T1); Oracle 23.26.2 and SQL Server 2022 were
+verified by task T1b (WIRE_SHAPES sections 14-15, end to end through ``tests-e2e/``). Each mechanism sits in its own small
+function so that recorded facts can replace it without touching anything else. This module has no Salt dunders.
 """
 
 import importlib
@@ -287,31 +287,33 @@ class Oracle(Adapter):
     pip_extra = "oracle"
     drivername = "oracle+oracledb"
     ping_sql = "SELECT 1 FROM DUAL"
-    # UNVERIFIED(T1): argument names are from the oracledb documentation.
+    # T1b: each name was passed to python-oracledb 26.1.0 by the e2e ``oracle_args`` profile and the connection succeeded;
+    # the effect of expire_time / retry_* was not measured, ssl_server_dn_match was not run against a TCPS listener.
     allowed_args = frozenset({"expire_time", "retry_count", "retry_delay", "ssl_server_dn_match"})
 
     def _database(self, profile):
-        # UNVERIFIED(T1): SQLAlchemy treats URL.database as an Oracle SID; the profile ``database`` is used as the
-        # service name instead (``service_name`` query argument), which is what current Oracle servers expose.
+        # SQLAlchemy treats URL.database as an Oracle SID; the profile ``database`` is the service name instead
+        # (``service_name`` query argument). T1b: service ``SAKILA`` (a PDB) connected; an unknown service is DPY-6005.
         return None
 
     def _extra_query(self, profile):
         return {"service_name": profile["database"]}
 
     def _timeout_connect_args(self, profile):
-        # UNVERIFIED(T1): oracledb ``tcp_connect_timeout`` (seconds) from documentation.
+        # T1b: ``tcp_connect_timeout`` (seconds); an unreachable host failed with DPY-6005 "timed out" after 3.0 s for 3.
         return {"tcp_connect_timeout": profile["connect_timeout_s"]}
 
     def _set_timeout(self, conn, ms):
-        # UNVERIFIED(T1): ``call_timeout`` is documented in milliseconds on the oracledb connection object.
+        # T1b: ``call_timeout`` in milliseconds, client-side: DPY-4024 for a query, DPY-4011 for a PL/SQL call (E_TIMEOUT).
         conn.connection.driver_connection.call_timeout = int(ms)
 
     def _set_read_only(self, conn):
-        # UNVERIFIED(T1): must be the first statement of the transaction (documentation).
+        # T1b: must be the first statement of the transaction; writes then fail with ORA-01456. Bypassable by one PL/SQL
+        # block that commits (``begin commit; insert ...; commit; end;``): the database role is the control.
         conn.exec_driver_sql("SET TRANSACTION READ ONLY")
 
     def version(self, conn):
-        # UNVERIFIED(T1): oracledb exposes the server version as ``Connection.version`` (no query, no privilege).
+        # T1b: ``Connection.version`` is "23.26.2.0.0" (no query, no privilege needed).
         return str(getattr(conn.connection.driver_connection, "version", "") or "")
 
 
@@ -323,12 +325,13 @@ class MSSQL(Adapter):
     module = "pymssql"
     pip_extra = "mssql"
     drivername = "mssql+pymssql"
-    # UNVERIFIED(T1): argument names are from the pymssql documentation.
+    # T1b: each name was passed to pymssql 2.4.6 by the e2e ``mssql_args`` profile; ``appname`` arrived (``app_name()``).
     allowed_args = frozenset({"appname", "charset", "tds_version"})
     _version_sql = "SELECT @@VERSION"
 
     def _timeout_connect_args(self, profile):
-        # UNVERIFIED(T1): pymssql ``login_timeout`` and ``timeout`` (query timeout) are seconds, per documentation.
+        # T1b: ``login_timeout`` and ``timeout`` are whole seconds. A statement over ``timeout`` fails with DB-Lib 20003
+        # (E_TIMEOUT) and leaves the connection dead; an unreachable host fails with 20009 after ``login_timeout``.
         # ``timeout`` is a connect argument, so there is no session statement for it.
         return {
             "login_timeout": profile["connect_timeout_s"],
