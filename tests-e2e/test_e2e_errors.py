@@ -66,7 +66,7 @@ def test_read_only_guard_on_query(salt, db, path):
     res = salt.run(
         path,
         "sqlx.query",
-        profile=f"{db}_rw",
+        profile=f"{db}_rw_guarded",
         sql=sql(db, "unique").replace("(1, 'dup')", "(9301, 'ro')"),
     )
     if db == "mssql":
@@ -89,11 +89,21 @@ def test_statement_timeout(salt, db, path):
     assert res.elapsed < 15, res.elapsed
 
 
+def test_mysql_sleep_is_cut_short_silently(salt):
+    # Observed on MySQL 9.7.1: MAX_EXECUTION_TIME interrupts SLEEP() without an error, even in a SELECT that reads a table
+    data = assert_ok(
+        salt.cli(
+            "sqlx.query", profile="mysql_ro", sql=sql("mysql", "sleep_silent"), timeout_ms=1000
+        )
+    )
+    assert data["rows"] == [[1]] and data["elapsed_ms"] < 3000
+
+
 @pytest.mark.parametrize("db", ("mysql", "mariadb"))
 def test_timeout_backstop_when_the_statement_lifts_the_server_limit(salt, db):
     res = salt.cli("sqlx.query", profile=f"{db}_ro", sql=sql(db, "sleep_hint"), timeout_ms=1000)
     assert_error(res, "E_TIMEOUT", "2013")
-    assert res.elapsed < 10
+    assert res.elapsed < 20  # read_timeout (timeout + 1 s) plus the salt CLI start-up
 
 
 CONNECT_ERRORS = [
@@ -147,7 +157,9 @@ def test_tls(salt, db, case, code, texts):
     elif case == "tls_plain":
         expected = {
             "pg": ("E_CONNECT", "no encryption"),
-            "mysql": ("E_CONNECT", "3159"),
+            # MySQL 8.0.44 with require_secure_transport=ON answers 1045 to a plain connection (observed;
+            # T1 saw 3159 on a native 8.0.46)
+            "mysql": ("E_AUTH_FAILED", "1045"),
             "mariadb": ("E_AUTH_FAILED", "1045"),
         }[db]
         assert_error(res, *expected)
@@ -168,6 +180,13 @@ def test_tls_mssql_refused_and_oracle_wallet_required(salt):
 @pytest.mark.parametrize("path", PATHS)
 @pytest.mark.parametrize("db", DBS)
 def test_multi_statement_execute(salt, db, path):
+    for note_id in (
+        9101,
+        9102,
+    ):  # rows a run without the SQL Server batch refusal may have committed
+        salt.api(
+            "sqlx.execute", profile=f"{db}_rw", sql=sql(db, "delete_note"), params={"i": note_id}
+        )
     res = salt.run(path, "sqlx.execute", profile=f"{db}_rw", sql=sql(db, "multi_dml"))
     assert_error(res, _multi_code(db), TEXT["multi"][db])
     assert assert_ok(

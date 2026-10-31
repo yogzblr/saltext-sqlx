@@ -376,3 +376,21 @@ def test_execute_verb_filter(salt, db):
         salt.cli("sqlx.execute", profile=rw, sql=sql(db, "exec_comment")), "E_POLICY", "/*!"
     )
     assert_error(salt.cli("sqlx.execute", profile=rw, sql="-- only a comment"), "E_OPTION_INVALID")
+
+
+APP_NAME_SQL = {
+    "pg": ("select current_setting('application_name') as a", "sqlx-e2e-q"),
+    "mssql": ("select app_name() as a", "sqlx-e2e-app"),
+    "mysql": ("select @@session.character_set_client as a", "utf8mb4"),
+    "mariadb": ("select @@session.character_set_client as a", "utf8mb4"),
+    "oracle": ("select 1 as a from dual", 1),
+}
+
+
+@pytest.mark.parametrize("db", DBS)
+def test_allowlisted_driver_arguments_reach_the_driver(salt, db):
+    assert assert_ok(salt.cli("sqlx.ping", profile=f"{db}_args"))["ok"] is True
+    query, expected = APP_NAME_SQL[db]
+    assert assert_ok(salt.cli("sqlx.query", profile=f"{db}_args", sql=query))["rows"] == [
+        [expected]
+    ]

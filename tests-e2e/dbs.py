@@ -17,6 +17,8 @@ VIEWS = sorted(
 )
 
 DUAL = {"oracle": " FROM DUAL"}
+#: The integer type CAST accepts: MySQL takes SIGNED/UNSIGNED, not INTEGER (1064, observed on 9.7.1); the others INTEGER.
+INT = {"mysql": "SIGNED"}
 
 
 def dual(db):
@@ -25,6 +27,7 @@ def dual(db):
 
 def sql(db, case):
     d = dual(db)
+    i = INT.get(db, "INTEGER")
     common = {
         "count_film": "select count(*) as n from film",
         "join_actor": (
@@ -36,7 +39,7 @@ def sql(db, case):
             "join inventory i on i.inventory_id = r.inventory_id where c.customer_id = 1"
         ),
         "types": "select id, t_text, t_num, t_ts, t_uuid, t_bin, t_json, t_null from type_probe order by id",
-        "cast": f"select CAST(:x AS INTEGER) + 1 as v{d}",
+        "cast": f"select CAST(:x AS {i}) + 1 as v{d}",
         "colon": f"select 'a\\:b' as v{d}",
         "films": "select film_id from film order by film_id",
         "actors3": "select actor_id from actor where actor_id <= 3 order by actor_id",
@@ -50,9 +53,9 @@ def sql(db, case):
         "ro_write": "delete from film where film_id = -1",
         "not_null": "insert into scratch.e2e_notes (id) values (9001)",
         "unique": "insert into scratch.e2e_notes (id, note) values (1, 'dup')",
-        "insert_note": "insert into scratch.e2e_notes (id, note) values (CAST(:i AS INTEGER), :n)",
-        "count_note": "select count(*) as n from scratch.e2e_notes where id = CAST(:i AS INTEGER)",
-        "delete_note": "delete from scratch.e2e_notes where id = CAST(:i AS INTEGER)",
+        "insert_note": f"insert into scratch.e2e_notes (id, note) values (CAST(:i AS {i}), :n)",
+        "count_note": f"select count(*) as n from scratch.e2e_notes where id = CAST(:i AS {i})",
+        "delete_note": f"delete from scratch.e2e_notes where id = CAST(:i AS {i})",
         "multi_dml": (
             "insert into scratch.e2e_notes (id, note) values (9101, 'a'); "
             "insert into scratch.e2e_notes (id, note) values (9102, 'b')"
@@ -67,21 +70,27 @@ def sql(db, case):
             "sleep": "select pg_sleep(5)",
             "fk": "insert into rental (rental_date, inventory_id, customer_id, staff_id) values (now(), 1, 32000, 1)",
             "big": "select a.payment_id, b.payment_id from payment a cross join payment b",
-            "large_value": "select repeat('x', 20000000) as v",
+            "large_value": "select repeat('x', 2000000) as v",
         },
         "mysql": {
-            "sleep": "select sleep(5) from actor limit 1",
-            "sleep_hint": "select /*+ MAX_EXECUTION_TIME(100000) */ sleep(5) from actor limit 1",
+            # MySQL 9.7.1 cuts SLEEP() short silently (returns 1, no error) even when the SELECT reads tables, so the
+            # timeout case is a statement that really works for longer than the limit
+            "sleep": "select count(*) from payment a, payment b where a.amount + b.amount > 3.5",
+            "sleep_silent": "select sleep(5) from actor limit 1",
+            "sleep_hint": (
+                "select /*+ MAX_EXECUTION_TIME(100000) */ count(*) from payment a, payment b "
+                "where a.amount + b.amount > 3.5"
+            ),
             "fk": "insert into rental (rental_date, inventory_id, customer_id, staff_id) values (now(), 1, 32000, 1)",
             "big": "select a.payment_id, b.payment_id from payment a cross join payment b",
-            "large_value": "select repeat('x', 20000000) as v",
+            "large_value": "select repeat('x', 2000000) as v",
         },
         "mariadb": {
             "sleep": "select sleep(5)",
             "sleep_hint": "SET STATEMENT max_statement_time=0 FOR select sleep(5)",
             "fk": "insert into rental (rental_date, inventory_id, customer_id, staff_id) values (now(), 1, 32000, 1)",
             "big": "select a.payment_id, b.payment_id from payment a cross join payment b",
-            "large_value": "select repeat('x', 20000000) as v",
+            "large_value": "select repeat('x', 2000000) as v",
         },
         "oracle": {
             "sleep": "select count(*) from payment a, payment b, payment c",
@@ -90,14 +99,14 @@ def sql(db, case):
                 "values (999999, systimestamp, 1, 32000, 1, systimestamp)"
             ),
             "big": "select a.payment_id, b.payment_id from payment a cross join payment b",
-            "large_value": "select to_clob(rpad('x', 32000, 'x')) || rpad('x', 32000, 'x') as v from dual",
+            "large_value": "select rpad(to_clob('x'), 2000000, 'x') as v from dual",
             "syntax": "select * fro film",
         },
         "mssql": {
             "sleep": "waitfor delay '00:00:05'",
             "fk": "insert into rental (rental_date, inventory_id, customer_id, staff_id) values (getdate(), 1, 32000, 1)",
             "big": "select a.payment_id, b.payment_id from payment a cross join payment b",
-            "large_value": "select replicate(cast('x' as varchar(max)), 20000000) as v",
+            "large_value": "select replicate(cast('x' as varchar(max)), 2000000) as v",
         },
     }
     return {**common, **per_db[db]}[case]

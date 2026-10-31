@@ -213,3 +213,32 @@ def test_psql_query_shape_and_errors(salt):
         salt.cli("sqlx.psql_query", "select 2 as two;", minion="minion-policy")
     )  # default_profile pg_ro
     assert rows == [{"two": "2"}]
+
+
+@pytest.mark.parametrize(
+    "db,sql",
+    [
+        ("oracle", "select lower(user) as u from dual"),
+        ("mssql", "select suser_name() as u"),
+        ("mysql", "select substring_index(current_user(), '@', 1) as u"),
+    ],
+)
+def test_policy_on_username_override_on_other_dialects(salt, db, sql):
+    res = salt.api(
+        "sqlx.query",
+        minion="minion-policy",
+        profile=f"{db}_ro",
+        username="rw",
+        password="sdb://e2e_sdb/rw_pw",
+        sql=sql,
+    )
+    assert assert_ok(res)["rows"] == [["rw"]]
+    # retargeted without its own password: the profile's password is not sent (D14)
+    assert_error(
+        salt.api("sqlx.ping", minion="minion-policy", profile=f"{db}_ro", username="rw"),
+        "E_AUTH_FAILED",
+    )
+    assert_error(
+        salt.cli("sqlx.ping", minion="minion-policy", profile=f"{db}_ro", host="evil.example"),
+        "E_POLICY",
+    )
