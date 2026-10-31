@@ -338,12 +338,11 @@ def _mssql(code, message):
         ),
         ("mysql", _Orig(1045, "Access denied"), "E_AUTH_FAILED"),
         ("mysql", _Orig(2003, "Can't connect"), "E_CONNECT"),
-        # Oracle and SQL Server: only the client-side connect rows are observed (SPEC section 8); the rest is
-        # UNVERIFIED and falls to E_INTERNAL with the class name only until T1b runs them.
+        # Oracle and SQL Server: observed in T1b (docs/wire_shapes/t1b/), SPEC section 8.
         ("oracle", _oracle("DPY-6005", "cannot connect"), "E_CONNECT"),
-        ("oracle", _oracle("ORA-01017", "invalid credential"), "E_INTERNAL"),
+        ("oracle", _oracle("ORA-01017", "invalid credential"), "E_AUTH_FAILED"),
         ("mssql", _mssql(20009, "Unable to connect"), "E_CONNECT"),
-        ("mssql", _mssql(18456, "Login failed"), "E_INTERNAL"),
+        ("mssql", _mssql(18456, "Login failed"), "E_AUTH_FAILED"),
     ],
 )
 def test_connect_failure_codes(monkeypatch, dialect, err, code):

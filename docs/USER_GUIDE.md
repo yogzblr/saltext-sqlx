@@ -5,15 +5,17 @@ and returns the **database's real error** (for example `[E_SQL] postgresql 42P01
 instead of Salt's `[]`, `False` or a generic "minion has an error". `SPEC.md` is the full contract; this guide is the
 short path from nothing to a working call.
 
-> **Verification status.** PostgreSQL 16, MySQL 8.0 and MariaDB 10.11 are tested against real servers. Oracle and SQL
-> Server are **not**: their error mapping, TLS and call-time overrides are unit-tested only (task T1b in `TASKS.md`).
+> **Verification status.** All five databases are tested end to end through a real Salt 3008.5 master, minions and salt-api
+> (`tests-e2e/`, task T1b): PostgreSQL 18.4 (and 16), MySQL 9.7.1 (and 8.0), MariaDB 12.3.2 (and 10.11), Oracle 23.26.2 Free
+> and SQL Server 2022 CU25. TLS is verified on PostgreSQL, MySQL and MariaDB; Oracle TLS is not (unit tests only) and SQL Server
+> TLS is refused.
 
 ## 1. Requirements
 
 | Item | Requirement |
 |---|---|
 | Salt | 3006 or newer (developed and tested on 3008) |
-| Python | 3.10 or newer (Salt 3008 onedir ships 3.11) |
+| Python | 3.10 or newer (the Salt 3008.5 onedir ships Python 3.14; every driver wheel installs on it) |
 | SQLAlchemy | 2.0.x (installed as a dependency, pinned `>=2.0,<2.1`) |
 | Database driver | one per dialect, installed as an extra (below) |
 | Network | minion must reach the database host and port |
@@ -26,17 +28,22 @@ Oracle `oracledb` thin mode (Apache-2.0/UPL, no Oracle client needed), SQL Serve
 Install **on every minion that will talk to a database** (the module runs on the minion, not the master).
 
 ```bash
-# Salt onedir (the normal case): use salt-pip so the package lands in Salt's own Python
-salt-pip install 'saltext-sqlx[postgres]'                 # one dialect
-salt-pip install 'saltext-sqlx[postgres,mysql]'           # several
-salt-pip install 'saltext-sqlx[postgres,mysql,oracle,mssql]'
+# Not on PyPI yet (checked 2026-10-31: no release). Install from GitHub, into Salt's own Python with salt-pip:
+salt-pip install 'saltext-sqlx[postgres] @ git+https://github.com/yogzblr/saltext-sqlx.git'                  # needs git
+salt-pip install 'saltext-sqlx[postgres,mysql,oracle,mssql] @ git+https://github.com/yogzblr/saltext-sqlx.git'
 
-# Salt installed from system packages or a virtualenv
-pip install 'saltext-sqlx[postgres]'
+# A host without git: the GitHub archive, with the version given explicitly (the build reads it from git otherwise)
+SETUPTOOLS_SCM_PRETEND_VERSION=0.1.0 salt-pip install \
+  'saltext-sqlx[postgres] @ https://github.com/yogzblr/saltext-sqlx/archive/refs/heads/main.tar.gz'
 
-# Straight from GitHub (until a release is on PyPI)
-salt-pip install 'saltext-sqlx[postgres] @ git+https://github.com/yogzblr/saltext-sqlx.git'
+# Once a release is on PyPI
+salt-pip install 'saltext-sqlx[postgres,mysql]'
+
+# Salt installed from system packages or a virtualenv: the same lines with pip instead of salt-pip
 ```
+
+Extras: `postgres`, `mysql` (MySQL and MariaDB), `oracle`, `mssql`. Without git and without the version variable the
+archive install fails with `Failed to build 'saltext-sqlx' when getting requirements to build wheel` (observed).
 
 Then restart the minion so it loads the extension, and check it:
 
@@ -52,7 +59,10 @@ profiles of that dialect (`[E_DRIVER_MISSING]`).
 Notes:
 - A Salt upgrade replaces the onedir Python, so **reinstall** the extension afterwards.
 - Air-gapped hosts: mirror the wheels for each driver for Salt's Python version (and hashes) into your internal index.
-- `pymssql` wheel availability for Salt's Python 3.11 onedir has not been checked.
+- Checked on the Salt 3008.5 onedir (Python 3.14.7): psycopg-binary, PyMySQL, oracledb and pymssql all install from wheels.
+  The onedir already contains `cryptography`, which PyMySQL needs for MySQL 8+/9 `caching_sha2_password` accounts.
+- A container or a host without systemd: stop and start `salt-minion` by whatever runs it; `sqlx` profiles and the extension
+  are read only when the minion starts (a stale minion answers `[E_PROFILE_UNKNOWN] profile is not configured`).
 
 ## 3. Configure a profile
 
@@ -77,14 +87,53 @@ sqlx:
       row_limit: 500                       # default 500, hard max 10000
 ```
 
-**Use `sdb://` for passwords.** Restart the minion (or refresh config) after changing minion config.
+**Use `sdb://` for passwords.** `sdb://vault/orders_pg` means "sdb profile `vault`, key `orders_pg`": the profile is a top-level
+key of the minion config that names an sdb driver. For example HashiCorp Vault (`driver: vault`, see Salt's vault sdb
+documentation) or, for a test host, a root-only YAML file:
+
+```yaml
+# /etc/salt/minion.d/sdb.conf
+vault:                      # the name used after sdb://
+  driver: yaml              # test only; use vault (or another sdb driver) in production
+  files: [/etc/salt/sqlx-secrets.yaml]     # chmod 600, contains:  orders_pg: <password>
+```
+
+Check it on the minion with `salt-call --local sdb.get sdb://vault/orders_pg` (it prints the secret, so do it on the minion
+only). Restart the minion after changing minion config.
 
 **The read-only setting is a backstop, not the control.** It is bypassable from inside the session (observed on PostgreSQL,
 MySQL and MariaDB). Make the profile connect as a database account that has only the privileges it needs (a read-only
 role for `query`). Put writes on a **separate** profile with its own write-capable account and `allow_execute: true`.
 
-Per-dialect example values: PostgreSQL port 5432, MySQL/MariaDB 3306, Oracle 1521 (`database` is the service name),
-SQL Server 1433.
+Per-dialect example values: PostgreSQL port 5432, MySQL/MariaDB 3306, Oracle 1521 (`database` is the **service name**, for
+example `FREEPDB1` or `ORCLPDB1`), SQL Server 1433 (`database` is the database).
+
+Dialect notes (observed end to end):
+- **Oracle**: an account that is not the schema owner sees the tables only through synonyms or qualified names
+  (`select count(*) from hr.employees`); `table_list` needs `schema=<owner>`. Column names come back lower case. The in-session
+  read-only guard (`SET TRANSACTION READ ONLY`) is defeated by one PL/SQL block, so the account's grants are the control.
+- **SQL Server**: there is no in-session read-only at all; `query` rolls back, but only the role stops a write. SQL Server
+  runs a whole batch, so the module refuses a `;` followed by a second statement; a batch written without `;` cannot be
+  detected. TLS with `ssl_certs_dir` is not supported (`[E_PROFILE_INVALID]`).
+- **MySQL/MariaDB**: `select 1/0` returns NULL, not an error; `/*! ... */` comments are executed by the server.
+
+### Minion on the database server itself
+
+Supported and tested end to end on all five databases (`tests-e2e`, `up.sh local`: a minion sharing each database
+container's network): use `host: 127.0.0.1` (or `localhost`) and the server's TCP port. The module always connects over
+TCP; Unix sockets and peer / OS authentication are not used.
+
+- **PostgreSQL: check `pg_hba.conf` first.** `initdb` and the official images write `host all all 127.0.0.1/32 trust`
+  (and `::1/128 trust`). With that rule a local connection logs in as the profile's user with **any password or none**
+  (observed), so the profile password protects nothing and a profile naming a superuser gets one. Set the loopback lines
+  to `scram-sha-256` (or remove them) on any host that runs a minion; then a wrong password is `[E_AUTH_FAILED]` again.
+- MySQL / MariaDB: an account must match the local client (`'ro'@'%'` worked; anonymous `''@'localhost'` accounts can
+  shadow it, so drop them). Oracle and SQL Server: nothing special; authentication was enforced as over the network.
+- `verify-full` TLS needs `localhost` / `127.0.0.1` in the server certificate; over loopback TLS is often unnecessary.
+- With call-time parameters enabled, a caller-supplied loopback `host` is refused unless `allowed_hosts` lists the IP
+  (`127.0.0.1`); profiles are not affected.
+- A minion on the database host shares the machine with the data files: a compromised minion is more than a compromised
+  SQL account. Keep the read-only role minimal anyway.
 
 ### TLS to the database (certificate directory)
 
@@ -115,7 +164,7 @@ Verified on PostgreSQL, MySQL and MariaDB; Oracle wallet mapping is unverified; 
 salt 'db-minion-01' sqlx.ping profile=orders_pg
 salt 'db-minion-01' sqlx.query profile=orders_pg sql="select id, total from orders where status = :s" params='{"s": "open"}' limit=50
 salt 'db-minion-01' sqlx.table_list profile=orders_pg schema=public pattern='ord%'
-salt 'db-minion-01' sqlx.check_row_count profile=orders_pg sql="select 1 from orders" operator='">="' expected=1
+salt 'db-minion-01' sqlx.check_row_count profile=orders_pg sql="select 1 from orders where status = 'open'" operator='">="' expected=1
 salt 'db-minion-01' sqlx.check_query_result profile=orders_pg sql="select count(*) from orders" operator='"=="' expected=3 retry_timeout_s=30
 salt 'db-minion-01' sqlx.execute profile=orders_pg_rw sql="update orders set status = 'x' where id = :i" params='{"i": 7}' dry_run=true
 ```
@@ -125,7 +174,7 @@ salt 'db-minion-01' sqlx.execute profile=orders_pg_rw sql="update orders set sta
 | `query` | Run a read statement. Returns `columns`, `rows`, `row_count`, `truncated`, `elapsed_ms`. Always rolls back; never commits |
 | `execute` | Run INSERT/UPDATE/DELETE (verbs configurable). Needs `allow_execute: true` on the profile. `dry_run=true` runs it and rolls back |
 | `check_query_result` | Compare one value to `expected` with an operator; can retry until a timeout (Robot Framework style). A failed comparison is `ok: false`, not an error |
-| `check_row_count` | Same for the number of rows |
+| `check_row_count` | Same for the number of rows. More rows than the profile's `row_limit` (default 500) cannot be counted: the result is `ok: null, reason: truncated`; count in SQL (`select count(*) ...` with `check_query_result`) for big tables |
 | `ping` | Connect and report the server version |
 | `table_list` | List tables (and views with `include_views=true`), optionally by `schema` and a LIKE-style `pattern` |
 | `psql_query` | Salt-compatible `postgres.psql_query(query, user, host, port, maintenance_db, password, runas, write)`; see section 8 |
@@ -133,7 +182,8 @@ salt 'db-minion-01' sqlx.execute profile=orders_pg_rw sql="update orders set sta
 ### Writing SQL for `sql=`
 
 - Use **bind parameters**: `where status = :s` with `params='{"s": "open"}'`. Never put values into the SQL text.
-- Casts are `CAST(:x AS integer)`, never `:x::integer`.
+- Casts are `CAST(:x AS integer)`, never `:x::integer`. Use the database's type name: on **MySQL** it is `CAST(:x AS SIGNED)`
+  (MySQL rejects `AS INTEGER` with error 1064); MariaDB, PostgreSQL, Oracle and SQL Server accept `INTEGER`.
 - A literal colon in a string is written `\:`.
 - One statement per call. Multiple statements (`a; b`) are refused.
 - Results are capped (default 500 rows, 1 MiB; hard max 10 000 rows, 8 MiB). When a cap is hit `truncated` is true. A call can only lower caps.
@@ -153,8 +203,26 @@ curl -sS https://salt-api.example:8000/run -H 'Content-Type: application/json' \
         "eauth":"pam","username":"sre_ops","password":"..."}]'
 ```
 
-`kwarg` values are JSON-typed (numbers stay numbers, `params` is an object). The return looks like
+(On MySQL write `CAST(:s AS SIGNED)`.) `kwarg` values are JSON-typed (numbers stay numbers, `params` is an object). The return looks like
 `{"return":[{"db-minion-01":{"columns":[...],"rows":[...],"row_count":2,"truncated":false,"elapsed_ms":3,"profile":"orders_pg"}}]}`.
+A refused eauth check is HTTP 401. Add `"full_return": true` to get the job `retcode` (1 on any `[E_...]` error) next to the
+return.
+
+PowerShell (Windows), the same call:
+
+```powershell
+$body = ConvertTo-Json -Depth 5 @(@{
+  client = 'local'; tgt = 'db-minion-01'; fun = 'sqlx.query'
+  kwarg  = @{ profile = 'orders_pg'; sql = 'select id,total from orders where id >= CAST(:s AS INTEGER) order by id'; params = @{ s = 2 }; limit = 10 }
+  eauth  = 'pam'; username = 'sre_ops'; password = '...'
+})
+Invoke-RestMethod -Method Post -Uri 'https://salt-api.example:8000/run' -ContentType 'application/json' -Body $body
+```
+
+Verified from Windows PowerShell against the e2e salt-api (Docker Desktop, port published on 127.0.0.1, so reachable as
+`http://localhost:8000`; plain HTTP there, never on a real master): `sqlx.ping` with `eauth = 'file'` returned
+`{"return": [{"minion": {"ok": true, "dialect": "postgresql", "server_version": "18.4", ...}}]}`. Pipe the result to
+`ConvertTo-Json -Depth 6` to see nested values; PowerShell shows them as `@{...}` otherwise.
 
 ## 5. Reading errors
 
@@ -166,7 +234,19 @@ ERROR: [E_AUTH_FAILED] postgresql: connection failed: ... password authenticatio
 ```
 
 Remote jobs show `ERROR: [E_...]`; validation errors show `ERROR executing 'sqlx.query': [E_...]`; `salt-call` shows
-`Error running 'sqlx.query': [E_...]`. The retcode is 1 in all cases. Match on the `[E_CODE]` token.
+`Error running 'sqlx.query': [E_...]`, and for validation errors `Passed invalid arguments: [E_...]` followed by the function's
+help. `salt-call` exits 1 and the job's retcode is 1; the `salt` command itself exits 0 even when the minion returned an error
+(observed on 3008.5). Match on the `[E_CODE]` token.
+
+Examples from the other databases (observed):
+
+```
+ERROR: [E_SQL] oracle ORA-00942: table or view "RO"."NOPE" does not exist
+ERROR: [E_AUTH_FAILED] oracle ORA-01017: invalid credential or not authorized; logon denied
+ERROR: [E_SQL] mssql 208: Invalid object name 'nope'.
+ERROR: [E_CONSTRAINT] mssql 2627: Violation of PRIMARY KEY constraint 'PK__...'. Cannot insert duplicate key in object 'scratch.e2e_notes'. The duplicate key value is (...).
+ERROR: [E_TIMEOUT] mssql 20003: TDS server connection timed out; DBPROCESS is dead or not enabled
+```
 
 | Code | Meaning | Typical fix |
 |---|---|---|
@@ -242,7 +322,9 @@ the profile's password unless `inherit_password: true`; a caller can lower limit
 | `'sqlx.query' is not available` | extension installed in Salt's Python (`salt-pip list`)? minion restarted? |
 | `[E_DRIVER_MISSING]` | install the extra for that dialect |
 | `[E_PROFILE_UNKNOWN]` | profile defined on **that minion** (config/pillar), name spelt correctly; pillar refreshed |
-| `[E_SECRET]` | `sdb://` URI resolves: `salt-call --local sdb.get sdb://vault/orders_pg` |
+| `[E_SECRET]` | `sdb://` URI resolves: `salt-call --local sdb.get sdb://vault/orders_pg` (the sdb profile `vault` must exist in the minion config, section 3) |
+| `Cannot find command 'git'` during install | install git, or use the archive line with `SETUPTOOLS_SCM_PRETEND_VERSION` (section 2) |
+| `[E_POLICY] SQL Server runs every statement of a batch` | send one statement per call |
 | `[E_AUTH_FAILED]` / `[E_CONNECT]` | host/port reachable from the minion, firewall, account, `pg_hba.conf` or MySQL host grants, TLS settings |
 | `multiple values for argument 'profile'` | YAML-quote operators: `operator='"=="'` |
 | Garbled text from PostgreSQL | the database must be UTF8, not SQL_ASCII |

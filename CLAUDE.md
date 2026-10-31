@@ -35,11 +35,11 @@ SQLX_PROBE_URL='postgresql+psycopg://user@host:5432/db' python -I scripts/sa_pro
 
 ## Known open items
 Observed on real servers (T1, 2026-10-29): PostgreSQL 16.15, MySQL 8.0.46, MariaDB 10.11.14, with SQLAlchemy 2.0.55 and 2.1.6
-(`docs/WIRE_SHAPES.md`). **Oracle and SQL Server are NOT RUN**: Docker Hub, MCR and the Oracle registry returned HTTP 403 in
-the build environment, so every Oracle and SQL Server server-side row in SPEC sections 7-8 is unverified. The owner must run
-them on a machine with registry access (`tests-support/up.sh`, then `scripts/probes/`); this is task T1b in `TASKS.md`.
+(`docs/WIRE_SHAPES.md`). **T1b (2026-10-31)** ran Oracle 23.26.2 Free and SQL Server 2022 CU25 (plus PostgreSQL 18.4, MySQL 9.7.1,
+MariaDB 12.3.2) end to end through Docker Salt 3008.5 (`tests-e2e/`, `tests-e2e/up.sh`; WIRE_SHAPES sections 14-15). Still
+unverified: Oracle TLS, Oracle/SQL Server on SQLAlchemy 2.1.x. On SQL Server a batch without `;` separators cannot be refused.
 Built and merged on `build/base`: T0-T9 (libraries, engine, errors, runner, module with all six functions). In progress: T10
-(Salt integration, README) and T11 (security pass). No test has run a real Salt minion yet.
+(Salt integration, README) and T11 (security pass). `tests-e2e/` runs a real master, minions and salt-api in Docker.
 Other open items: whether to add `cryptography` to the `mysql` extra; D9 (clamp vs reject), D10 (`mariadb` as a dialect value),
 D11 (PyMySQL `read_timeout`), D12 (TLS certificate directory; today no path-bearing TLS option is allowed), D13 (the
 `MaskingFilter` secret set is never cleared). Open decisions D1–D13 are at the end of `SPEC.md`.

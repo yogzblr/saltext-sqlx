@@ -38,10 +38,18 @@ Every guard tested on MySQL and MariaDB is therefore bypassable by a statement a
 and CREATE TABLE, and for SELECT in a schema it was not granted (PostgreSQL 42501; MySQL and MariaDB 1142). Account `rw`
 used through a transaction that is rolled back left no row behind.
 
-**Oracle and SQL Server: NOT RUN.** No server could be started (Docker Hub, MCR and the Oracle registry returned HTTP 403 in
-the build environment), so neither `SET TRANSACTION READ ONLY` on Oracle nor the role behaviour on either was observed.
-Treat them as unprotected by the guard until observed. The owner must run them on a machine with registry access, with
-`tests-support/up.sh` and `scripts/probes/` (task T1b).
+**Oracle and SQL Server (observed by task T1b, 2026-10-31, `docs/WIRE_SHAPES.md` sections 14 and 15).** Oracle 23.26.2:
+`SET TRANSACTION READ ONLY` as the first statement refuses writes (ORA-01456, `E_READ_ONLY`) and a later `SET TRANSACTION READ
+WRITE` fails (ORA-01453), but **one PL/SQL block bypasses it**: `begin commit; insert ...; commit; end;` ends the read-only
+transaction, writes and commits, and the row persisted (observed). SQL Server 2022 has **no in-session read-only at all**: a
+write through `query` runs and is only rolled back, and a batch can carry its own `COMMIT` (`insert ...; commit` persisted the
+row, observed). The module refuses a SQL Server batch with a `;` followed by another statement and a second result set
+(`[E_POLICY]`), but T-SQL also runs `insert ... insert ...` without any separator, which no client-side check can see.
+
+**The database role held on both**: account `ro` (SELECT on the Sakila schema only) was refused by the database for UPDATE and
+DELETE (Oracle ORA-41900 `missing DELETE privilege`, SQL Server 229), CREATE TABLE (ORA-01031, 262) and a schema it was not granted
+(ORA-00942, which reports the object as missing rather than forbidden; SQL Server 229), also through an `execute`-enabled profile
+on that account (end to end, `tests-e2e`). Account `rw` used through a transaction that is rolled back left no row behind.
 
 Therefore **every profile used by `query` must connect as a role that has only read privileges** (SELECT on the needed
 schemas; no INSERT/UPDATE/DELETE/DDL; no EXECUTE on write-capable functions; no superuser; on Oracle no `ANY` system privileges such as `SELECT ANY TABLE`
@@ -53,7 +61,7 @@ beyond what is needed, and no `EXECUTE` on write-capable packages). `read_only: 
 |---|---|
 | Caller writes through `query` | Read-only DB role (section 2); `query` never commits |
 | Caller uses `execute` without permission | `allow_execute` false by default; verb filter; `dry_run`; separate profile/role with write rights |
-| Verb filter bypass (comments, CTEs, functions) | Filter is best-effort only; the **role** limits what `execute` can do, so give the write profile minimal grants. A leading `/*!`, `/*M!` or nested comment is refused; a second statement after `;` is refused by the driver on every dialect (extended protocol on PostgreSQL, no multi-statements on MySQL/MariaDB) |
+| Verb filter bypass (comments, CTEs, functions, batches) | Filter is best-effort only; the **role** limits what `execute` can do, so give the write profile minimal grants. A leading `/*!`, `/*M!` or nested comment is refused; a second statement after `;` is refused by the server on PostgreSQL (extended protocol), MySQL/MariaDB (no multi-statements) and Oracle (ORA-03405), and by the module on SQL Server (T1b). **Residual, observed:** SQL Server runs `insert ... delete ...` (no separator, no result set) as one batch; only the role stops the second statement |
 | Statement lifts its own time cap, or a huge result exhausts minion memory | `statement_timeout` / `MAX_EXECUTION_TIME` / `max_statement_time` plus the PyMySQL `read_timeout` backstop; results are streamed so memory is bounded by `limit` / `max_bytes` (one very large value still costs about 2.7x its size on PostgreSQL, so give the role no access to such columns or select `left(col, n)`) |
 | Caller points the minion at an arbitrary host (SSRF, credential relay) | By default profiles only: call arguments cannot set host, port, driver, URL or `connect_args` (D1). With the opt-in call-time parameters enabled, see the table "Call-time connection parameters" below |
 | Secrets in the Salt job cache | `password` is `sdb://` only in production; `allow_inline_secrets` is not provided. The call never carries a secret (unless the operator enables a literal `password` from the call, which is refused by default, see below). Salt stores job args and returns on the master and event bus |
@@ -64,9 +72,11 @@ beyond what is needed, and no `EXECUTE` on write-capable packages). `read_only: 
 | Weak or silent downgrade of database TLS | With a directory, `ssl_mode` is `verify-full` (default) or `verify-ca`; `disable`, `prefer`, `allow` and `require` are refused. PostgreSQL gets `sslcertmode=disable` when no client pair is configured, so a stray `~/.postgresql/postgresql.crt` is never presented. The profile `query` cannot carry `sslmode` next to a directory |
 | Private key readable by other users, or key material in output | Key files with group/world access are `[E_POLICY]` (owner-only, or 0640 when root-owned). File contents are never read by the module. Messages name files by plain name only; `tls.scrub` (applied in `engine`) removes paths from driver messages, which libpq otherwise quotes in full (observed). Functional tests check that no path or `BEGIN` text reaches the caller |
 | Wrong trust anchor: a CA directory outside operator control | The root is minion configuration (`sqlx:_policy`), never a call argument; make the root and its directories writable by root only. The module does not check directory ownership or mode (open: SPEC D12) |
-| Oracle and SQL Server TLS | **UNVERIFIED.** Oracle: the argument mapping (wallet directory, `tcps`, `ssl_server_dn_match`) is unit-tested but was never run against a server (T1b). SQL Server: `ssl_certs_dir` is refused (`not supported for mssql yet`); do not assume TLS verification there |
+| Oracle and SQL Server TLS | **UNVERIFIED for Oracle** (T1b ran Oracle, but the Sakila image has no TCPS listener): the argument mapping (wallet directory, `tcps`, `ssl_server_dn_match`) is unit-tested and a profile without `ewallet.pem` is refused at load (observed end to end). SQL Server: `ssl_certs_dir` is refused (`not supported for mssql yet`, observed end to end); do not assume TLS verification there |
+| Minion on the database host, PostgreSQL loopback `trust` | Observed (T1b, `tests-e2e/test_e2e_local.py`): with initdb's default `host all all 127.0.0.1/32 trust` a same-host profile logs in with a wrong or no password, as whatever user it names. The module cannot detect this; the operator must use `scram-sha-256` on the loopback lines (USER_GUIDE section 3). MySQL, MariaDB, Oracle and SQL Server enforced authentication over loopback |
 | Resource exhaustion | Row, byte, time and retry caps; hard maxima in code |
-| Credential in logs/URLs | Build URLs with `URL.create`; never log a URL or password; masking filter (`secrets.MaskingFilter`, `secrets.mask`). Observed (T1): the account password did not appear in `str`, `repr`, `repr(orig)`, `repr(orig.args)` or the formatted traceback of any case on PostgreSQL, MySQL and MariaDB, nor in the Oracle and SQL Server connection-failure rows. Not examined: successful-connect logging and driver debug output. Oracle and SQL Server server-side cases: **NOT RUN** (owner task T1b) |
+| Credential in logs/URLs | Build URLs with `URL.create`; never log a URL or password; masking filter (`secrets.MaskingFilter`, `secrets.mask`). Observed (T1): the account password did not appear in `str`, `repr`, `repr(orig)`, `repr(orig.args)` or the formatted traceback of any case on PostgreSQL, MySQL and MariaDB, nor in the Oracle and SQL Server connection-failure rows. T1b (end to end, all five databases, Salt 3008.5): no password or resolved `sdb://` value in the master job cache, the master and minion logs at debug level, the event bus, or any CLI, `salt-call` or salt-api output (`tests-e2e/test_zz_leaks.py`). Not examined: driver debug output |
+| NUL character truncating a statement | psycopg and pymssql cut the statement text at a NUL (observed, T1b: `delete from t\x00 where id = 99999` deleted every row on PostgreSQL and SQL Server through raw SQLAlchemy). The module refuses a NUL in `sql` on every dialect and in a bound string on SQL Server (`[E_OPTION_INVALID]`); only salt-api/LocalClient can carry one (argv cannot) |
 | Unreviewed LGPL code paths | LGPL drivers (psycopg, pymssql) are accepted as unmodified pip dependencies (owner decision 2026-10-29); do not vendor or patch them |
 | Supply chain on an air-gapped host | Mirror wheels for each driver for Salt's Python version; pin versions; check hashes |
 
@@ -156,14 +166,17 @@ when present so actions are attributable. With call-time parameters the line als
 
 ## 6. Pre-release checklist
 
-State after the T11 review (2026-10-29, `docs/SECURITY_REVIEW.md`). Evidence is in `tests/security/`; run
-`python -m pytest tests/security -q` and `python tests/security/licences.py --check`. PostgreSQL 16.15, MySQL 8.0.46 and MariaDB
-10.11.14 were live; Oracle and SQL Server were NOT RUN.
+State after the T11 review (2026-10-29, `docs/SECURITY_REVIEW.md`), updated by T1b (2026-10-31). Evidence is in `tests/security/`
+and `tests-e2e/`; run `python -m pytest tests/security -q`, `python tests/security/licences.py --check` and, with
+`tests-e2e/up.sh` running, `python -m pytest tests-e2e -m e2e`. T11: PostgreSQL 16.15, MySQL 8.0.46 and MariaDB 10.11.14 were
+live. T1b: all five (PostgreSQL 18.4, MySQL 9.7.1, MariaDB 12.3.2, Oracle 23.26.2, SQL Server 2022 CU25) through a real Salt
+master, minions and salt-api.
 
-- [ ] A read-only role test on every supported dialect proves writes fail at the database (not in the module)
+- [x] A read-only role test on every supported dialect proves writes fail at the database (not in the module)
   Proven on PostgreSQL, MySQL and MariaDB (`test_readonly_role.py`: guard off, the `ro` account is refused by the server for
-  UPDATE/DELETE/TRUNCATE/DROP/ALTER/CREATE/GRANT, and the section 2 bypass sequences still fail at the role).
-  **Exception: Oracle and SQL Server have no server in the build environment (T1b); tick when the owner has run the same test.**
+  UPDATE/DELETE/TRUNCATE/DROP/ALTER/CREATE/GRANT, and the section 2 bypass sequences still fail at the role). Oracle and SQL
+  Server (T1b): the `ro` account is refused for UPDATE, DELETE, CREATE TABLE and an ungranted schema (WS 14, 15), and an
+  `execute`-enabled profile on `ro` gets the database's refusal end to end (`tests-e2e/test_e2e_errors.py`).
 - [x] Source scan: `commit(` appears only in `runner.run_execute`
   `test_source_scan.py::test_commit_only_in_run_execute` (AST scan; also no `begin`, `autocommit`, `isolation_level`).
 - [x] No `exec_driver_sql` on caller SQL
@@ -182,9 +195,10 @@ State after the T11 review (2026-10-29, `docs/SECURITY_REVIEW.md`). Evidence is 
 - [x] `error_detail: false` verified not to leak `DETAIL` on a unique violation (PostgreSQL only; on MySQL/MariaDB the value is in the primary message, so document it instead)
   `test_secret_leak.py::test_unique_violation_detail_off_vs_on`: with `false` the value is absent on all three servers
   (`Duplicate entry '...'` on MySQL/MariaDB); with `true` it is present on PostgreSQL by design.
-- [ ] The Oracle and SQL Server probes have been run by the owner (T1b) and section 2 and SPEC sections 7-8 updated from them
-  **Exception: open. Docker Hub, MCR and the Oracle registry returned HTTP 403 in the build environment. Owner action
-  (`tests-support/up.sh`, then `scripts/probes/`).**
+- [x] The Oracle and SQL Server probes have been run (T1b) and section 2 and SPEC sections 7-8 updated from them
+  `tests-e2e/probe_wire.py` against the Sakila Oracle and SQL Server images (the T1 probes in `scripts/probes/` expect the
+  T1 seed schema and were not used); evidence `docs/wire_shapes/t1b/`, `docs/WIRE_SHAPES.md` sections 14-15. Oracle TLS
+  (no TCPS listener) remains unverified.
 - [x] eauth regex example from section 4 tested through `salt-api`
   `test_eauth_salt_api.py` (19 cases) with `auto` eauth, not PAM (no system accounts in the build environment; the
   authorisation engine is shared). Results and two cautions are in section 4 above.

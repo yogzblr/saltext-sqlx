@@ -76,6 +76,91 @@ def _stream(conn, sql):
     return not (verb == "select" and _INTO_WORD.search(sql))
 
 
+def _tsql_second_statement(sql):
+    """True when a top-level ``;`` in T-SQL is followed by more SQL (another statement of the same batch).
+
+    Skips string literals (``'..'``, ``N'..'`` with ``''`` escapes), quoted identifiers (``".."``, ``[..]`` with
+    ``]]``), ``--`` comments and nested ``/* */`` comments. A leading ``;`` (``;WITH ...``) and trailing ``;`` or comments
+    are fine. Best effort: T-SQL also runs ``a b`` without any separator as two statements, which this cannot see.
+    """
+    i, n = 0, len(sql)
+    seen_sql = False
+    pending = False  # a top-level ';' after some SQL
+    while i < n:
+        ch = sql[i]
+        if sql.startswith("--", i):
+            end = sql.find("\n", i)
+            i = n if end < 0 else end + 1
+            continue
+        if sql.startswith("/*", i):
+            depth, i = 1, i + 2
+            while i < n and depth:
+                if sql.startswith("/*", i):
+                    depth, i = depth + 1, i + 2
+                elif sql.startswith("*/", i):
+                    depth, i = depth - 1, i + 2
+                else:
+                    i += 1
+            continue
+        if ch.isspace():
+            i += 1
+            continue
+        if ch == ";":
+            pending = pending or seen_sql
+            i += 1
+            continue
+        if pending:
+            return True
+        seen_sql = True
+        if ch in "'\"[":
+            close = "]" if ch == "[" else ch
+            i += 1
+            while i < n:
+                if sql[i] == close:
+                    if sql.startswith(close * 2, i):
+                        i += 2
+                        continue
+                    break
+                i += 1
+        i += 1
+    return False
+
+
+_MSSQL_BATCH = (
+    "SQL Server runs every statement of a batch: the statement string contains more than one statement "
+    "({how}); send one statement per call"
+)
+
+
+def _mssql_checks(conn, sql, params):
+    """SQL Server rules applied before the statement is sent (task T1b, docs/WIRE_SHAPES.md section 14)."""
+    if _dialect_name(conn) != "mssql":
+        return
+    if _tsql_second_statement(sql):
+        _fail("E_POLICY", _MSSQL_BATCH.format(how="a ';' is followed by another statement"))
+    for value in (params or {}).values():
+        if isinstance(value, str) and "\x00" in value:
+            # pymssql interpolates bound values into the statement text, where a NUL ends the statement early
+            _fail(
+                "E_OPTION_INVALID", "a bound value must not contain a NUL character on SQL Server"
+            )
+
+
+def _mssql_more_results(conn, result):
+    """True when SQL Server returned another result set, that is a second statement ran in the same batch."""
+    if _dialect_name(conn) != "mssql":
+        return False
+    cursor = getattr(result, "cursor", None)
+    try:
+        return bool(cursor is not None and cursor.nextset())
+    except Exception:  # pylint: disable=broad-except
+        return False
+
+
+def _second_result_set():
+    _fail("E_POLICY", _MSSQL_BATCH.format(how="a second result set was returned"))
+
+
 def run_query(conn, sql, params, *, limit, max_bytes):
     """Run one statement, read at most ``limit`` rows and ALWAYS roll back; nothing is ever made permanent.
 
@@ -96,6 +181,7 @@ def run_query(conn, sql, params, *, limit, max_bytes):
     start = time.perf_counter()
     result = None
     abandoned = False
+    _mssql_checks(conn, sql, params)
     try:
         extra = {"execution_options": {"stream_results": True}} if _stream(conn, sql) else {}
         result = conn.execute(text(sql), params or {}, **extra)
@@ -104,6 +190,9 @@ def run_query(conn, sql, params, *, limit, max_bytes):
             raw_rows = result.fetchmany(limit + 1)
         else:
             columns, raw_rows = [], []
+        # Only after a complete read: moving to the next result set would first read every unread row.
+        if len(raw_rows) <= limit and _mssql_more_results(conn, result):
+            _second_result_set()
         if len(raw_rows) > limit and _dialect_name(conn) in _ABANDON_UNREAD:
             abandoned = True
             conn.invalidate()  # closes the driver connection; the server discards the open transaction
@@ -212,11 +301,14 @@ def run_execute(conn, sql, params, *, dry_run, execute_verbs):
     if not isinstance(dry_run, bool):
         _fail("E_OPTION_INVALID", "dry_run must be a boolean")
     _check_verb(sql, execute_verbs)
+    _mssql_checks(conn, sql, params)
     start = time.perf_counter()
     committed = False
     try:
         result = conn.execute(text(sql), params or {})
         rows_affected = result.rowcount
+        if _mssql_more_results(conn, result):
+            _second_result_set()
         if dry_run:
             conn.rollback()
         else:

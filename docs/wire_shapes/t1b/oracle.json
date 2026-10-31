@@ -1,0 +1,902 @@
+{
+ "dialect": "oracle",
+ "observed": "2026-10-31T04:01:02Z",
+ "versions": {
+  "SQLAlchemy": "2.0.55",
+  "oracledb": "26.1.0"
+ },
+ "python": "3.14.7",
+ "cases": {
+  "syntax": {
+   "outcome": "error",
+   "elapsed_ms": 334,
+   "sa_class": "sqlalchemy.exc.DatabaseError",
+   "driver_class": "oracledb.exceptions.DatabaseError",
+   "args": "(<oracledb.errors._Error object at 0x7aa6b5115450>,)",
+   "full_code": "ORA-00900",
+   "code": 900,
+   "message": "ORA-00900: invalid SQL statement\nHelp: https://docs.oracle.com/error-help/db/ora-00900/",
+   "isrecoverable": false,
+   "sqlx_today": {
+    "code": "E_INTERNAL",
+    "native": "ORA-00900",
+    "message": "DatabaseError"
+   }
+  },
+  "syntax_from": {
+   "outcome": "error",
+   "elapsed_ms": 79,
+   "sa_class": "sqlalchemy.exc.DatabaseError",
+   "driver_class": "oracledb.exceptions.DatabaseError",
+   "args": "(<oracledb.errors._Error object at 0x7aa6b55a7360>,)",
+   "full_code": "ORA-00923",
+   "code": 923,
+   "message": "ORA-00923: FROM keyword not found where expected\nHelp: https://docs.oracle.com/error-help/db/ora-00923/",
+   "isrecoverable": false,
+   "sqlx_today": {
+    "code": "E_INTERNAL",
+    "native": "ORA-00923",
+    "message": "DatabaseError"
+   }
+  },
+  "missing_table": {
+   "outcome": "error",
+   "elapsed_ms": 75,
+   "sa_class": "sqlalchemy.exc.DatabaseError",
+   "driver_class": "oracledb.exceptions.DatabaseError",
+   "args": "(<oracledb.errors._Error object at 0x7aa6b55fb650>,)",
+   "full_code": "ORA-00942",
+   "code": 942,
+   "message": "ORA-00942: table or view \"RO\".\"NOPE\" does not exist\nHelp: https://docs.oracle.com/error-help/db/ora-00942/",
+   "isrecoverable": false,
+   "sqlx_today": {
+    "code": "E_INTERNAL",
+    "native": "ORA-00942",
+    "message": "DatabaseError"
+   }
+  },
+  "missing_column": {
+   "outcome": "error",
+   "elapsed_ms": 247,
+   "sa_class": "sqlalchemy.exc.DatabaseError",
+   "driver_class": "oracledb.exceptions.DatabaseError",
+   "args": "(<oracledb.errors._Error object at 0x7aa6b511a140>,)",
+   "full_code": "ORA-00904",
+   "code": 904,
+   "message": "ORA-00904: \"NOPE\": invalid identifier\nHelp: https://docs.oracle.com/error-help/db/ora-00904/",
+   "isrecoverable": false,
+   "sqlx_today": {
+    "code": "E_INTERNAL",
+    "native": "ORA-00904",
+    "message": "DatabaseError"
+   }
+  },
+  "division_by_zero": {
+   "outcome": "error",
+   "elapsed_ms": 340,
+   "sa_class": "sqlalchemy.exc.DatabaseError",
+   "driver_class": "oracledb.exceptions.DatabaseError",
+   "args": "(<oracledb.errors._Error object at 0x7aa6b5126e50>,)",
+   "full_code": "ORA-01476",
+   "code": 1476,
+   "message": "ORA-01476: divisor is equal to zero\nHelp: https://docs.oracle.com/error-help/db/ora-01476/",
+   "isrecoverable": false,
+   "sqlx_today": {
+    "code": "E_INTERNAL",
+    "native": "ORA-01476",
+    "message": "DatabaseError"
+   }
+  },
+  "unique_violation": {
+   "outcome": "error",
+   "elapsed_ms": 540,
+   "sa_class": "sqlalchemy.exc.IntegrityError",
+   "driver_class": "oracledb.exceptions.IntegrityError",
+   "args": "(<oracledb.errors._Error object at 0x7aa6b51866c0>,)",
+   "full_code": "ORA-00001",
+   "code": 1,
+   "message": "ORA-00001: unique constraint (SCRATCH.SYS_C008760) violated on table SCRATCH.E2E_NOTES columns (ID)\nORA-03301: (ORA-00001 details) row with column values (ID:1) already exists\nHelp: https://docs.oracle.com/error-help/db/ora-00001/",
+   "isrecoverable": false,
+   "sqlx_today": {
+    "code": "E_INTERNAL",
+    "native": "ORA-00001",
+    "message": "IntegrityError"
+   }
+  },
+  "unique_violation_2nd": {
+   "outcome": "error",
+   "elapsed_ms": 147,
+   "sa_class": "sqlalchemy.exc.IntegrityError",
+   "driver_class": "oracledb.exceptions.IntegrityError",
+   "args": "(<oracledb.errors._Error object at 0x7aa6b51884b0>,)",
+   "full_code": "ORA-00001",
+   "code": 1,
+   "message": "ORA-00001: unique constraint (SCRATCH.SYS_C008760) violated on table SCRATCH.E2E_NOTES columns (ID)\nORA-03301: (ORA-00001 details) row with column values (ID:900) already exists\nHelp: https://docs.oracle.com/error-help/db/ora-00001/",
+   "isrecoverable": false,
+   "sqlx_today": {
+    "code": "E_INTERNAL",
+    "native": "ORA-00001",
+    "message": "IntegrityError"
+   }
+  },
+  "fk_violation": {
+   "outcome": "error",
+   "elapsed_ms": 280,
+   "sa_class": "sqlalchemy.exc.IntegrityError",
+   "driver_class": "oracledb.exceptions.IntegrityError",
+   "args": "(<oracledb.errors._Error object at 0x7aa6b55d6090>,)",
+   "full_code": "ORA-02291",
+   "code": 2291,
+   "message": "ORA-02291: integrity constraint (SAKILA.FK_RENTAL_CUSTOMER) violated - parent key not found\nHelp: https://docs.oracle.com/error-help/db/ora-02291/",
+   "isrecoverable": false,
+   "sqlx_today": {
+    "code": "E_INTERNAL",
+    "native": "ORA-02291",
+    "message": "IntegrityError"
+   }
+  },
+  "not_null_violation": {
+   "outcome": "error",
+   "elapsed_ms": 70,
+   "sa_class": "sqlalchemy.exc.IntegrityError",
+   "driver_class": "oracledb.exceptions.IntegrityError",
+   "args": "(<oracledb.errors._Error object at 0x7aa6b51a7d80>,)",
+   "full_code": "ORA-01400",
+   "code": 1400,
+   "message": "ORA-01400: cannot insert NULL into (\"SCRATCH\".\"E2E_NOTES\".\"NOTE\")\nHelp: https://docs.oracle.com/error-help/db/ora-01400/",
+   "isrecoverable": false,
+   "sqlx_today": {
+    "code": "E_INTERNAL",
+    "native": "ORA-01400",
+    "message": "IntegrityError"
+   }
+  },
+  "permission_denied_write": {
+   "outcome": "error",
+   "elapsed_ms": 91,
+   "sa_class": "sqlalchemy.exc.DatabaseError",
+   "driver_class": "oracledb.exceptions.DatabaseError",
+   "args": "(<oracledb.errors._Error object at 0x7aa6b51c40f0>,)",
+   "full_code": "ORA-41900",
+   "code": 41900,
+   "message": "ORA-41900: missing DELETE privilege on \"SAKILA\".\"FILM\"\nHelp: https://docs.oracle.com/error-help/db/ora-41900/",
+   "isrecoverable": false,
+   "sqlx_today": {
+    "code": "E_INTERNAL",
+    "native": "ORA-41900",
+    "message": "DatabaseError"
+   }
+  },
+  "permission_denied_unseen": {
+   "outcome": "error",
+   "elapsed_ms": 72,
+   "sa_class": "sqlalchemy.exc.DatabaseError",
+   "driver_class": "oracledb.exceptions.DatabaseError",
+   "args": "(<oracledb.errors._Error object at 0x7aa6b51c4910>,)",
+   "full_code": "ORA-00942",
+   "code": 942,
+   "message": "ORA-00942: table or view \"SCRATCH\".\"E2E_NOTES\" does not exist\nHelp: https://docs.oracle.com/error-help/db/ora-00942/",
+   "isrecoverable": false,
+   "sqlx_today": {
+    "code": "E_INTERNAL",
+    "native": "ORA-00942",
+    "message": "DatabaseError"
+   }
+  },
+  "read_only_txn_insert": {
+   "outcome": "error",
+   "elapsed_ms": 78,
+   "sa_class": "sqlalchemy.exc.DatabaseError",
+   "driver_class": "oracledb.exceptions.DatabaseError",
+   "args": "(<oracledb.errors._Error object at 0x7aa6b51c4e10>,)",
+   "full_code": "ORA-01456",
+   "code": 1456,
+   "message": "ORA-01456: may not perform insert, delete, update operation inside a READ ONLY transaction\nHelp: https://docs.oracle.com/error-help/db/ora-01456/",
+   "isrecoverable": false,
+   "sqlx_today": {
+    "code": "E_INTERNAL",
+    "native": "ORA-01456",
+    "message": "DatabaseError"
+   }
+  },
+  "read_only_bypass_plsql": {
+   "outcome": "ok",
+   "elapsed_ms": 107,
+   "returns_rows": false,
+   "rowcount": 0
+  },
+  "read_only_bypass_check": {
+   "outcome": "ok",
+   "elapsed_ms": 114,
+   "returns_rows": true,
+   "rowcount": 0,
+   "columns": [
+    "COUNT(*)"
+   ],
+   "rows": [
+    [
+     "int:1"
+    ]
+   ]
+  },
+  "read_only_bypass_cleanup": {
+   "outcome": "ok",
+   "elapsed_ms": 105,
+   "returns_rows": false,
+   "rowcount": 1
+  },
+  "set_read_write_after_ro": {
+   "outcome": "error",
+   "elapsed_ms": 69,
+   "sa_class": "sqlalchemy.exc.DatabaseError",
+   "driver_class": "oracledb.exceptions.DatabaseError",
+   "args": "(<oracledb.errors._Error object at 0x7aa6b5167930>,)",
+   "full_code": "ORA-01453",
+   "code": 1453,
+   "message": "ORA-01453: SET TRANSACTION must be first statement of transaction\nHelp: https://docs.oracle.com/error-help/db/ora-01453/",
+   "isrecoverable": false,
+   "sqlx_today": {
+    "code": "E_INTERNAL",
+    "native": "ORA-01453",
+    "message": "DatabaseError"
+   }
+  },
+  "multi_statement": {
+   "outcome": "error",
+   "elapsed_ms": 64,
+   "sa_class": "sqlalchemy.exc.DatabaseError",
+   "driver_class": "oracledb.exceptions.DatabaseError",
+   "args": "(<oracledb.errors._Error object at 0x7aa6b51663f0>,)",
+   "full_code": "ORA-03405",
+   "code": 3405,
+   "message": "ORA-03405: End of query reached; no additional text should follow.\nHelp: https://docs.oracle.com/error-help/db/ora-03405/",
+   "isrecoverable": false,
+   "sqlx_today": {
+    "code": "E_INTERNAL",
+    "native": "ORA-03405",
+    "message": "DatabaseError"
+   }
+  },
+  "multi_statement_dml": {
+   "outcome": "error",
+   "elapsed_ms": 71,
+   "sa_class": "sqlalchemy.exc.DatabaseError",
+   "driver_class": "oracledb.exceptions.DatabaseError",
+   "args": "(<oracledb.errors._Error object at 0x7aa6b51c4e10>,)",
+   "full_code": "ORA-03405",
+   "code": 3405,
+   "message": "ORA-03405: End of query reached; no additional text should follow.\nHelp: https://docs.oracle.com/error-help/db/ora-03405/",
+   "isrecoverable": false,
+   "sqlx_today": {
+    "code": "E_INTERNAL",
+    "native": "ORA-03405",
+    "message": "DatabaseError"
+   }
+  },
+  "trailing_semicolon": {
+   "outcome": "ok",
+   "elapsed_ms": 68,
+   "returns_rows": true,
+   "rowcount": 0,
+   "columns": [
+    "1"
+   ],
+   "rows": [
+    [
+     "int:1"
+    ]
+   ]
+  },
+  "nul_byte_literal": {
+   "outcome": "ok",
+   "elapsed_ms": 64,
+   "returns_rows": true,
+   "rowcount": 0,
+   "columns": [
+    "'A\u0000B'"
+   ],
+   "rows": [
+    [
+     "str:a\u0000b"
+    ]
+   ]
+  },
+  "nul_byte_bind": {
+   "outcome": "ok",
+   "elapsed_ms": 71,
+   "returns_rows": true,
+   "rowcount": 0,
+   "columns": [
+    ":X"
+   ],
+   "rows": [
+    [
+     "str:a\u0000b"
+    ]
+   ]
+  },
+  "cast_bind": {
+   "outcome": "ok",
+   "elapsed_ms": 68,
+   "returns_rows": true,
+   "rowcount": 0,
+   "columns": [
+    "CAST(:XASNUMBER)+1"
+   ],
+   "rows": [
+    [
+     "int:42"
+    ]
+   ]
+  },
+  "literal_colon_escaped": {
+   "outcome": "ok",
+   "elapsed_ms": 68,
+   "returns_rows": true,
+   "rowcount": 0,
+   "columns": [
+    "'A:B'"
+   ],
+   "rows": [
+    [
+     "str:a:b"
+    ]
+   ]
+  },
+  "call_timeout_500ms": {
+   "outcome": "error",
+   "elapsed_ms": 586,
+   "sa_class": "sqlalchemy.exc.DatabaseError",
+   "driver_class": "oracledb.exceptions.DatabaseError",
+   "args": "(<oracledb.errors._Error object at 0x7aa6b5164c30>,)",
+   "full_code": "DPY-4024",
+   "code": 0,
+   "message": "DPY-4024: call timeout of 500 ms exceeded",
+   "isrecoverable": false,
+   "sqlx_today": {
+    "code": "E_INTERNAL",
+    "native": "DPY-4024",
+    "message": "DatabaseError"
+   }
+  },
+  "bad_cast": {
+   "outcome": "error",
+   "elapsed_ms": 107,
+   "sa_class": "sqlalchemy.exc.DatabaseError",
+   "driver_class": "oracledb.exceptions.DatabaseError",
+   "args": "(<oracledb.errors._Error object at 0x7aa6b51665d0>,)",
+   "full_code": "ORA-01722",
+   "code": 1722,
+   "message": "ORA-01722: unable to convert string value containing 'a' to a number: \nORA-03302: (ORA-01722 details) invalid string value: abc\nHelp: https://docs.oracle.com/error-help/db/ora-01722/",
+   "isrecoverable": false,
+   "sqlx_today": {
+    "code": "E_INTERNAL",
+    "native": "ORA-01722",
+    "message": "DatabaseError"
+   }
+  },
+  "value_too_large": {
+   "outcome": "error",
+   "elapsed_ms": 103,
+   "sa_class": "sqlalchemy.exc.DatabaseError",
+   "driver_class": "oracledb.exceptions.DatabaseError",
+   "args": "(<oracledb.errors._Error object at 0x7aa6b51c54f0>,)",
+   "full_code": "ORA-12899",
+   "code": 12899,
+   "message": "ORA-12899: value too large for column \"SCRATCH\".\"E2E_NOTES\".\"NOTE\" (actual: 200, maximum: 100)\nHelp: https://docs.oracle.com/error-help/db/ora-12899/",
+   "isrecoverable": false,
+   "sqlx_today": {
+    "code": "E_INTERNAL",
+    "native": "ORA-12899",
+    "message": "DatabaseError"
+   }
+  },
+  "wrong_password": {
+   "outcome": "error",
+   "elapsed_ms": 1052,
+   "sa_class": "sqlalchemy.exc.DatabaseError",
+   "driver_class": "oracledb.exceptions.DatabaseError",
+   "args": "(<oracledb.errors._Error object at 0x7aa6b51c5ef0>,)",
+   "full_code": "ORA-01017",
+   "code": 1017,
+   "message": "ORA-01017: invalid credential or not authorized; logon denied\nHelp: https://docs.oracle.com/error-help/db/ora-01017/",
+   "isrecoverable": false,
+   "sqlx_today": {
+    "code": "E_INTERNAL",
+    "native": "ORA-01017",
+    "message": "DatabaseError"
+   }
+  },
+  "no_password": {
+   "outcome": "error",
+   "elapsed_ms": 0,
+   "sa_class": "sqlalchemy.exc.DatabaseError",
+   "driver_class": "oracledb.exceptions.DatabaseError",
+   "args": "(<oracledb.errors._Error object at 0x7aa6b51c5630>,)",
+   "full_code": "DPY-4001",
+   "code": 0,
+   "message": "DPY-4001: no credentials specified",
+   "isrecoverable": false,
+   "sqlx_today": {
+    "code": "E_INTERNAL",
+    "native": "DPY-4001",
+    "message": "DatabaseError"
+   }
+  },
+  "unknown_user": {
+   "outcome": "error",
+   "elapsed_ms": 1061,
+   "sa_class": "sqlalchemy.exc.DatabaseError",
+   "driver_class": "oracledb.exceptions.DatabaseError",
+   "args": "(<oracledb.errors._Error object at 0x7aa6b51c4550>,)",
+   "full_code": "ORA-01017",
+   "code": 1017,
+   "message": "ORA-01017: invalid credential or not authorized; logon denied\nHelp: https://docs.oracle.com/error-help/db/ora-01017/",
+   "isrecoverable": false,
+   "sqlx_today": {
+    "code": "E_INTERNAL",
+    "native": "ORA-01017",
+    "message": "DatabaseError"
+   }
+  },
+  "unknown_service": {
+   "outcome": "error",
+   "elapsed_ms": 7,
+   "sa_class": "sqlalchemy.exc.OperationalError",
+   "driver_class": "oracledb.exceptions.OperationalError",
+   "args": "(<oracledb.errors._Error object at 0x7aa6b51c4b90>,)",
+   "full_code": "DPY-6005",
+   "code": 0,
+   "message": "DPY-6005: cannot connect to database (CONNECTION_ID=jAYhsl88i+mDfxgFFgQQPw==).\nDPY-6001: Service \"NOPE\" is not registered with the listener at host \"172.21.0.6\" port 1521. (Similar to ORA-12514)",
+   "isrecoverable": false,
+   "sqlx_today": {
+    "code": "E_CONNECT",
+    "native": "DPY-6005",
+    "message": "DPY-6005: cannot connect to database (CONNECTION_ID=jAYhsl88i+mDfxgFFgQQPw==). DPY-6001: Service \"NOPE\" is not registered with the listener at host \"172.21.0.6\" port 1521. (Similar to ORA-12514)"
+   }
+  },
+  "closed_port": {
+   "outcome": "error",
+   "elapsed_ms": 1,
+   "sa_class": "sqlalchemy.exc.OperationalError",
+   "driver_class": "oracledb.exceptions.OperationalError",
+   "args": "(<oracledb.errors._Error object at 0x7aa6b51c5e50>,)",
+   "full_code": "DPY-6005",
+   "code": 0,
+   "message": "DPY-6005: cannot connect to database (CONNECTION_ID=s3x9TtyVuA658FGzoIdiVQ==).\n[Errno 111] Connection refused",
+   "isrecoverable": false,
+   "sqlx_today": {
+    "code": "E_CONNECT",
+    "native": "DPY-6005",
+    "message": "DPY-6005: cannot connect to database (CONNECTION_ID=s3x9TtyVuA658FGzoIdiVQ==). [Errno 111] Connection refused"
+   }
+  },
+  "unknown_host": {
+   "outcome": "error",
+   "elapsed_ms": 20,
+   "sa_class": null,
+   "driver_class": "socket.gaierror",
+   "args": "(-2, 'Name or service not known')",
+   "sqlx_today": {
+    "code": "E_INTERNAL",
+    "native": null,
+    "message": "gaierror"
+   }
+  },
+  "unreachable_host": {
+   "outcome": "error",
+   "elapsed_ms": 3002,
+   "sa_class": "sqlalchemy.exc.OperationalError",
+   "driver_class": "oracledb.exceptions.OperationalError",
+   "args": "(<oracledb.errors._Error object at 0x7aa6b51c63f0>,)",
+   "full_code": "DPY-6005",
+   "code": 0,
+   "message": "DPY-6005: cannot connect to database (CONNECTION_ID=YQmt2to9ygNuBa7iWASAHQ==).\ntimed out",
+   "isrecoverable": false,
+   "sqlx_today": {
+    "code": "E_CONNECT",
+    "native": "DPY-6005",
+    "message": "DPY-6005: cannot connect to database (CONNECTION_ID=YQmt2to9ygNuBa7iWASAHQ==). timed out"
+   }
+  },
+  "types": {
+   "outcome": "ok",
+   "elapsed_ms": 297,
+   "returns_rows": true,
+   "rowcount": 0,
+   "columns": [
+    "id",
+    "t_text",
+    "t_num",
+    "t_ts",
+    "t_uuid",
+    "t_bin",
+    "t_json",
+    "t_null"
+   ],
+   "rows": [
+    [
+     "int:1",
+     "str:Grüße ✓ naïve",
+     "Decimal:Decimal('12.5')",
+     "datetime:datetime.datetime(2026, 10, 31, 12, 34, 56, 789012)",
+     "bytes:b'\\xa0\\xee\\xbc\\x99\\x9c\\x0bN\\xf8\\xbbmk\\xb9\\xbd8\\n\\x11'",
+     "bytes:b'\\xde\\xad\\xbe\\xef'",
+     "dict:{'a': Decimal('1'), 'b': [True, None]}",
+     "NoneType:None"
+    ],
+    [
+     "int:2",
+     "NoneType:None",
+     "NoneType:None",
+     "NoneType:None",
+     "NoneType:None",
+     "NoneType:None",
+     "NoneType:None",
+     "NoneType:None"
+    ]
+   ]
+  },
+  "count_film": {
+   "outcome": "ok",
+   "elapsed_ms": 209,
+   "returns_rows": true,
+   "rowcount": 0,
+   "columns": [
+    "COUNT(*)"
+   ],
+   "rows": [
+    [
+     "int:1000"
+    ]
+   ]
+  },
+  "version_attr": {
+   "outcome": "ok",
+   "elapsed_ms": 156,
+   "returns_rows": true,
+   "rowcount": 0,
+   "columns": [
+    "1"
+   ],
+   "rows": [
+    [
+     "int:1"
+    ]
+   ]
+  },
+  "t1_div0_dml": {
+   "outcome": "error",
+   "elapsed_ms": 430,
+   "sa_class": "sqlalchemy.exc.DatabaseError",
+   "driver_class": "oracledb.exceptions.DatabaseError",
+   "args": "(<oracledb.errors._Error object at 0x7a8178319450>,)",
+   "full_code": "ORA-01476",
+   "code": 1476,
+   "message": "ORA-01476: divisor is equal to zero\nHelp: https://docs.oracle.com/error-help/db/ora-01476/",
+   "isrecoverable": false,
+   "sqlx_today": {
+    "code": "E_SQL_DATA",
+    "native": "ORA-01476",
+    "message": "divisor is equal to zero"
+   }
+  },
+  "t1_ro_select_other_schema": {
+   "outcome": "error",
+   "elapsed_ms": 325,
+   "sa_class": "sqlalchemy.exc.DatabaseError",
+   "driver_class": "oracledb.exceptions.DatabaseError",
+   "args": "(<oracledb.errors._Error object at 0x7a817879f5c0>,)",
+   "full_code": "ORA-00942",
+   "code": 942,
+   "message": "ORA-00942: table or view \"SCRATCH\".\"E2E_NOTES\" does not exist\nHelp: https://docs.oracle.com/error-help/db/ora-00942/",
+   "isrecoverable": false,
+   "sqlx_today": {
+    "code": "E_SQL",
+    "native": "ORA-00942",
+    "message": "table or view \"SCRATCH\".\"E2E_NOTES\" does not exist"
+   }
+  },
+  "t1_ro_update": {
+   "outcome": "error",
+   "elapsed_ms": 187,
+   "sa_class": "sqlalchemy.exc.DatabaseError",
+   "driver_class": "oracledb.exceptions.DatabaseError",
+   "args": "(<oracledb.errors._Error object at 0x7a81787f7650>,)",
+   "full_code": "ORA-41900",
+   "code": 41900,
+   "message": "ORA-41900: missing UPDATE privilege on \"SAKILA\".\"FILM\"\nHelp: https://docs.oracle.com/error-help/db/ora-41900/",
+   "isrecoverable": false,
+   "sqlx_today": {
+    "code": "E_SQL",
+    "native": "ORA-41900",
+    "message": "missing UPDATE privilege on \"SAKILA\".\"FILM\""
+   }
+  },
+  "t1_ro_delete": {
+   "outcome": "error",
+   "elapsed_ms": 149,
+   "sa_class": "sqlalchemy.exc.DatabaseError",
+   "driver_class": "oracledb.exceptions.DatabaseError",
+   "args": "(<oracledb.errors._Error object at 0x7a817831e030>,)",
+   "full_code": "ORA-41900",
+   "code": 41900,
+   "message": "ORA-41900: missing DELETE privilege on \"SAKILA\".\"FILM\"\nHelp: https://docs.oracle.com/error-help/db/ora-41900/",
+   "isrecoverable": false,
+   "sqlx_today": {
+    "code": "E_SQL",
+    "native": "ORA-41900",
+    "message": "missing DELETE privilege on \"SAKILA\".\"FILM\""
+   }
+  },
+  "t1_ro_ddl": {
+   "outcome": "error",
+   "elapsed_ms": 867,
+   "sa_class": "sqlalchemy.exc.DatabaseError",
+   "driver_class": "oracledb.exceptions.DatabaseError",
+   "args": "(<oracledb.errors._Error object at 0x7a8178322f50>,)",
+   "full_code": "ORA-01031",
+   "code": 1031,
+   "message": "ORA-01031: insufficient privileges\nHelp: https://docs.oracle.com/error-help/db/ora-01031/",
+   "isrecoverable": false,
+   "sqlx_today": {
+    "code": "E_INTERNAL",
+    "native": "ORA-01031",
+    "message": "DatabaseError"
+   }
+  },
+  "t1_bad_bound_value": {
+   "outcome": "error",
+   "elapsed_ms": 124,
+   "sa_class": "sqlalchemy.exc.DatabaseError",
+   "driver_class": "oracledb.exceptions.DatabaseError",
+   "args": "(<oracledb.errors._Error object at 0x7a8178382b70>,)",
+   "full_code": "ORA-01722",
+   "code": 1722,
+   "message": "ORA-01722: unable to convert string value containing 'z' to a number: \nORA-03302: (ORA-01722 details) invalid string value: zz_secret_bound_value\nHelp: https://docs.oracle.com/error-help/db/ora-01722/",
+   "isrecoverable": false,
+   "sqlx_today": {
+    "code": "E_SQL_DATA",
+    "native": "ORA-01722",
+    "message": "unable to convert string value containing '...' to a number:"
+   }
+  },
+  "t1_rw_write_then_rollback": {
+   "outcome": "ok",
+   "elapsed_ms": 134,
+   "returns_rows": false,
+   "rowcount": 1
+  },
+  "t1_rw_write_then_rollback_check": {
+   "outcome": "ok",
+   "elapsed_ms": 126,
+   "returns_rows": true,
+   "rowcount": 0,
+   "columns": [
+    "COUNT(*)"
+   ],
+   "rows": [
+    [
+     "int:0"
+    ]
+   ]
+  },
+  "t1_text_trap_colon_cast": {
+   "outcome": "error",
+   "elapsed_ms": 93,
+   "sa_class": "sqlalchemy.exc.DatabaseError",
+   "driver_class": "oracledb.exceptions.DatabaseError",
+   "args": "(<oracledb.errors._Error object at 0x7a81787d6690>,)",
+   "full_code": "DPY-4010",
+   "code": 0,
+   "message": "DPY-4010: a bind variable replacement value for placeholder \":A\" was not provided",
+   "isrecoverable": false,
+   "sqlx_today": {
+    "code": "E_INTERNAL",
+    "native": "DPY-4010",
+    "message": "DatabaseError"
+   }
+  },
+  "t1_text_trap_json_colon_literal": {
+   "outcome": "error",
+   "elapsed_ms": 107,
+   "sa_class": "sqlalchemy.exc.StatementError",
+   "driver_class": "sqlalchemy.exc.InvalidRequestError",
+   "args": "(\"A value is required for bind parameter '1'\",)",
+   "sqlx_today": {
+    "code": "E_OPTION_INVALID",
+    "native": null,
+    "message": "a ':' in the statement was read as a bind parameter '1'; write literal colons as \\: and casts as CAST(:x AS type), never :x::type"
+   }
+  },
+  "t1_text_trap_json_colon_escaped": {
+   "outcome": "ok",
+   "elapsed_ms": 139,
+   "returns_rows": true,
+   "rowcount": 0,
+   "columns": [
+    "'{\"A\":1}'"
+   ],
+   "rows": [
+    [
+     "str:{\"a\":1}"
+    ]
+   ]
+  },
+  "t1_text_percent_in_text": {
+   "outcome": "ok",
+   "elapsed_ms": 208,
+   "returns_rows": true,
+   "rowcount": 0,
+   "columns": [
+    "CASEWHEN'ABC'LIKE'%B%'THEN1ELSE0END"
+   ],
+   "rows": [
+    [
+     "int:1"
+    ]
+   ]
+  },
+  "t1_text_cast_bind": {
+   "outcome": "ok",
+   "elapsed_ms": 198,
+   "returns_rows": true,
+   "rowcount": 0,
+   "columns": [
+    "CAST(:AASINT)+CAST(:AASINT)"
+   ],
+   "rows": [
+    [
+     "int:10"
+    ]
+   ]
+  },
+  "t1_driver_sql_percent_no_params": {
+   "outcome": "ok",
+   "elapsed_ms": 499,
+   "returns_rows": true,
+   "rowcount": 0,
+   "columns": [
+    "CASEWHEN'ABC'LIKE'%B%'THEN1ELSE0END"
+   ],
+   "rows": [
+    [
+     "int:1"
+    ]
+   ]
+  },
+  "t1_timeout_sleep": {
+   "outcome": "error",
+   "elapsed_ms": 779,
+   "sa_class": "sqlalchemy.exc.DatabaseError",
+   "driver_class": "oracledb.exceptions.DatabaseError",
+   "args": "(<oracledb.errors._Error object at 0x7a817836fa70>,)",
+   "full_code": "DPY-4011",
+   "code": 0,
+   "message": "DPY-4011: the database or network closed the connection\nsocket timed out while recovering from previous socket timeout\nHelp: https://python-oracledb.readthedocs.io/en/latest/user_guide/troubleshooting.html#dpy-4011",
+   "isrecoverable": true,
+   "sqlx_today": {
+    "code": "E_INTERNAL",
+    "native": "DPY-4011",
+    "message": "DatabaseError"
+   }
+  },
+  "t1_guard_control_no_guard": {
+   "outcome": "ok",
+   "elapsed_ms": 473,
+   "returns_rows": false,
+   "rowcount": 1
+  },
+  "t1_guard_set_transaction_read_only_write": {
+   "outcome": "error",
+   "elapsed_ms": 301,
+   "sa_class": "sqlalchemy.exc.DatabaseError",
+   "driver_class": "oracledb.exceptions.DatabaseError",
+   "args": "(<oracledb.errors._Error object at 0x7a817836fe30>,)",
+   "full_code": "ORA-01456",
+   "code": 1456,
+   "message": "ORA-01456: may not perform insert, delete, update operation inside a READ ONLY transaction\nHelp: https://docs.oracle.com/error-help/db/ora-01456/",
+   "isrecoverable": false,
+   "sqlx_today": {
+    "code": "E_READ_ONLY",
+    "native": "ORA-01456",
+    "message": "may not perform insert, delete, update operation inside a READ ONLY transaction"
+   }
+  },
+  "t1_bypass_set_transaction_read_write": {
+   "outcome": "error",
+   "elapsed_ms": 152,
+   "sa_class": "sqlalchemy.exc.DatabaseError",
+   "driver_class": "oracledb.exceptions.DatabaseError",
+   "args": "(<oracledb.errors._Error object at 0x7a817836f750>,)",
+   "full_code": "ORA-01453",
+   "code": 1453,
+   "message": "ORA-01453: SET TRANSACTION must be first statement of transaction\nHelp: https://docs.oracle.com/error-help/db/ora-01453/",
+   "isrecoverable": false,
+   "sqlx_today": {
+    "code": "E_SQL",
+    "native": "ORA-01453",
+    "message": "SET TRANSACTION must be first statement of transaction"
+   }
+  },
+  "t1_bypass_commit_then_write": {
+   "outcome": "ok",
+   "elapsed_ms": 143,
+   "returns_rows": false,
+   "rowcount": 0
+  },
+  "t1_bypass_plsql_block": {
+   "outcome": "ok",
+   "elapsed_ms": 182,
+   "returns_rows": false,
+   "rowcount": 0
+  },
+  "t1_bypass_plsql_block_check": {
+   "outcome": "ok",
+   "elapsed_ms": 167,
+   "returns_rows": true,
+   "rowcount": 0,
+   "columns": [
+    "COUNT(*)"
+   ],
+   "rows": [
+    [
+     "int:0"
+    ]
+   ]
+  },
+  "t1_bypass_cleanup": {
+   "outcome": "ok",
+   "elapsed_ms": 183,
+   "returns_rows": false,
+   "rowcount": 0
+  }
+ },
+ "cases_fresh_process": {
+  "unknown_host": {
+   "outcome": "error",
+   "elapsed_ms": 15,
+   "sa_class": null,
+   "driver_class": "socket.gaierror",
+   "args": "(-2, 'Name or service not known')",
+   "sqlx_today": {
+    "code": "E_INTERNAL",
+    "native": null,
+    "message": "gaierror"
+   }
+  },
+  "no_password": {
+   "outcome": "error",
+   "elapsed_ms": 0,
+   "sa_class": "sqlalchemy.exc.DatabaseError",
+   "driver_class": "oracledb.exceptions.DatabaseError",
+   "args": "(<oracledb.errors._Error object at 0x7e102e731400>,)",
+   "full_code": "DPY-4001",
+   "code": 0,
+   "message": "DPY-4001: no credentials specified",
+   "isrecoverable": false,
+   "sqlx_today": {
+    "code": "E_INTERNAL",
+    "native": "DPY-4001",
+    "message": "DatabaseError"
+   }
+  },
+  "wrong_password": {
+   "outcome": "error",
+   "elapsed_ms": 1058,
+   "sa_class": "sqlalchemy.exc.DatabaseError",
+   "driver_class": "oracledb.exceptions.DatabaseError",
+   "args": "(<oracledb.errors._Error object at 0x7521bb9317f0>,)",
+   "full_code": "ORA-01017",
+   "code": 1017,
+   "message": "ORA-01017: invalid credential or not authorized; logon denied\nHelp: https://docs.oracle.com/error-help/db/ora-01017/",
+   "isrecoverable": false,
+   "sqlx_today": {
+    "code": "E_INTERNAL",
+    "native": "ORA-01017",
+    "message": "DatabaseError"
+   }
+  }
+ },
+ "note": "'cases' ran in one process in the order listed; 'cases_fresh_process' ran each case in a new process. pymssql keeps the last server message number per process, so connect failures in 'cases' after 'wrong_password' report the stale number 18456."
+}

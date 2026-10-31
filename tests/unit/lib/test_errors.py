@@ -460,6 +460,10 @@ def _my(code, message, sqlstate=None, cls_name="OperationalError"):
         (1366, "HY000", "E_SQL_DATA"),
         (1366, "22007", "E_SQL_DATA"),
         (1062, "23000", "E_CONSTRAINT"),
+        # T1b (MySQL 9.7.1, MariaDB 12.3.2): NOT NULL column left out in strict mode, SQLSTATE HY000; explicit NULL is 1048
+        (1364, "HY000", "E_CONSTRAINT"),
+        (1048, "23000", "E_CONSTRAINT"),
+        (1452, "23000", "E_CONSTRAINT"),
         (1792, "25006", "E_READ_ONLY"),
         (3024, "HY000", "E_TIMEOUT"),
         (1969, "70100", "E_TIMEOUT"),
@@ -564,10 +568,17 @@ def test_oracle_error_object_and_unverified_codes():
     code, message = errors.translate(_wrap(orig, sa_exc.OperationalError), "oracle")
     assert code == "E_CONNECT"
     assert "\n" not in message
-    # ORA-01017 etc. were not observed (UNVERIFIED(T1)): class name only, never guessed
+    # ORA-01017 was observed in T1b (docs/wire_shapes/t1b/oracle.json); a code nobody observed is class name only
     ora = SimpleNamespace(
-        full_code="ORA-01017", message="ORA-01017: invalid username/password; logon denied"
+        full_code="ORA-01017",
+        message="ORA-01017: invalid credential or not authorized; logon denied",
     )
+    orig = type("DatabaseError", (Exception,), {})(ora)
+    assert errors.translate(_wrap(orig), "oracle") == (
+        "E_AUTH_FAILED",
+        "invalid credential or not authorized; logon denied",
+    )
+    ora = SimpleNamespace(full_code="ORA-99999", message="ORA-99999: never observed")
     orig = type("DatabaseError", (Exception,), {})(ora)
     assert errors.translate(_wrap(orig), "oracle") == ("E_INTERNAL", "DatabaseError")
     assert errors.translate(_wrap(type("Odd", (Exception,), {})()), "oracle") == (
@@ -583,8 +594,13 @@ def test_mssql_bytes_message_is_decoded_and_deduplicated():
     assert code == "E_CONNECT"
     assert message.count("Unable to connect") == 1
     assert "b'" not in message
-    # SQL Server error 18456 etc. were not observed (UNVERIFIED(T1))
+    # 18456 was observed in T1b (docs/wire_shapes/t1b/mssql.json); an unobserved number is class name only
     orig = type("OperationalError", (Exception,), {})((18456, b"Login failed for user"))
+    assert errors.translate(_wrap(orig, sa_exc.OperationalError), "mssql") == (
+        "E_AUTH_FAILED",
+        "Login failed for user",
+    )
+    orig = type("OperationalError", (Exception,), {})((99999, b"never observed"))
     assert errors.translate(_wrap(orig, sa_exc.OperationalError), "mssql") == (
         "E_INTERNAL",
         "OperationalError",
