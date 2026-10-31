@@ -187,7 +187,17 @@ def test_root_must_be_absolute_and_exist(tmp_path):
 def test_dotdot_in_the_given_path_is_refused(root, policy):
     make_dir(root, "a")
     make_dir(root, "b")
-    fails("E_PROFILE_INVALID", prof(f"{root}/a/../b"), policy)
+    fails("E_PROFILE_INVALID", prof(os.path.join(str(root), "a", "..", "b")), policy)
+
+
+def test_dotdot_behind_the_alternative_separator_is_refused(root, policy, monkeypatch):
+    # Windows takes "/" as well as os.sep (os.altsep), so C:\certs\a/../b must not slip past the ".." rule. Here
+    # the other separator is an ordinary character, so the directory exists and only the ".." rule can refuse it.
+    other = "\\" if os.sep == "/" else "/"
+    monkeypatch.setattr(os, "altsep", other)
+    make_dir(root, f"a{other}..{other}b", cert=None, key=None)
+    text = fails("E_PROFILE_INVALID", prof(f"{root}{os.sep}a{other}..{other}b"), policy)
+    assert "'..'" in text
 
 
 def test_directory_outside_root_is_policy_error(policy, tmp_path):

@@ -179,7 +179,7 @@ def _directory(name, raw, root):
     given = raw["ssl_certs_dir"]
     if not isinstance(given, str) or not given or "\x00" in given or not os.path.isabs(given):
         _invalid(name, "'ssl_certs_dir' must be an absolute directory path")
-    if ".." in given.split(os.sep):
+    if ".." in given.replace(os.altsep or os.sep, os.sep).split(os.sep):  # Windows takes "/" too
         _invalid(name, "'ssl_certs_dir' must not contain '..'")
     real = os.path.realpath(given)
     if not _under(real, root):
