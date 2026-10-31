@@ -92,7 +92,10 @@ CASES = {
         "__kwarg__": True,
         "__pub_jid": object(),
     },
-    "kw-non-ascii": lambda s: {"sql": "SELECT 1", "‮evil": 1},
+    "kw-non-ascii": lambda s: {
+        "sql": "SELECT 1",
+        "\u202eevil": 1,
+    },  # RIGHT-TO-LEFT OVERRIDE, as an escape (bandit B613)
 }
 
 
@@ -237,10 +240,10 @@ def test_unknown_option_names_are_not_echoed_with_control_characters(request, se
     """D8: ``[E_OPTION_UNKNOWN]`` repeats the caller's key names verbatim (newlines, bidi controls, 100 000 characters)."""
     with pytest.raises(SaltInvocationError) as exc:
         salt.query(
-            "ro", "SELECT 1", **{"a\r\nINFO forged log line": 1, "‮evil": 1, "k" * 100_000: 1}
+            "ro", "SELECT 1", **{"a\r\nINFO forged log line": 1, "\u202eevil": 1, "k" * 100_000: 1}
         )
     text = str(exc.value)
-    assert "\n" not in text and "\r" not in text and "‮" not in text and len(text) < 2000
+    assert "\n" not in text and "\r" not in text and "\u202e" not in text and len(text) < 2000
 
 
 def test_values_python_cannot_hold_are_a_data_error_not_internal(server, salt):

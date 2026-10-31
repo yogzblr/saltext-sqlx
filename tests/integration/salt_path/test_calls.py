@@ -11,6 +11,7 @@ from tests.integration.salt_path.conftest import BOUND_SECRET
 from tests.integration.salt_path.conftest import RO_PASSWORD
 from tests.integration.salt_path.conftest import SQL_MARKER
 
+
 def test_minion_loads_the_module(call):
     ret, retcode, _ = call("sys.list_functions", module="sqlx")
     assert retcode == 0
@@ -40,7 +41,10 @@ def test_string_limit_is_rejected_not_coerced(call):
     ret, retcode, _ = call("sqlx.query", profile="pg_ro", sql="select 1", limit="2")
     assert retcode == 1
     assert isinstance(ret, str)
-    assert ret == "ERROR executing 'sqlx.query': [E_OPTION_INVALID] option 'limit' must be an integer >= 1"
+    assert (
+        ret
+        == "ERROR executing 'sqlx.query': [E_OPTION_INVALID] option 'limit' must be an integer >= 1"
+    )
 
 
 @pytest.mark.pg
@@ -52,7 +56,10 @@ def test_pub_keys_are_dropped_and_a_typo_is_not(call):
     ret, retcode, _ = call("sqlx.query", profile="pg_ro", sql="select 1", limt=1)
     assert retcode == 1
     # SaltInvocationError is wrapped by the minion as "ERROR executing '<fun>': <message>"
-    assert ret == "ERROR executing 'sqlx.query': [E_OPTION_UNKNOWN] unknown option(s) for sqlx.query: 'limt'"
+    assert (
+        ret
+        == "ERROR executing 'sqlx.query': [E_OPTION_UNKNOWN] unknown option(s) for sqlx.query: 'limt'"
+    )
 
 
 @pytest.mark.pg
@@ -77,7 +84,14 @@ def test_bad_statement_returns_the_server_text_and_not_the_sql(call, profile, pr
     assert retcode == 1
     assert isinstance(ret, str)
     assert ret == f"{prefix}{text}"
-    for leaked in (SQL_MARKER, BOUND_SECRET, "select id from", "[SQL:", "[parameters:", RO_PASSWORD):
+    for leaked in (
+        SQL_MARKER,
+        BOUND_SECRET,
+        "select id from",
+        "[SQL:",
+        "[parameters:",
+        RO_PASSWORD,
+    ):
         assert leaked not in ret
 
 

@@ -117,9 +117,10 @@ def _norm_dialect(value):
 
 def _shown(names):
     """Caller-chosen key names for a message: escaped (no newlines or bidi controls) and bounded, as in ``options``."""
-    shown = ", ".join(ascii(n)[: options._NAME_WIDTH] for n in names[: options._NAMES_SHOWN])  # pylint: disable=protected-access
-    if len(names) > options._NAMES_SHOWN:  # pylint: disable=protected-access
-        shown += f" and {len(names) - options._NAMES_SHOWN} more"  # pylint: disable=protected-access
+    width, count = options._NAME_WIDTH, options._NAMES_SHOWN  # pylint: disable=protected-access
+    shown = ", ".join(ascii(n)[:width] for n in names[:count])
+    if len(names) > count:
+        shown += f" and {len(names) - count} more"
     return shown
 
 

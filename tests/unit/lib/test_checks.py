@@ -54,9 +54,7 @@ def fake_time():
 
 
 def check_value(value, operator, expected=None, **kwargs):
-    return checks.check_query_result(
-        lambda: _result([[value]]), operator, expected, **kwargs
-    )
+    return checks.check_query_result(lambda: _result([[value]]), operator, expected, **kwargs)
 
 
 # ---------------------------------------------------------------- operators
@@ -188,9 +186,7 @@ def test_row_and_column_selection():
 
 @pytest.mark.parametrize("row,column", [(5, 0), (0, 9), (1, 0)])
 def test_missing_cell(row, column):
-    result = checks.check_query_result(
-        lambda: _result([[1, 2]]), "==", 1, row=row, column=column
-    )
+    result = checks.check_query_result(lambda: _result([[1, 2]]), "==", 1, row=row, column=column)
     assert result == {
         "ok": False,
         "actual": None,
@@ -246,9 +242,7 @@ def test_row_count_zero_rows():
 
 
 def test_row_count_truncated_is_unknown():
-    result = checks.check_row_count(
-        lambda: _result([[1], [2]], truncated=True), ">=", 1
-    )
+    result = checks.check_row_count(lambda: _result([[1], [2]], truncated=True), ">=", 1)
     assert result == {
         "ok": None,
         "actual": None,

@@ -557,6 +557,10 @@ def test_verb_filter_refuses_comments_the_server_reads_differently(sql):
 def test_verb_filter_still_skips_plain_and_hint_comments():
     fake = FakeConn(FakeResult(rowcount=1))
     runner.run_execute(
-        fake, "/*+ hint */ /* a */ -- b\n insert into t values (1)", None, dry_run=False, execute_verbs=VERBS
+        fake,
+        "/*+ hint */ /* a */ -- b\n insert into t values (1)",
+        None,
+        dry_run=False,
+        execute_verbs=VERBS,
     )
     assert fake.events == ["execute", "commit"]

@@ -63,7 +63,10 @@ def test_spec_section_11_request_returns_typed_rows(api, minion):
         },
     )
     assert done.returncode == 0, done.stderr
-    print("CURL:", " ".join(command[:3] + ["-H", "'Content-Type: application/json'", "-d", repr(command[-1])]))
+    print(
+        "CURL:",
+        " ".join(command[:3] + ["-H", "'Content-Type: application/json'", "-d", repr(command[-1])]),
+    )
     print("JSON:", done.stdout)
     result = json.loads(done.stdout)["return"][0][minion.id]
     assert result["profile"] == "pg_ro"
