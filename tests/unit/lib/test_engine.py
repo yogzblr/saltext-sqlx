@@ -271,6 +271,40 @@ def test_driver_message_containing_password_is_scrubbed(monkeypatch, variant):
     _assert_clean(exc.value)
 
 
+@pytest.mark.parametrize(
+    "text,code,words",
+    [
+        (
+            "connection failed: ... failed: fe_sendauth: no password supplied {pw}",
+            "E_AUTH_FAILED",
+            "no password supplied",
+        ),
+        ("connection timeout expired {pw}", "E_CONNECT", "connection timeout expired"),
+        (
+            "failed to resolve host 'h': [Errno -2] Name or service not known {pw}",
+            "E_CONNECT",
+            "Name or service not known",
+        ),
+        (
+            'connection failed: ... FATAL:  no pg_hba.conf entry for host "h", user "u" {pw}',
+            "E_CONNECT",
+            "no pg_hba.conf entry for host",
+        ),
+    ],
+)
+def test_newly_mapped_connect_messages_are_real_and_scrubbed(monkeypatch, text, code, words):
+    def boom(self, *a, **k):
+        raise sqlalchemy.exc.OperationalError("connect", {}, Exception(text.format(pw=PASSWORD)))
+
+    monkeypatch.setattr(Engine, "connect", boom)
+    with pytest.raises(CommandExecutionError) as exc:
+        with engine.connection(make(), PASSWORD):
+            pass  # pragma: no cover
+    assert str(exc.value).startswith(f"[{code}] postgresql: ")
+    assert words in str(exc.value)  # the driver's own words survive
+    _assert_clean(exc.value)
+
+
 class _Orig(Exception):
     """Stand-in for a driver exception; attributes mimic the real drivers (SPEC section 8)."""
 

@@ -477,3 +477,49 @@ context from the keywords whenever any `ssl_*` keyword is set and then drops the
 therefore passes all five as `connect_args` (PyMySQL keywords), which works.
 
 No Oracle or SQL Server TLS case was run.
+
+## 13. Connect failures with no SQLSTATE (PostgreSQL, observed 2026-10-30)
+
+Observed with psycopg 3.3.6 / libpq against PostgreSQL 16.15 (`127.0.0.1:54329`), PyMySQL 1.2.3 for the MySQL table below, SQLAlchemy 2.0.55, through
+`engine.ping` (profile `connect_timeout_s: 1`, account `ro`). This section was written by hand and is not produced by
+`render_wire_shapes.py` (running it would drop it). **Every psycopg connect failure is a `psycopg.OperationalError` (or its
+subclass `psycopg.errors.ConnectionTimeout`) with `sqlstate=None` and `diag` empty**; the message is
+`connection failed: connection to server at "<host>", port <p> failed: <libpq text>` except for the timeout and for name
+resolution, which psycopg words itself. Before the fix every row below except `Connection refused` and `server closed` surfaced as
+`[E_INTERNAL] postgresql: OperationalError` (or `ConnectionTimeout`): the real text was lost.
+
+| Case | How produced | Raw exception, message (`args[0]`) | Code before | Code after |
+|---|---|---|---|---|
+| no password supplied | profile without `password`, account needs SCRAM | `OperationalError`: `connection failed: connection to server at "127.0.0.1", port 54329 failed: fe_sendauth: no password supplied` | `E_INTERNAL` | `E_AUTH_FAILED` |
+| password withheld after retarget | call changed `port`, base profile's password dropped (`password_dropped`, SPEC 3.2: `password=""`, no passfile) | same text as the row above | `E_INTERNAL` | `E_AUTH_FAILED` |
+| wrong password | wrong `password` | `OperationalError`: `... failed: FATAL:  password authentication failed for user "ro"` | `E_AUTH_FAILED` | `E_AUTH_FAILED` |
+| unknown user | `nouser` (scram: the server does not say the role is missing) | `... FATAL:  password authentication failed for user "nouser"` | `E_AUTH_FAILED` | unchanged |
+| role without LOGIN | `CREATE ROLE x NOLOGIN` | `... FATAL:  role "pgx_nologin" is not permitted to log in` | `E_INTERNAL` | `E_AUTH_FAILED` |
+| connect timeout | `host: 10.255.255.1`, `connect_timeout_s: 1` (libpq rounds up to 2 s; 2.0 s measured) | `psycopg.errors.ConnectionTimeout`: `connection timeout expired` | `E_INTERNAL` | `E_CONNECT` |
+| port closed | port 1 | `OperationalError`: `... port 1 failed: Connection refused\n\tIs the server running on that host and accepting TCP/IP connections?` | `E_CONNECT` | unchanged |
+| unknown host | `no-such-host.invalid` | `OperationalError`: `failed to resolve host 'no-such-host.invalid': [Errno -2] Name or service not known` (psycopg's own text, no `connection failed:` prefix) | `E_INTERNAL` | `E_CONNECT` |
+| server closes the connection | a TCP listener that accepts and closes | `OperationalError`: `... failed: server closed the connection unexpectedly\n\tThis probably means the server terminated abnormally\n\tbefore or while processing the request.` | `E_CONNECT` | unchanged |
+| pg_hba `reject` | `host sqlx_test pgx_rej 127.0.0.1/32 reject` | `... FATAL:  pg_hba.conf rejects connection for host "127.0.0.1", user "pgx_rej", database "sqlx_test", no encryption` | `E_INTERNAL` | `E_CONNECT` |
+| no pg_hba entry | only `ro` listed for `sqlx_test`; connect as `rw`, or as `ro` to `postgres` | `... FATAL:  no pg_hba.conf entry for host "127.0.0.1", user "rw", database "sqlx_test", no encryption` | `E_INTERNAL` | `E_CONNECT` |
+| `hostssl` rule, client without TLS (`sslmode=disable` or `prefer` against a server without TLS) | `hostssl sqlx_test pgx_ssl ...` | same `no pg_hba.conf entry ... no encryption` text | `E_CONNECT` (via `no encryption`) | unchanged |
+| TLS required, server has none | `sslmode=require` | `... failed: server does not support SSL, but SSL was required` | `E_CONNECT` | unchanged |
+| role connection limit | `CREATE ROLE x CONNECTION LIMIT 0` | `... FATAL:  too many connections for role "pgx_lim"` | `E_INTERNAL` | `E_CONNECT` |
+| database refuses connections | `ALTER DATABASE sqlx_test ALLOW_CONNECTIONS false` | `... FATAL:  database "sqlx_test" is not currently accepting connections` | `E_INTERNAL` | `E_CONNECT` |
+| unknown database | `nodb` | `... FATAL:  database "nodb" does not exist` | `E_CONNECT` | unchanged |
+
+None of these messages contains the password: libpq never echoes it, and `engine._fail` masks it again (R3). The `pg_hba.conf` rows
+were produced by editing `pg_hba.conf` of the test cluster, reloading, and restoring the original file afterwards; the
+functional tests do not touch the server configuration, so those rows are covered by unit tests built from the messages above.
+
+### MySQL 8.0.46 and MariaDB 10.11.14 (same cases, PyMySQL, through `engine.ping`)
+
+| Case | Raw exception | Code | Message after `[E_CODE] mysql <n>:` |
+|---|---|---|---|
+| no password | `OperationalError` 1045, SQLSTATE 28000 | `E_AUTH_FAILED` | `Access denied for user 'ro'@'localhost' (using password: NO)` |
+| password withheld after retarget | same as no password | `E_AUTH_FAILED` | same |
+| connect timeout (`10.255.255.1`, `connect_timeout_s: 1`) | `OperationalError` 2003, no SQLSTATE | `E_CONNECT` | `Can't connect to MySQL server on '10.255.255.1' (timed out)` |
+| port closed | 2003 | `E_CONNECT` | `Can't connect to MySQL server on '127.0.0.1' ([Errno 111] Connection refused)` |
+| unknown host | 2003 | `E_CONNECT` | `Can't connect to MySQL server on 'no-such-host.invalid' ([Errno -2] Name or service not known)` |
+
+Both servers give identical results and none was `E_INTERNAL`: no change was needed for the MySQL family. (A listener that accepts
+and closes was not run against PyMySQL here; the existing functional tests already use one for the call-parameter policy.)
