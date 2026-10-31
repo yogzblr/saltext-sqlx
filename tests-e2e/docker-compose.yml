@@ -1,0 +1,116 @@
+# End-to-end stack: five Sakila databases, three TLS-only servers, a Salt master (with salt-api) and two minions.
+# Start with tests-e2e/up.sh, stop with tests-e2e/down.sh. Everything runs on the private network `e2e`; only the
+# database ports and salt-api are published, and only on 127.0.0.1. Database data stays in the containers (and the master job cache in a named volume); certificates are
+# generated on the Linux filesystem ($SQLX_E2E_DATA, set by up.sh, default ~/e2e-data), never under /mnt/c.
+name: sqlx-e2e
+
+x-db: &db
+  networks: [e2e]
+  restart: "no"
+
+services:
+  # ------------------------------------------------------------------ Sakila databases (same dataset on all five)
+  pg:
+    <<: *db
+    image: ghcr.io/sakiladb/postgres:18
+    ports: ["127.0.0.1:25432:5432"]
+  mysql:
+    <<: *db
+    image: ghcr.io/sakiladb/mysql:9
+    ports: ["127.0.0.1:23306:3306"]
+  mariadb:
+    <<: *db
+    image: ghcr.io/sakiladb/mariadb:12
+    ports: ["127.0.0.1:23307:3306"]
+  oracle:
+    <<: *db
+    image: ghcr.io/sakiladb/oracle:23
+    ports: ["127.0.0.1:21521:1521"]
+  mssql:
+    <<: *db
+    image: ghcr.io/sakiladb/sqlserver:2022
+    platform: linux/amd64
+    ports: ["127.0.0.1:21433:1433"]
+
+  # ------------------------------------------------------------------ TLS-only servers (official images)
+  pg-tls:
+    <<: *db
+    image: postgres:16
+    environment: {POSTGRES_PASSWORD: TlsAdmin_e2e_pw_77, POSTGRES_INITDB_ARGS: "-E UTF8"}
+    entrypoint: ["/e2e/tls-entry.sh", "postgres"]
+    command: ["postgres", "-c", "ssl=on", "-c", "ssl_cert_file=/certs/server.pem", "-c", "ssl_key_file=/certs/server.key",
+              "-c", "ssl_ca_file=/certs/ca.pem", "-c", "hba_file=/e2e/pg_hba.conf"]
+    volumes:
+      - ./tls:/e2e:ro
+      - ./tls/pg-init.sql:/docker-entrypoint-initdb.d/10-tls.sql:ro
+      - ${SQLX_E2E_DATA:?run tests-e2e/up.sh}/pki/e2e-server:/certs-src:ro
+    networks: {e2e: {aliases: [pg-tls-alias]}}
+    healthcheck: {test: ["CMD-SHELL", "pg_isready -U postgres -h 127.0.0.1"], interval: 3s, retries: 40}
+  mysql-tls:
+    <<: *db
+    image: mysql:8.0
+    environment: {MYSQL_ROOT_PASSWORD: TlsAdmin_e2e_pw_77}
+    entrypoint: ["/e2e/tls-entry.sh", "mysql"]
+    command: ["mysqld", "--require-secure-transport=ON", "--ssl-ca=/certs/ca.pem", "--ssl-cert=/certs/server.pem",
+              "--ssl-key=/certs/server.key", "--character-set-server=utf8mb4"]
+    volumes:
+      - ./tls:/e2e:ro
+      - ./tls/mysql-init.sql:/docker-entrypoint-initdb.d/10-tls.sql:ro
+      - ${SQLX_E2E_DATA:?run tests-e2e/up.sh}/pki/e2e-server:/certs-src:ro
+    networks: {e2e: {aliases: [mysql-tls-alias]}}
+    healthcheck: {test: ["CMD-SHELL", "mysql -uroot -pTlsAdmin_e2e_pw_77 -N -e \"select count(*) from mysql.user where user='tls_cert'\" | grep -q 1"], interval: 3s, retries: 60}
+  mariadb-tls:
+    <<: *db
+    image: mariadb:10.11
+    environment: {MARIADB_ROOT_PASSWORD: TlsAdmin_e2e_pw_77}
+    entrypoint: ["/e2e/tls-entry.sh", "mysql"]
+    command: ["mariadbd", "--ssl-ca=/certs/ca.pem", "--ssl-cert=/certs/server.pem", "--ssl-key=/certs/server.key",
+              "--character-set-server=utf8mb4"]
+    volumes:
+      - ./tls:/e2e:ro
+      - ./tls/mysql-init.sql:/docker-entrypoint-initdb.d/10-tls.sql:ro
+      - ${SQLX_E2E_DATA:?run tests-e2e/up.sh}/pki/e2e-server:/certs-src:ro
+    networks: {e2e: {aliases: [mariadb-tls-alias]}}
+    healthcheck: {test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"], interval: 3s, retries: 60}
+
+  # ------------------------------------------------------------------ Salt
+  master:
+    image: sqlx-e2e-salt:3008.5
+    build: {context: ./salt}
+    hostname: master
+    command: ["master-entrypoint.sh"]
+    networks: [e2e]
+    ports: ["127.0.0.1:8000:8000"]
+    volumes:
+      - ./salt/master.d:/etc/salt/master.d:ro
+      - ./salt/e2e-eauth.txt:/etc/salt/e2e-eauth.txt:ro
+      - master-cache:/var/cache/salt
+    healthcheck: {test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8000/ >/dev/null"], interval: 3s, retries: 60}
+  minion: &minion
+    image: sqlx-e2e-salt:3008.5
+    hostname: minion
+    command: ["minion-entrypoint.sh"]
+    networks: [e2e]
+    depends_on: {master: {condition: service_healthy}}
+    volumes:
+      - ..:/src:ro
+      - ./salt/minion.d/10-sqlx.conf:/etc/salt/minion.d/10-sqlx.conf:ro
+      - ./salt/e2e-secrets.yaml:/etc/salt/e2e-secrets.yaml:ro
+      - ${SQLX_E2E_DATA:?run tests-e2e/up.sh}/pki:/etc/salt/sqlx-certs:ro
+    healthcheck: {test: ["CMD-SHELL", "salt-call --local --out=txt sys.list_functions sqlx | grep -q sqlx.query"], interval: 5s, retries: 60, start_period: 20s}
+  minion-policy:
+    <<: *minion
+    hostname: minion-policy
+    volumes:
+      - ..:/src:ro
+      - ./salt/minion.d/10-sqlx.conf:/etc/salt/minion.d/10-sqlx.conf:ro
+      - ./salt/minion-policy.d/20-policy.conf:/etc/salt/minion.d/20-policy.conf:ro
+      - ./salt/e2e-secrets.yaml:/etc/salt/e2e-secrets.yaml:ro
+      - ${SQLX_E2E_DATA:?run tests-e2e/up.sh}/pki:/etc/salt/sqlx-certs:ro
+
+networks:
+  e2e:
+    driver: bridge
+
+volumes:
+  master-cache:

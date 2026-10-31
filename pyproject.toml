@@ -133,6 +133,7 @@ markers = [
     "oracle: needs the Oracle test server (NOT RUN in the build environment)",
     "mssql: needs the SQL Server test server (NOT RUN in the build environment)",
     "tls: needs the TLS test servers (tests-support/tls/up.sh: PostgreSQL 54339, MySQL 33071, MariaDB 33072)",
+    "e2e: end-to-end through a real Salt master, minions and salt-api in Docker (tests-e2e/up.sh)",
 ]
 
 [tool.isort]

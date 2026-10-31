@@ -1,0 +1,3 @@
+sre_ops:SreOps_e2e_pw_19
+dba_writers:DbaWriters_e2e_pw_23
+e2e_full:E2eFull_e2e_pw_31
