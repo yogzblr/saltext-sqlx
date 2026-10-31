@@ -1,5 +1,6 @@
 # saltext-sqlx
-Salt extension to run generic salt
+Salt execution module that runs SQL on PostgreSQL, MySQL/MariaDB, Oracle and SQL Server and returns the database's real
+error. **Start with [docs/USER_GUIDE.md](docs/USER_GUIDE.md)** (install, profiles, usage, errors, eauth); `SPEC.md` is the contract.
 
 ## Install
 
@@ -185,8 +186,7 @@ to [Salt's security guide][security].
 
 ## User Documentation
 
-For setup and usage instructions, please refer to the
-module docstrings (for now, documentation is coming!).
+See [docs/USER_GUIDE.md](docs/USER_GUIDE.md) for install and usage, and `SPEC.md` for the full contract.
 
 ## Contributing
 
