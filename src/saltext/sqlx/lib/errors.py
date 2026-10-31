@@ -13,11 +13,12 @@ Rules enforced here:
 * ``raise_for`` clears ``__cause__`` / ``__context__`` so that the original exception text cannot leak via chaining.
 
 Every mapping carries the evidence in ``docs/wire_shapes/`` (observed by task T1 on PostgreSQL 16.15, MySQL 8.0.46 and
-MariaDB 10.11.14). Oracle and SQL Server were never run server-side: only what ``WIRE_SHAPES.md`` shows is mapped, the
-rest is marked ``UNVERIFIED(T1)`` and falls to ``E_INTERNAL`` (class name only). No Salt dunders, no driver imports.
+MariaDB 10.11.14; by task T1b on Oracle 23.26.2 Free and SQL Server 2022 CU25, ``docs/wire_shapes/t1b/``). A code that
+was not observed falls to ``E_INTERNAL`` (class name only). No Salt dunders, no driver imports.
 """
 
 import re
+import socket
 import ssl
 from collections import namedtuple
 
@@ -84,7 +85,9 @@ _MSG_CRYPTOGRAPHY = (
     "PyMySQL needs the 'cryptography' package for sha256_password / caching_sha2_password authentication; "
     "install it or use mysql_native_password"
 )
-_MSG_TLS_FILE = "a TLS file given to the driver (CA, client certificate or key) could not be opened: {reason}"
+_MSG_TLS_FILE = (
+    "a TLS file given to the driver (CA, client certificate or key) could not be opened: {reason}"
+)
 _MSG_AUTH_SWITCH = "the MySQL authentication handshake failed on first connect (driver received no packet); retry the call"
 
 
@@ -128,7 +131,10 @@ _PG_CLASS = {
 _PG_TEXT = (
     # Authentication first: these libpq texts also arrive inside the generic "connection failed: ..." wrapper.
     ("password authentication failed", "E_AUTH_FAILED"),
-    ("fe_sendauth", "E_AUTH_FAILED"),  # "fe_sendauth: no password supplied" (WIRE_SHAPES section 13)
+    (
+        "fe_sendauth",
+        "E_AUTH_FAILED",
+    ),  # "fe_sendauth: no password supplied" (WIRE_SHAPES section 13)
     ("is not permitted to log in", "E_AUTH_FAILED"),  # role without LOGIN
     ("Connection refused", "E_CONNECT"),
     ("could not connect", "E_CONNECT"),
@@ -136,7 +142,10 @@ _PG_TEXT = (
     # Section 13: connect-phase failures that carry no SQLSTATE and were E_INTERNAL. A connect timeout is a connect
     # failure, not E_TIMEOUT (SPEC section 8: E_TIMEOUT is a statement timeout / cancel).
     ("timeout expired", "E_CONNECT"),  # psycopg ConnectionTimeout: "connection timeout expired"
-    ("failed to resolve host", "E_CONNECT"),  # psycopg's own wording for a name that does not resolve
+    (
+        "failed to resolve host",
+        "E_CONNECT",
+    ),  # psycopg's own wording for a name that does not resolve
     ("could not translate host name", "E_CONNECT"),  # libpq wording of the same failure
     ("no pg_hba.conf entry", "E_CONNECT"),
     ("pg_hba.conf rejects", "E_CONNECT"),
@@ -148,7 +157,10 @@ _PG_TEXT = (
     # ``tls.scrub`` in ``engine`` before the caller sees them.
     ("connection requires a valid client certificate", "E_AUTH_FAILED"),
     ("certificate authentication failed", "E_AUTH_FAILED"),
-    ("SSL error:", "E_CONNECT"),  # unknown CA, expired certificate, alert unknown ca / bad certificate
+    (
+        "SSL error:",
+        "E_CONNECT",
+    ),  # unknown CA, expired certificate, alert unknown ca / bad certificate
     ("does not match host name", "E_CONNECT"),
     ("no encryption", "E_CONNECT"),  # pg_hba.conf hostnossl ... reject
     ("server does not support SSL", "E_CONNECT"),
@@ -251,41 +263,131 @@ def _my(orig, error_detail):
 
 
 # --------------------------------------------------------------------------------------------------
-# Oracle (oracledb). Only the client-side row is observed: DPY-6005 (docs/wire_shapes/oracle__*.json).
-# UNVERIFIED(T1): ORA-01017 (auth), ORA-00942 (missing table), ORA-01013 (timeout) and every other ORA code, and the
-# exception classes for SQL errors: not mapped, they fall to E_INTERNAL with the class name only.
+# Oracle (python-oracledb thin). Evidence: docs/wire_shapes/t1b/oracle.json, Oracle AI Database 26ai Free 23.26.2,
+# oracledb 26.1.0 (task T1b, 2026-10-31). ``exc.orig.args[0]`` is an error object with ``full_code`` ("ORA-00942",
+# "DPY-6005") and ``message`` ("ORA-00942: table or view ... does not exist\nHelp: https://docs.oracle.com/...").
+# The SQLAlchemy class is DatabaseError for almost everything (IntegrityError for constraints, OperationalError for
+# DPY-6005), so the code is the key. Only observed codes are listed; any other code is E_INTERNAL (class name).
 # --------------------------------------------------------------------------------------------------
-_ORA_CODES = {"DPY-6005": "E_CONNECT"}
+_ORA_CODES = {
+    "ORA-00900": "E_SQL",  # invalid SQL statement
+    "ORA-00904": "E_SQL",  # invalid identifier (unknown column)
+    "ORA-00923": "E_SQL",  # FROM keyword not found where expected (syntax)
+    "ORA-00942": "E_SQL",  # table or view does not exist (also: not granted)
+    "ORA-01031": "E_SQL",  # insufficient privileges (CREATE TABLE as a SELECT-only account)
+    "ORA-01453": "E_SQL",  # SET TRANSACTION must be first statement of transaction
+    "ORA-03405": "E_SQL",  # text after the end of the statement: a second statement in the string
+    "ORA-41900": "E_SQL",  # missing <verb> privilege on <object> (23ai wording of insufficient privileges)
+    "ORA-01476": "E_SQL_DATA",  # divisor is equal to zero
+    "ORA-01722": "E_SQL_DATA",  # unable to convert string value to a number
+    "ORA-12899": "E_SQL_DATA",  # value too large for column
+    "ORA-00001": "E_CONSTRAINT",  # unique constraint violated
+    "ORA-01400": "E_CONSTRAINT",  # cannot insert NULL
+    "ORA-02291": "E_CONSTRAINT",  # integrity constraint violated - parent key not found
+    "ORA-01456": "E_READ_ONLY",  # may not perform insert, delete, update operation inside a READ ONLY transaction
+    "DPY-4024": "E_TIMEOUT",  # call timeout of <n> ms exceeded (Connection.call_timeout)
+    "DPY-4011": "E_CONNECT",  # the database or network closed the connection; "timed out" in the text: E_TIMEOUT
+    "DPY-4010": "E_OPTION_INVALID",  # no value for a bind placeholder (`:a::int` reaches the driver as written)
+    "ORA-01017": "E_AUTH_FAILED",  # invalid credential or not authorized (wrong password and unknown user alike)
+    "DPY-4001": "E_AUTH_FAILED",  # no credentials specified (profile without a password)
+    "DPY-6005": "E_CONNECT",  # cannot connect: refused, timed out, service not registered (DPY-6001)
+}
+#: Driver class fallback for codes not listed above: every observed IntegrityError was a constraint violation.
+_ORA_CLASS = {"IntegrityError": "E_CONSTRAINT"}
+_ORA_HELP = re.compile(r"^Help: https?://\S+$")
+#: "ORA-03301: (ORA-00001 details) row with column values (ID:900)", "ORA-03302: (ORA-01722 details) invalid string
+#: value: abc": the server echoes row or bound values; kept only with ``error_detail``.
+_ORA_DETAIL = re.compile(r"^ORA-033\d\d: \(ORA-\d+ details\)")
+_ORA_CONN_ID = re.compile(r"\s*\(CONNECTION_ID=[^)]*\)")
+_ORA_VALUE = re.compile(r"(string value containing )'.*?'")
 
 
-def _oracle(orig, _error_detail):
+def _oracle(orig, error_detail):
     err = orig.args[0] if orig.args else None
     full_code = getattr(err, "full_code", None)
     if not full_code:
         return None, None, None
-    return _ORA_CODES.get(str(full_code)), str(full_code), str(getattr(err, "message", "") or "")
+    full_code = str(full_code)
+    lines = []
+    for line in str(getattr(err, "message", "") or "").splitlines():
+        line = _ORA_CONN_ID.sub("", line).strip()
+        if not line or _ORA_HELP.match(line) or (_ORA_DETAIL.match(line) and not error_detail):
+            continue
+        if not lines and line.startswith(f"{full_code}: "):
+            line = line[len(full_code) + 2 :]  # the code is already the native part of the message
+        lines.append(line)
+    message = "; ".join(lines)
+    if not error_detail:
+        message = _ORA_VALUE.sub(r"\1'...'", message)
+    code = _ORA_CODES.get(full_code)
+    if full_code == "DPY-4011" and "timed out" in message:
+        # call_timeout expired during a PL/SQL call and the driver could not recover the connection in time
+        # (observed: "socket timed out while recovering from previous socket timeout")
+        code = "E_TIMEOUT"
+    if code is None:
+        names = {c.__name__ for c in type(orig).__mro__}
+        code = next((c for name, c in _ORA_CLASS.items() if name in names), None)
+    return code, full_code, message
 
 
 # --------------------------------------------------------------------------------------------------
-# SQL Server (pymssql). Only the client-side row is observed: 20009, args == ((20009, b"..."),).
-# UNVERIFIED(T1): 18456 (login failed), 208/102 (SQL errors), timeouts and every other code: E_INTERNAL, class only.
+# SQL Server (pymssql 2.4.6 / FreeTDS). Evidence: docs/wire_shapes/t1b/mssql.json, SQL Server 2022 CU25
+# (16.0.4255.1), task T1b 2026-10-31. Statement errors: ``args == (code, b"<server text>DB-Lib error message 20018,
+# ...")``; connect errors: ``args == ((code, b"..."),)``. The server's own text comes first and the DB-Lib lines are
+# glued to it without a newline. The number is NOT reliable for connect failures: pymssql keeps the last server
+# message number of the process, so a closed port right after a failed login reported 18456 (observed). Connect
+# failures are therefore decided on the DB-Lib text first (20009 unable to connect, 20003 timed out).
 # --------------------------------------------------------------------------------------------------
-_MSSQL_CODES = {20009: "E_CONNECT"}
+_MSSQL_CODES = {
+    102: "E_SQL",  # incorrect syntax near ...
+    207: "E_SQL",  # invalid column name
+    208: "E_SQL",  # invalid object name
+    229: "E_SQL",  # the <verb> permission was denied on the object
+    262: "E_SQL",  # CREATE TABLE permission denied in database
+    2812: "E_SQL",  # could not find stored procedure (a statement that starts with an unknown word)
+    245: "E_SQL_DATA",  # conversion failed
+    2628: "E_SQL_DATA",  # string or binary data would be truncated
+    8134: "E_SQL_DATA",  # divide by zero
+    515: "E_CONSTRAINT",  # cannot insert the value NULL
+    547: "E_CONSTRAINT",  # conflicted with the FOREIGN KEY constraint
+    2627: "E_CONSTRAINT",  # violation of PRIMARY KEY / UNIQUE constraint
+    18456: "E_AUTH_FAILED",  # login failed (wrong password, no password, unknown database at login)
+    20009: "E_CONNECT",  # DB-Lib: unable to connect (refused, timed out, unknown host)
+}
+_MSSQL_DBLIB = re.compile(r"DB-Lib error message (\d+), severity \d+:")
+_MSSQL_NOISE = "General SQL Server error: Check messages from the SQL Server"
+#: Values the server echoes: "The duplicate key value is (1).", "Truncated value: 'xxx'.", "the varchar value 'abc'"
+_MSSQL_VALUES = (
+    (re.compile(r"(The duplicate key value is )\(.*?\)(?=\.)", re.DOTALL), r"\1(...)"),
+    (re.compile(r"(Truncated value: )'.*?'(?=\.)", re.DOTALL), r"\1'...'"),
+    (re.compile(r"(converting the \w+ value )'.*?'", re.DOTALL), r"\1'...'"),
+)
 
 
-def _mssql(orig, _error_detail):
+def _mssql(orig, error_detail):
     args = orig.args
     pair = args[0] if args and isinstance(args[0], tuple) else args
     if len(pair) < 2 or not isinstance(pair[0], int):
         return None, None, None
     raw = pair[1]
     text = raw.decode("utf-8", "replace") if isinstance(raw, bytes) else str(raw)
-    lines = []
-    for line in text.splitlines():
+    first = _MSSQL_DBLIB.search(text)
+    server = (text[: first.start()] if first else text).strip()
+    dblib = set(_MSSQL_DBLIB.findall(text))
+    lines = [server] if server else []
+    for line in _MSSQL_DBLIB.sub("\n", text[first.start() :] if first else "").splitlines():
         line = line.strip()
-        if line and not line.startswith("DB-Lib error message") and line not in lines:
+        if line and line != _MSSQL_NOISE and line not in lines:
             lines.append(line)
-    return _MSSQL_CODES.get(pair[0]), str(pair[0]), "; ".join(lines)
+    message = "; ".join(lines)
+    if not error_detail:
+        for pattern, repl in _MSSQL_VALUES:
+            message = pattern.sub(repl, message)
+    if "20003" in dblib:  # "TDS server connection timed out": the client-side query timeout expired
+        return "E_TIMEOUT", "20003", message
+    if "20009" in dblib:  # "Unable to connect": whatever (possibly stale) number pymssql reported
+        return "E_CONNECT", "20009", message
+    return _MSSQL_CODES.get(pair[0]), str(pair[0]), message
 
 
 _DRIVER_PATH = {
@@ -339,7 +441,9 @@ def _raw(exc, dialect):
             return Translation("E_CONNECT", None, _MSG_AUTH_SWITCH)
     elif isinstance(exc, OverflowError):
         # A number or date the driver cannot represent (for example a year or an interval beyond Python's range).
-        return Translation("E_SQL_DATA", None, "a value in the result is out of range for the driver")
+        return Translation(
+            "E_SQL_DATA", None, "a value in the result is out of range for the driver"
+        )
     elif isinstance(exc, ValueError) and "unsupported format character" in text:  # WS 5
         return Translation("E_OPTION_INVALID", None, _HINT_PERCENT)
     return None
@@ -365,6 +469,15 @@ def describe(exc, dialect, error_detail=False):
         if code is None:
             return _internal(orig, native)
         return Translation(code, native, _clean(message) or type(orig).__name__)
+    if isinstance(exc, socket.gaierror):
+        # python-oracledb thin resolves the host itself and lets the error escape unwrapped (observed, T1b:
+        # socket.gaierror(-2, 'Name or service not known')); the other drivers wrap it. The host is not in args.
+        reason = (
+            exc.args[1]
+            if len(exc.args) > 1 and isinstance(exc.args[1], str)
+            else "name resolution failed"
+        )
+        return Translation("E_CONNECT", None, f"cannot resolve the database host name: {reason}")
     hit = _raw(exc, dialect)
     return hit if hit is not None else _internal(exc)
 

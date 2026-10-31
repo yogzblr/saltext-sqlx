@@ -1,0 +1,856 @@
+{
+ "dialect": "mssql",
+ "observed": "2026-10-31T04:02:07Z",
+ "versions": {
+  "SQLAlchemy": "2.0.55",
+  "pymssql": "2.4.6"
+ },
+ "python": "3.14.7",
+ "cases": {
+  "syntax": {
+   "outcome": "error",
+   "elapsed_ms": 43,
+   "sa_class": "sqlalchemy.exc.ProgrammingError",
+   "driver_class": "pymssql.exceptions.ProgrammingError",
+   "args": "(2812, b\"Could not find stored procedure 'selec'.DB-Lib error message 20018, severity 16:\\nGeneral SQL Server error: Check messages from the SQL Server\\n\")",
+   "code": 2812,
+   "message": "Could not find stored procedure 'selec'.DB-Lib error message 20018, severity 16:\nGeneral SQL Server error: Check messages from the SQL Server\n",
+   "sqlx_today": {
+    "code": "E_INTERNAL",
+    "native": "2812",
+    "message": "ProgrammingError"
+   }
+  },
+  "syntax_from": {
+   "outcome": "error",
+   "elapsed_ms": 30,
+   "sa_class": "sqlalchemy.exc.ProgrammingError",
+   "driver_class": "pymssql.exceptions.ProgrammingError",
+   "args": "(102, b\"Incorrect syntax near 'fro'.DB-Lib error message 20018, severity 15:\\nGeneral SQL Server error: Check messages from the SQL Server\\n\")",
+   "code": 102,
+   "message": "Incorrect syntax near 'fro'.DB-Lib error message 20018, severity 15:\nGeneral SQL Server error: Check messages from the SQL Server\n",
+   "sqlx_today": {
+    "code": "E_INTERNAL",
+    "native": "102",
+    "message": "ProgrammingError"
+   }
+  },
+  "missing_table": {
+   "outcome": "error",
+   "elapsed_ms": 28,
+   "sa_class": "sqlalchemy.exc.ProgrammingError",
+   "driver_class": "pymssql.exceptions.ProgrammingError",
+   "args": "(208, b\"Invalid object name 'nope'.DB-Lib error message 20018, severity 16:\\nGeneral SQL Server error: Check messages from the SQL Server\\n\")",
+   "code": 208,
+   "message": "Invalid object name 'nope'.DB-Lib error message 20018, severity 16:\nGeneral SQL Server error: Check messages from the SQL Server\n",
+   "sqlx_today": {
+    "code": "E_INTERNAL",
+    "native": "208",
+    "message": "ProgrammingError"
+   }
+  },
+  "missing_column": {
+   "outcome": "error",
+   "elapsed_ms": 32,
+   "sa_class": "sqlalchemy.exc.ProgrammingError",
+   "driver_class": "pymssql.exceptions.ProgrammingError",
+   "args": "(207, b\"Invalid column name 'nope'.DB-Lib error message 20018, severity 16:\\nGeneral SQL Server error: Check messages from the SQL Server\\n\")",
+   "code": 207,
+   "message": "Invalid column name 'nope'.DB-Lib error message 20018, severity 16:\nGeneral SQL Server error: Check messages from the SQL Server\n",
+   "sqlx_today": {
+    "code": "E_INTERNAL",
+    "native": "207",
+    "message": "ProgrammingError"
+   }
+  },
+  "division_by_zero": {
+   "outcome": "error",
+   "elapsed_ms": 29,
+   "sa_class": "sqlalchemy.exc.OperationalError",
+   "driver_class": "pymssql.exceptions.OperationalError",
+   "args": "(8134, b'Divide by zero error encountered.DB-Lib error message 20018, severity 16:\\nGeneral SQL Server error: Check messages from the SQL Server\\n')",
+   "code": 8134,
+   "message": "Divide by zero error encountered.DB-Lib error message 20018, severity 16:\nGeneral SQL Server error: Check messages from the SQL Server\n",
+   "sqlx_today": {
+    "code": "E_INTERNAL",
+    "native": "8134",
+    "message": "OperationalError"
+   }
+  },
+  "unique_violation": {
+   "outcome": "error",
+   "elapsed_ms": 23,
+   "sa_class": "sqlalchemy.exc.IntegrityError",
+   "driver_class": "pymssql.exceptions.IntegrityError",
+   "args": "(2627, b\"Violation of PRIMARY KEY constraint 'PK__e2e_note__3213E83F34A55A12'. Cannot insert duplicate key in object 'scratch.e2e_notes'. The duplicate key value is (1).DB-Lib error message 20018, severity 14:\\nGeneral SQL Server error: Check messages from the SQL Server\\n\")",
+   "code": 2627,
+   "message": "Violation of PRIMARY KEY constraint 'PK__e2e_note__3213E83F34A55A12'. Cannot insert duplicate key in object 'scratch.e2e_notes'. The duplicate key value is (1).DB-Lib error message 20018, severity 14:\nGeneral SQL Server error: Check messages from the SQL Server\n",
+   "sqlx_today": {
+    "code": "E_INTERNAL",
+    "native": "2627",
+    "message": "IntegrityError"
+   }
+  },
+  "fk_violation": {
+   "outcome": "error",
+   "elapsed_ms": 27,
+   "sa_class": "sqlalchemy.exc.IntegrityError",
+   "driver_class": "pymssql.exceptions.IntegrityError",
+   "args": "(547, b'The INSERT statement conflicted with the FOREIGN KEY constraint \"fk_rental_customer\". The conflict occurred in database \"sakila\", table \"dbo.customer\", column \\'customer_id\\'.DB-Lib error message 20018, severity 16:\\nGeneral SQL Server error: Check messages from the SQL Server\\n')",
+   "code": 547,
+   "message": "The INSERT statement conflicted with the FOREIGN KEY constraint \"fk_rental_customer\". The conflict occurred in database \"sakila\", table \"dbo.customer\", column 'customer_id'.DB-Lib error message 20018, severity 16:\nGeneral SQL Server error: Check messages from the SQL Server\n",
+   "sqlx_today": {
+    "code": "E_INTERNAL",
+    "native": "547",
+    "message": "IntegrityError"
+   }
+  },
+  "not_null_violation": {
+   "outcome": "error",
+   "elapsed_ms": 30,
+   "sa_class": "sqlalchemy.exc.IntegrityError",
+   "driver_class": "pymssql.exceptions.IntegrityError",
+   "args": "(515, b\"Cannot insert the value NULL into column 'note', table 'sakila.scratch.e2e_notes'; column does not allow nulls. INSERT fails.DB-Lib error message 20018, severity 16:\\nGeneral SQL Server error: Check messages from the SQL Server\\n\")",
+   "code": 515,
+   "message": "Cannot insert the value NULL into column 'note', table 'sakila.scratch.e2e_notes'; column does not allow nulls. INSERT fails.DB-Lib error message 20018, severity 16:\nGeneral SQL Server error: Check messages from the SQL Server\n",
+   "sqlx_today": {
+    "code": "E_INTERNAL",
+    "native": "515",
+    "message": "IntegrityError"
+   }
+  },
+  "permission_denied_write": {
+   "outcome": "error",
+   "elapsed_ms": 28,
+   "sa_class": "sqlalchemy.exc.OperationalError",
+   "driver_class": "pymssql.exceptions.OperationalError",
+   "args": "(229, b\"The DELETE permission was denied on the object 'film', database 'sakila', schema 'dbo'.DB-Lib error message 20018, severity 14:\\nGeneral SQL Server error: Check messages from the SQL Server\\n\")",
+   "code": 229,
+   "message": "The DELETE permission was denied on the object 'film', database 'sakila', schema 'dbo'.DB-Lib error message 20018, severity 14:\nGeneral SQL Server error: Check messages from the SQL Server\n",
+   "sqlx_today": {
+    "code": "E_INTERNAL",
+    "native": "229",
+    "message": "OperationalError"
+   }
+  },
+  "permission_denied_scratch": {
+   "outcome": "error",
+   "elapsed_ms": 27,
+   "sa_class": "sqlalchemy.exc.OperationalError",
+   "driver_class": "pymssql.exceptions.OperationalError",
+   "args": "(229, b\"The INSERT permission was denied on the object 'e2e_notes', database 'sakila', schema 'scratch'.DB-Lib error message 20018, severity 14:\\nGeneral SQL Server error: Check messages from the SQL Server\\n\")",
+   "code": 229,
+   "message": "The INSERT permission was denied on the object 'e2e_notes', database 'sakila', schema 'scratch'.DB-Lib error message 20018, severity 14:\nGeneral SQL Server error: Check messages from the SQL Server\n",
+   "sqlx_today": {
+    "code": "E_INTERNAL",
+    "native": "229",
+    "message": "OperationalError"
+   }
+  },
+  "multi_statement_select": {
+   "outcome": "ok",
+   "elapsed_ms": 26,
+   "returns_rows": true,
+   "rowcount": -1,
+   "columns": [
+    ""
+   ],
+   "rows": [
+    [
+     "int:1"
+    ]
+   ]
+  },
+  "multi_statement_dml": {
+   "outcome": "ok",
+   "elapsed_ms": 41,
+   "returns_rows": false,
+   "rowcount": 1
+  },
+  "multi_statement_check": {
+   "outcome": "ok",
+   "elapsed_ms": 27,
+   "returns_rows": true,
+   "rowcount": -1,
+   "columns": [
+    ""
+   ],
+   "rows": [
+    [
+     "int:2"
+    ]
+   ]
+  },
+  "multi_statement_no_separator": {
+   "outcome": "ok",
+   "elapsed_ms": 40,
+   "returns_rows": false,
+   "rowcount": 1
+  },
+  "multi_statement_no_sep_check": {
+   "outcome": "ok",
+   "elapsed_ms": 27,
+   "returns_rows": true,
+   "rowcount": -1,
+   "columns": [
+    ""
+   ],
+   "rows": [
+    [
+     "int:2"
+    ]
+   ]
+  },
+  "commit_inside_batch": {
+   "outcome": "ok",
+   "elapsed_ms": 37,
+   "returns_rows": false,
+   "rowcount": -1
+  },
+  "commit_inside_check": {
+   "outcome": "ok",
+   "elapsed_ms": 30,
+   "returns_rows": true,
+   "rowcount": -1,
+   "columns": [
+    ""
+   ],
+   "rows": [
+    [
+     "int:1"
+    ]
+   ]
+  },
+  "multi_cleanup": {
+   "outcome": "ok",
+   "elapsed_ms": 27,
+   "returns_rows": false,
+   "rowcount": 5
+  },
+  "trailing_semicolon": {
+   "outcome": "ok",
+   "elapsed_ms": 26,
+   "returns_rows": true,
+   "rowcount": -1,
+   "columns": [
+    ""
+   ],
+   "rows": [
+    [
+     "int:1"
+    ]
+   ]
+  },
+  "nul_byte_literal": {
+   "outcome": "error",
+   "elapsed_ms": 21,
+   "sa_class": "sqlalchemy.exc.OperationalError",
+   "driver_class": "pymssql.exceptions.OperationalError",
+   "args": "(105, b\"Unclosed quotation mark after the character string 'a'.DB-Lib error message 20018, severity 15:\\nGeneral SQL Server error: Check messages from the SQL Server\\nDB-Lib error message 20018, severity 15:\\nGeneral SQL Server error: Check messages from the SQL Server\\n\")",
+   "code": 105,
+   "message": "Unclosed quotation mark after the character string 'a'.DB-Lib error message 20018, severity 15:\nGeneral SQL Server error: Check messages from the SQL Server\nDB-Lib error message 20018, severity 15:\nGeneral SQL Server error: Check messages from the SQL Server\n",
+   "sqlx_today": {
+    "code": "E_INTERNAL",
+    "native": "105",
+    "message": "OperationalError"
+   }
+  },
+  "nul_byte_bind": {
+   "outcome": "error",
+   "elapsed_ms": 23,
+   "sa_class": "sqlalchemy.exc.OperationalError",
+   "driver_class": "pymssql.exceptions.OperationalError",
+   "args": "(105, b\"Unclosed quotation mark after the character string 'a'.DB-Lib error message 20018, severity 15:\\nGeneral SQL Server error: Check messages from the SQL Server\\nDB-Lib error message 20018, severity 15:\\nGeneral SQL Server error: Check messages from the SQL Server\\n\")",
+   "code": 105,
+   "message": "Unclosed quotation mark after the character string 'a'.DB-Lib error message 20018, severity 15:\nGeneral SQL Server error: Check messages from the SQL Server\nDB-Lib error message 20018, severity 15:\nGeneral SQL Server error: Check messages from the SQL Server\n",
+   "sqlx_today": {
+    "code": "E_INTERNAL",
+    "native": "105",
+    "message": "OperationalError"
+   }
+  },
+  "cast_bind": {
+   "outcome": "ok",
+   "elapsed_ms": 25,
+   "returns_rows": true,
+   "rowcount": -1,
+   "columns": [
+    ""
+   ],
+   "rows": [
+    [
+     "int:42"
+    ]
+   ]
+  },
+  "literal_percent_and_bind": {
+   "outcome": "ok",
+   "elapsed_ms": 28,
+   "returns_rows": true,
+   "rowcount": -1,
+   "columns": [
+    ""
+   ],
+   "rows": [
+    [
+     "int:1"
+    ]
+   ]
+  },
+  "literal_colon_escaped": {
+   "outcome": "ok",
+   "elapsed_ms": 25,
+   "returns_rows": true,
+   "rowcount": -1,
+   "columns": [
+    ""
+   ],
+   "rows": [
+    [
+     "str:a:b"
+    ]
+   ]
+  },
+  "timeout_1s": {
+   "outcome": "error",
+   "elapsed_ms": 1023,
+   "sa_class": "sqlalchemy.exc.OperationalError",
+   "driver_class": "pymssql.exceptions.OperationalError",
+   "args": "(20047, b'DB-Lib error message 20003, severity 6:\\nTDS server connection timed out\\nDB-Lib error message 20047, severity 9:\\nDBPROCESS is dead or not enabled\\n')",
+   "code": 20047,
+   "message": "DB-Lib error message 20003, severity 6:\nTDS server connection timed out\nDB-Lib error message 20047, severity 9:\nDBPROCESS is dead or not enabled\n",
+   "sqlx_today": {
+    "code": "E_INTERNAL",
+    "native": "20047",
+    "message": "OperationalError"
+   }
+  },
+  "timeout_1s_select": {
+   "outcome": "error",
+   "elapsed_ms": 1024,
+   "sa_class": "sqlalchemy.exc.OperationalError",
+   "driver_class": "pymssql.exceptions.OperationalError",
+   "args": "(20047, b'DB-Lib error message 20003, severity 6:\\nTDS server connection timed out\\nDB-Lib error message 20047, severity 9:\\nDBPROCESS is dead or not enabled\\n')",
+   "code": 20047,
+   "message": "DB-Lib error message 20003, severity 6:\nTDS server connection timed out\nDB-Lib error message 20047, severity 9:\nDBPROCESS is dead or not enabled\n",
+   "sqlx_today": {
+    "code": "E_INTERNAL",
+    "native": "20047",
+    "message": "OperationalError"
+   }
+  },
+  "lock_timeout": {
+   "outcome": "ok",
+   "elapsed_ms": 46,
+   "returns_rows": true,
+   "rowcount": -1,
+   "columns": [
+    ""
+   ],
+   "rows": [
+    [
+     "int:1"
+    ]
+   ]
+  },
+  "bad_cast": {
+   "outcome": "error",
+   "elapsed_ms": 22,
+   "sa_class": "sqlalchemy.exc.OperationalError",
+   "driver_class": "pymssql.exceptions.OperationalError",
+   "args": "(245, b\"Conversion failed when converting the varchar value 'abc' to data type int.DB-Lib error message 20018, severity 16:\\nGeneral SQL Server error: Check messages from the SQL Server\\n\")",
+   "code": 245,
+   "message": "Conversion failed when converting the varchar value 'abc' to data type int.DB-Lib error message 20018, severity 16:\nGeneral SQL Server error: Check messages from the SQL Server\n",
+   "sqlx_today": {
+    "code": "E_INTERNAL",
+    "native": "245",
+    "message": "OperationalError"
+   }
+  },
+  "value_too_large": {
+   "outcome": "error",
+   "elapsed_ms": 23,
+   "sa_class": "sqlalchemy.exc.OperationalError",
+   "driver_class": "pymssql.exceptions.OperationalError",
+   "args": "(2628, b\"String or binary data would be truncated in table 'sakila.scratch.e2e_notes', column 'note'. Truncated value: 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'.DB-Lib error message 20018, severity 16:\\nGeneral SQL Server error: Check messages from the SQL Server\\n\")",
+   "code": 2628,
+   "message": "String or binary data would be truncated in table 'sakila.scratch.e2e_notes', column 'note'. Truncated value: 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'.DB-Lib error message 20018, severity 16:\nGeneral SQL Server error: Check messages from the SQL Server\n",
+   "sqlx_today": {
+    "code": "E_INTERNAL",
+    "native": "2628",
+    "message": "OperationalError"
+   }
+  },
+  "read_only_intent_attempt": {
+   "outcome": "ok",
+   "elapsed_ms": 22,
+   "returns_rows": true,
+   "rowcount": -1,
+   "columns": [
+    ""
+   ],
+   "rows": [
+    [
+     "int:1"
+    ]
+   ]
+  },
+  "wrong_password": {
+   "outcome": "error",
+   "elapsed_ms": 18,
+   "sa_class": "sqlalchemy.exc.OperationalError",
+   "driver_class": "pymssql.exceptions.OperationalError",
+   "args": "((18456, b\"Login failed for user 'ro'.DB-Lib error message 20018, severity 14:\\nGeneral SQL Server error: Check messages from the SQL Server\\nDB-Lib error message 20002, severity 9:\\nTDS server connection failed (mssql)\\nDB-Lib error message 20002, severity 9:\\nTDS server connection failed (mssql)\\n\"),)",
+   "code": 18456,
+   "message": "Login failed for user 'ro'.DB-Lib error message 20018, severity 14:\nGeneral SQL Server error: Check messages from the SQL Server\nDB-Lib error message 20002, severity 9:\nTDS server connection failed (mssql)\nDB-Lib error message 20002, severity 9:\nTDS server connection failed (mssql)\n",
+   "sqlx_today": {
+    "code": "E_INTERNAL",
+    "native": "18456",
+    "message": "OperationalError"
+   }
+  },
+  "no_password": {
+   "outcome": "error",
+   "elapsed_ms": 17,
+   "sa_class": "sqlalchemy.exc.OperationalError",
+   "driver_class": "pymssql.exceptions.OperationalError",
+   "args": "((18456, b'DB-Lib error message 20018, severity 14:\\nGeneral SQL Server error: Check messages from the SQL Server\\nDB-Lib error message 20002, severity 9:\\nTDS server connection failed (mssql)\\nDB-Lib error message 20002, severity 9:\\nTDS server connection failed (mssql)\\n'),)",
+   "code": 18456,
+   "message": "DB-Lib error message 20018, severity 14:\nGeneral SQL Server error: Check messages from the SQL Server\nDB-Lib error message 20002, severity 9:\nTDS server connection failed (mssql)\nDB-Lib error message 20002, severity 9:\nTDS server connection failed (mssql)\n",
+   "sqlx_today": {
+    "code": "E_INTERNAL",
+    "native": "18456",
+    "message": "OperationalError"
+   }
+  },
+  "unknown_database": {
+   "outcome": "error",
+   "elapsed_ms": 17,
+   "sa_class": "sqlalchemy.exc.OperationalError",
+   "driver_class": "pymssql.exceptions.OperationalError",
+   "args": "((18456, b'DB-Lib error message 20018, severity 11:\\nGeneral SQL Server error: Check messages from the SQL Server\\nDB-Lib error message 20018, severity 14:\\nGeneral SQL Server error: Check messages from the SQL Server\\nDB-Lib error message 20002, severity 9:\\nTDS server connection failed (mssql)\\nDB-Lib error message 20002, severity 9:\\nTDS server connection failed (mssql)\\n'),)",
+   "code": 18456,
+   "message": "DB-Lib error message 20018, severity 11:\nGeneral SQL Server error: Check messages from the SQL Server\nDB-Lib error message 20018, severity 14:\nGeneral SQL Server error: Check messages from the SQL Server\nDB-Lib error message 20002, severity 9:\nTDS server connection failed (mssql)\nDB-Lib error message 20002, severity 9:\nTDS server connection failed (mssql)\n",
+   "sqlx_today": {
+    "code": "E_INTERNAL",
+    "native": "18456",
+    "message": "OperationalError"
+   }
+  },
+  "closed_port": {
+   "outcome": "error",
+   "elapsed_ms": 1,
+   "sa_class": "sqlalchemy.exc.OperationalError",
+   "driver_class": "pymssql.exceptions.OperationalError",
+   "args": "((18456, b'DB-Lib error message 20009, severity 9:\\nUnable to connect: TDS server is unavailable or does not exist (mssql)\\nNet-Lib error during Connection refused (111)\\nDB-Lib error message 20009, severity 9:\\nUnable to connect: TDS server is unavailable or does not exist (mssql)\\nNet-Lib error during Connection refused (111)\\n'),)",
+   "code": 18456,
+   "message": "DB-Lib error message 20009, severity 9:\nUnable to connect: TDS server is unavailable or does not exist (mssql)\nNet-Lib error during Connection refused (111)\nDB-Lib error message 20009, severity 9:\nUnable to connect: TDS server is unavailable or does not exist (mssql)\nNet-Lib error during Connection refused (111)\n",
+   "sqlx_today": {
+    "code": "E_INTERNAL",
+    "native": "18456",
+    "message": "OperationalError"
+   }
+  },
+  "unknown_host": {
+   "outcome": "error",
+   "elapsed_ms": 32,
+   "sa_class": "sqlalchemy.exc.OperationalError",
+   "driver_class": "pymssql.exceptions.OperationalError",
+   "args": "((18456, b'DB-Lib error message 20009, severity 9:\\nUnable to connect: TDS server is unavailable or does not exist (no-such-host.invalid)\\n'),)",
+   "code": 18456,
+   "message": "DB-Lib error message 20009, severity 9:\nUnable to connect: TDS server is unavailable or does not exist (no-such-host.invalid)\n",
+   "sqlx_today": {
+    "code": "E_INTERNAL",
+    "native": "18456",
+    "message": "OperationalError"
+   }
+  },
+  "unreachable_host": {
+   "outcome": "error",
+   "elapsed_ms": 3002,
+   "sa_class": "sqlalchemy.exc.OperationalError",
+   "driver_class": "pymssql.exceptions.OperationalError",
+   "args": "((18456, b'DB-Lib error message 20009, severity 9:\\nUnable to connect: TDS server is unavailable or does not exist (10.254.254.254)\\nNet-Lib error during Connection timed out (110)\\nDB-Lib error message 20009, severity 9:\\nUnable to connect: TDS server is unavailable or does not exist (10.254.254.254)\\nNet-Lib error during Connection timed out (110)\\n'),)",
+   "code": 18456,
+   "message": "DB-Lib error message 20009, severity 9:\nUnable to connect: TDS server is unavailable or does not exist (10.254.254.254)\nNet-Lib error during Connection timed out (110)\nDB-Lib error message 20009, severity 9:\nUnable to connect: TDS server is unavailable or does not exist (10.254.254.254)\nNet-Lib error during Connection timed out (110)\n",
+   "sqlx_today": {
+    "code": "E_INTERNAL",
+    "native": "18456",
+    "message": "OperationalError"
+   }
+  },
+  "types": {
+   "outcome": "ok",
+   "elapsed_ms": 26,
+   "returns_rows": true,
+   "rowcount": -1,
+   "columns": [
+    "id",
+    "t_text",
+    "t_num",
+    "t_ts",
+    "t_uuid",
+    "t_bin",
+    "t_json",
+    "t_null"
+   ],
+   "rows": [
+    [
+     "int:1",
+     "str:Grüße ✓ naïve",
+     "Decimal:Decimal('12.50')",
+     "datetime:datetime.datetime(2026, 10, 31, 12, 34, 56, 789012)",
+     "UUID:UUID('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11')",
+     "bytes:b'\\xde\\xad\\xbe\\xef'",
+     "str:{\"a\": 1, \"b\": [true, null]}",
+     "NoneType:None"
+    ],
+    [
+     "int:2",
+     "NoneType:None",
+     "NoneType:None",
+     "NoneType:None",
+     "NoneType:None",
+     "NoneType:None",
+     "NoneType:None",
+     "NoneType:None"
+    ]
+   ]
+  },
+  "count_film": {
+   "outcome": "ok",
+   "elapsed_ms": 24,
+   "returns_rows": true,
+   "rowcount": -1,
+   "columns": [
+    ""
+   ],
+   "rows": [
+    [
+     "int:1000"
+    ]
+   ]
+  },
+  "t1_div0_dml": {
+   "outcome": "error",
+   "elapsed_ms": 370,
+   "sa_class": "sqlalchemy.exc.OperationalError",
+   "driver_class": "pymssql.exceptions.OperationalError",
+   "args": "(8134, b'Divide by zero error encountered.DB-Lib error message 20018, severity 16:\\nGeneral SQL Server error: Check messages from the SQL Server\\n')",
+   "code": 8134,
+   "message": "Divide by zero error encountered.DB-Lib error message 20018, severity 16:\nGeneral SQL Server error: Check messages from the SQL Server\n",
+   "sqlx_today": {
+    "code": "E_SQL_DATA",
+    "native": "8134",
+    "message": "Divide by zero error encountered."
+   }
+  },
+  "t1_ro_select_other_schema": {
+   "outcome": "error",
+   "elapsed_ms": 80,
+   "sa_class": "sqlalchemy.exc.OperationalError",
+   "driver_class": "pymssql.exceptions.OperationalError",
+   "args": "(229, b\"The SELECT permission was denied on the object 'e2e_notes', database 'sakila', schema 'scratch'.DB-Lib error message 20018, severity 14:\\nGeneral SQL Server error: Check messages from the SQL Server\\n\")",
+   "code": 229,
+   "message": "The SELECT permission was denied on the object 'e2e_notes', database 'sakila', schema 'scratch'.DB-Lib error message 20018, severity 14:\nGeneral SQL Server error: Check messages from the SQL Server\n",
+   "sqlx_today": {
+    "code": "E_SQL",
+    "native": "229",
+    "message": "The SELECT permission was denied on the object 'e2e_notes', database 'sakila', schema 'scratch'."
+   }
+  },
+  "t1_ro_update": {
+   "outcome": "error",
+   "elapsed_ms": 131,
+   "sa_class": "sqlalchemy.exc.OperationalError",
+   "driver_class": "pymssql.exceptions.OperationalError",
+   "args": "(229, b\"The UPDATE permission was denied on the object 'film', database 'sakila', schema 'dbo'.DB-Lib error message 20018, severity 14:\\nGeneral SQL Server error: Check messages from the SQL Server\\n\")",
+   "code": 229,
+   "message": "The UPDATE permission was denied on the object 'film', database 'sakila', schema 'dbo'.DB-Lib error message 20018, severity 14:\nGeneral SQL Server error: Check messages from the SQL Server\n",
+   "sqlx_today": {
+    "code": "E_SQL",
+    "native": "229",
+    "message": "The UPDATE permission was denied on the object 'film', database 'sakila', schema 'dbo'."
+   }
+  },
+  "t1_ro_delete": {
+   "outcome": "error",
+   "elapsed_ms": 72,
+   "sa_class": "sqlalchemy.exc.OperationalError",
+   "driver_class": "pymssql.exceptions.OperationalError",
+   "args": "(229, b\"The DELETE permission was denied on the object 'film', database 'sakila', schema 'dbo'.DB-Lib error message 20018, severity 14:\\nGeneral SQL Server error: Check messages from the SQL Server\\n\")",
+   "code": 229,
+   "message": "The DELETE permission was denied on the object 'film', database 'sakila', schema 'dbo'.DB-Lib error message 20018, severity 14:\nGeneral SQL Server error: Check messages from the SQL Server\n",
+   "sqlx_today": {
+    "code": "E_SQL",
+    "native": "229",
+    "message": "The DELETE permission was denied on the object 'film', database 'sakila', schema 'dbo'."
+   }
+  },
+  "t1_ro_ddl": {
+   "outcome": "error",
+   "elapsed_ms": 101,
+   "sa_class": "sqlalchemy.exc.OperationalError",
+   "driver_class": "pymssql.exceptions.OperationalError",
+   "args": "(262, b\"CREATE TABLE permission denied in database 'sakila'.DB-Lib error message 20018, severity 14:\\nGeneral SQL Server error: Check messages from the SQL Server\\n\")",
+   "code": 262,
+   "message": "CREATE TABLE permission denied in database 'sakila'.DB-Lib error message 20018, severity 14:\nGeneral SQL Server error: Check messages from the SQL Server\n",
+   "sqlx_today": {
+    "code": "E_INTERNAL",
+    "native": "262",
+    "message": "OperationalError"
+   }
+  },
+  "t1_bad_bound_value": {
+   "outcome": "error",
+   "elapsed_ms": 62,
+   "sa_class": "sqlalchemy.exc.OperationalError",
+   "driver_class": "pymssql.exceptions.OperationalError",
+   "args": "(245, b\"Conversion failed when converting the nvarchar value 'zz_secret_bound_value' to data type int.DB-Lib error message 20018, severity 16:\\nGeneral SQL Server error: Check messages from the SQL Server\\n\")",
+   "code": 245,
+   "message": "Conversion failed when converting the nvarchar value 'zz_secret_bound_value' to data type int.DB-Lib error message 20018, severity 16:\nGeneral SQL Server error: Check messages from the SQL Server\n",
+   "sqlx_today": {
+    "code": "E_SQL_DATA",
+    "native": "245",
+    "message": "Conversion failed when converting the nvarchar value '...' to data type int."
+   }
+  },
+  "t1_rw_write_then_rollback": {
+   "outcome": "ok",
+   "elapsed_ms": 64,
+   "returns_rows": false,
+   "rowcount": 1
+  },
+  "t1_rw_write_then_rollback_check": {
+   "outcome": "ok",
+   "elapsed_ms": 104,
+   "returns_rows": true,
+   "rowcount": -1,
+   "columns": [
+    ""
+   ],
+   "rows": [
+    [
+     "int:0"
+    ]
+   ]
+  },
+  "t1_text_trap_colon_cast": {
+   "outcome": "error",
+   "elapsed_ms": 59,
+   "sa_class": "sqlalchemy.exc.ProgrammingError",
+   "driver_class": "pymssql.exceptions.ProgrammingError",
+   "args": "(102, b\"Incorrect syntax near ':'.DB-Lib error message 20018, severity 15:\\nGeneral SQL Server error: Check messages from the SQL Server\\n\")",
+   "code": 102,
+   "message": "Incorrect syntax near ':'.DB-Lib error message 20018, severity 15:\nGeneral SQL Server error: Check messages from the SQL Server\n",
+   "sqlx_today": {
+    "code": "E_SQL",
+    "native": "102",
+    "message": "Incorrect syntax near ':'."
+   }
+  },
+  "t1_text_trap_json_colon_literal": {
+   "outcome": "error",
+   "elapsed_ms": 39,
+   "sa_class": "sqlalchemy.exc.StatementError",
+   "driver_class": "sqlalchemy.exc.InvalidRequestError",
+   "args": "(\"A value is required for bind parameter '1'\",)",
+   "sqlx_today": {
+    "code": "E_OPTION_INVALID",
+    "native": null,
+    "message": "a ':' in the statement was read as a bind parameter '1'; write literal colons as \\: and casts as CAST(:x AS type), never :x::type"
+   }
+  },
+  "t1_text_trap_json_colon_escaped": {
+   "outcome": "ok",
+   "elapsed_ms": 42,
+   "returns_rows": true,
+   "rowcount": -1,
+   "columns": [
+    ""
+   ],
+   "rows": [
+    [
+     "str:{\"a\":1}"
+    ]
+   ]
+  },
+  "t1_text_percent_in_text": {
+   "outcome": "ok",
+   "elapsed_ms": 61,
+   "returns_rows": true,
+   "rowcount": -1,
+   "columns": [
+    ""
+   ],
+   "rows": [
+    [
+     "int:1"
+    ]
+   ]
+  },
+  "t1_text_cast_bind": {
+   "outcome": "ok",
+   "elapsed_ms": 56,
+   "returns_rows": true,
+   "rowcount": -1,
+   "columns": [
+    ""
+   ],
+   "rows": [
+    [
+     "int:10"
+    ]
+   ]
+  },
+  "t1_driver_sql_percent_no_params": {
+   "outcome": "ok",
+   "elapsed_ms": 35,
+   "returns_rows": true,
+   "rowcount": -1,
+   "columns": [
+    ""
+   ],
+   "rows": [
+    [
+     "int:1"
+    ]
+   ]
+  },
+  "t1_timeout_sleep": {
+   "outcome": "error",
+   "elapsed_ms": 1048,
+   "sa_class": "sqlalchemy.exc.OperationalError",
+   "driver_class": "pymssql.exceptions.OperationalError",
+   "args": "(20047, b'DB-Lib error message 20003, severity 6:\\nTDS server connection timed out\\nDB-Lib error message 20047, severity 9:\\nDBPROCESS is dead or not enabled\\n')",
+   "code": 20047,
+   "message": "DB-Lib error message 20003, severity 6:\nTDS server connection timed out\nDB-Lib error message 20047, severity 9:\nDBPROCESS is dead or not enabled\n",
+   "sqlx_today": {
+    "code": "E_TIMEOUT",
+    "native": "20003",
+    "message": "TDS server connection timed out; DBPROCESS is dead or not enabled"
+   }
+  },
+  "t1_guard_control_no_guard": {
+   "outcome": "ok",
+   "elapsed_ms": 46,
+   "returns_rows": false,
+   "rowcount": 1
+  },
+  "t1_snapshot_isolation_not_allowed": {
+   "outcome": "ok",
+   "elapsed_ms": 62,
+   "returns_rows": true,
+   "rowcount": -1,
+   "columns": [
+    ""
+   ],
+   "rows": [
+    [
+     "int:1"
+    ]
+   ]
+  }
+ },
+ "cases_fresh_process": {
+  "wrong_password": {
+   "outcome": "error",
+   "elapsed_ms": 35,
+   "sa_class": "sqlalchemy.exc.OperationalError",
+   "driver_class": "pymssql.exceptions.OperationalError",
+   "args": "((18456, b\"Login failed for user 'ro'.DB-Lib error message 20018, severity 14:\\nGeneral SQL Server error: Check messages from the SQL Server\\nDB-Lib error message 20002, severity 9:\\nTDS server connection failed (mssql)\\nDB-Lib error message 20002, severity 9:\\nTDS server connection failed (mssql)\\n\"),)",
+   "code": 18456,
+   "message": "Login failed for user 'ro'.DB-Lib error message 20018, severity 14:\nGeneral SQL Server error: Check messages from the SQL Server\nDB-Lib error message 20002, severity 9:\nTDS server connection failed (mssql)\nDB-Lib error message 20002, severity 9:\nTDS server connection failed (mssql)\n",
+   "sqlx_today": {
+    "code": "E_INTERNAL",
+    "native": "18456",
+    "message": "OperationalError"
+   }
+  },
+  "no_password": {
+   "outcome": "error",
+   "elapsed_ms": 26,
+   "sa_class": "sqlalchemy.exc.OperationalError",
+   "driver_class": "pymssql.exceptions.OperationalError",
+   "args": "((18456, b\"Login failed for user 'ro'.DB-Lib error message 20018, severity 14:\\nGeneral SQL Server error: Check messages from the SQL Server\\nDB-Lib error message 20002, severity 9:\\nTDS server connection failed (mssql)\\nDB-Lib error message 20002, severity 9:\\nTDS server connection failed (mssql)\\n\"),)",
+   "code": 18456,
+   "message": "Login failed for user 'ro'.DB-Lib error message 20018, severity 14:\nGeneral SQL Server error: Check messages from the SQL Server\nDB-Lib error message 20002, severity 9:\nTDS server connection failed (mssql)\nDB-Lib error message 20002, severity 9:\nTDS server connection failed (mssql)\n",
+   "sqlx_today": {
+    "code": "E_INTERNAL",
+    "native": "18456",
+    "message": "OperationalError"
+   }
+  },
+  "unknown_database": {
+   "outcome": "error",
+   "elapsed_ms": 135,
+   "sa_class": "sqlalchemy.exc.OperationalError",
+   "driver_class": "pymssql.exceptions.OperationalError",
+   "args": "((18456, b\"Login failed for user 'ro'.DB-Lib error message 20018, severity 14:\\nGeneral SQL Server error: Check messages from the SQL Server\\nDB-Lib error message 20002, severity 9:\\nTDS server connection failed (mssql)\\nDB-Lib error message 20002, severity 9:\\nTDS server connection failed (mssql)\\n\"),)",
+   "code": 18456,
+   "message": "Login failed for user 'ro'.DB-Lib error message 20018, severity 14:\nGeneral SQL Server error: Check messages from the SQL Server\nDB-Lib error message 20002, severity 9:\nTDS server connection failed (mssql)\nDB-Lib error message 20002, severity 9:\nTDS server connection failed (mssql)\n",
+   "sqlx_today": {
+    "code": "E_INTERNAL",
+    "native": "18456",
+    "message": "OperationalError"
+   }
+  },
+  "closed_port": {
+   "outcome": "error",
+   "elapsed_ms": 2,
+   "sa_class": "sqlalchemy.exc.OperationalError",
+   "driver_class": "pymssql.exceptions.OperationalError",
+   "args": "((20009, b'DB-Lib error message 20009, severity 9:\\nUnable to connect: TDS server is unavailable or does not exist (mssql)\\nNet-Lib error during Connection refused (111)\\nDB-Lib error message 20009, severity 9:\\nUnable to connect: TDS server is unavailable or does not exist (mssql)\\nNet-Lib error during Connection refused (111)\\n'),)",
+   "code": 20009,
+   "message": "DB-Lib error message 20009, severity 9:\nUnable to connect: TDS server is unavailable or does not exist (mssql)\nNet-Lib error during Connection refused (111)\nDB-Lib error message 20009, severity 9:\nUnable to connect: TDS server is unavailable or does not exist (mssql)\nNet-Lib error during Connection refused (111)\n",
+   "sqlx_today": {
+    "code": "E_CONNECT",
+    "native": "20009",
+    "message": "Unable to connect: TDS server is unavailable or does not exist (mssql); Net-Lib error during Connection refused (111)"
+   }
+  },
+  "unknown_host": {
+   "outcome": "error",
+   "elapsed_ms": 18,
+   "sa_class": "sqlalchemy.exc.OperationalError",
+   "driver_class": "pymssql.exceptions.OperationalError",
+   "args": "((20009, b'DB-Lib error message 20009, severity 9:\\nUnable to connect: TDS server is unavailable or does not exist (no-such-host.invalid)\\n'),)",
+   "code": 20009,
+   "message": "DB-Lib error message 20009, severity 9:\nUnable to connect: TDS server is unavailable or does not exist (no-such-host.invalid)\n",
+   "sqlx_today": {
+    "code": "E_CONNECT",
+    "native": "20009",
+    "message": "Unable to connect: TDS server is unavailable or does not exist (no-such-host.invalid)"
+   }
+  },
+  "unreachable_host": {
+   "outcome": "error",
+   "elapsed_ms": 3003,
+   "sa_class": "sqlalchemy.exc.OperationalError",
+   "driver_class": "pymssql.exceptions.OperationalError",
+   "args": "((20009, b'DB-Lib error message 20009, severity 9:\\nUnable to connect: TDS server is unavailable or does not exist (10.254.254.254)\\nNet-Lib error during Connection timed out (110)\\nDB-Lib error message 20009, severity 9:\\nUnable to connect: TDS server is unavailable or does not exist (10.254.254.254)\\nNet-Lib error during Connection timed out (110)\\n'),)",
+   "code": 20009,
+   "message": "DB-Lib error message 20009, severity 9:\nUnable to connect: TDS server is unavailable or does not exist (10.254.254.254)\nNet-Lib error during Connection timed out (110)\nDB-Lib error message 20009, severity 9:\nUnable to connect: TDS server is unavailable or does not exist (10.254.254.254)\nNet-Lib error during Connection timed out (110)\n",
+   "sqlx_today": {
+    "code": "E_CONNECT",
+    "native": "20009",
+    "message": "Unable to connect: TDS server is unavailable or does not exist (10.254.254.254); Net-Lib error during Connection timed out (110)"
+   }
+  },
+  "timeout_1s": {
+   "outcome": "error",
+   "elapsed_ms": 1028,
+   "sa_class": "sqlalchemy.exc.OperationalError",
+   "driver_class": "pymssql.exceptions.OperationalError",
+   "args": "(20047, b'DB-Lib error message 20003, severity 6:\\nTDS server connection timed out\\nDB-Lib error message 20047, severity 9:\\nDBPROCESS is dead or not enabled\\n')",
+   "code": 20047,
+   "message": "b'DB-Lib error message 20003, severity 6:\\nTDS server connection timed out\\nDB-Lib error message 20047, severity 9:\\nDBPROCESS is dead or not enabled\\n'",
+   "sqlx_today": {
+    "code": "E_INTERNAL",
+    "native": "20047",
+    "message": "OperationalError"
+   }
+  }
+ },
+ "note": "'cases' ran in one process in the order listed; 'cases_fresh_process' ran each case in a new process. pymssql keeps the last server message number per process, so connect failures in 'cases' after 'wrong_password' report the stale number 18456."
+}
