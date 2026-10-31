@@ -275,8 +275,10 @@ def test_retry_loop_has_no_floor_on_the_pause(request, server, salt):
 
 
 def test_retry_window_is_capped_at_ten_seconds(salt):
-    start = time.time()
+    # monotonic, like checks._retry: on WSL2 the wall clock is stepped while the process sleeps (observed: a 10 s
+    # sleep measured 7.5 s with time.time() and 10.0 s with time.monotonic())
+    start = time.monotonic()
     out = salt.check_row_count(
         "ro", "SELECT 1 WHERE 1 = 0", ">=", expected=1, retry_timeout_s=10**9, retry_pause_s=0.5
     )
-    assert 9 <= time.time() - start <= 14 and out["attempts"] >= 2
+    assert 9 <= time.monotonic() - start <= 14 and out["attempts"] >= 2
