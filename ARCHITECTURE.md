@@ -148,7 +148,7 @@ with `MaskingFilter.add_secret(value)` once it has been resolved. It never drops
 ```python
 class Adapter(Protocol):
     name: str                      # "postgresql"
-    driver: str                    # "pg8000" (default) or "psycopg" for postgresql (SPEC D15)
+    driver: str                    # "pg8000" or "psycopg" for postgresql; unset = psycopg if installed, else pg8000 (SPEC D15)
     pip_extra: str
     def url(self, profile, password) -> sqlalchemy.engine.URL: ...      # URL.create(), never string-format
     def connect_args(self, profile) -> dict: ...                        # allowlisted only

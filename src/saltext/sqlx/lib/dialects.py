@@ -14,8 +14,8 @@ Rules honoured here:
 * The module's own SQL is constant text plus at most one integer that went through ``int()`` (ARCHITECTURE
   section 3). Caller SQL never passes through this module.
 
-PostgreSQL has two drivers (decision D15): ``pg8000`` (pure Python, the default) and ``psycopg`` (libpq, an explicit choice with the
-profile key ``driver``). Everything that is specific to pg8000 and differs from psycopg is in ``Pg8000PostgreSQL`` and recorded in
+PostgreSQL has two drivers (decision D15): ``pg8000`` (pure Python) and ``psycopg`` (libpq). A profile without ``driver`` gets psycopg when it is installed (so nothing
+changes for an existing installation) and pg8000 otherwise; the profile key ``driver`` always decides. Everything that is specific to pg8000 and differs from psycopg is in ``Pg8000PostgreSQL`` and recorded in
 docs/WIRE_SHAPES.md section 16.
 
 PostgreSQL, MySQL and MariaDB behaviour is verified (docs/WIRE_SHAPES.md, T1); Oracle 23.26.2 and SQL Server 2022 were
@@ -26,6 +26,7 @@ function so that recorded facts can replace it without touching anything else. T
 import datetime
 import decimal
 import importlib
+import importlib.util
 import math
 import threading
 import uuid
@@ -45,8 +46,25 @@ DIALECT_DRIVER_CHOICES = {
     "oracle": ("oracledb",),
     "mssql": ("pymssql",),
 }
+
+
+def _default_postgresql_driver():
+    """
+    The driver a PostgreSQL profile without ``driver`` gets: ``psycopg`` when it is installed, else ``pg8000``.
+
+    Existing installations (which have psycopg) keep exactly the behaviour they have today, with no configuration change.
+    A host that was given only pg8000 (the ``postgres`` extra, the fleet wheelhouse) uses pg8000. Decided once, when the
+    library is imported; a profile or call that names ``driver`` always wins.
+    """
+    try:
+        return "psycopg" if importlib.util.find_spec("psycopg") is not None else "pg8000"
+    except (ImportError, ValueError):  # pragma: no cover
+        return "pg8000"
+
+
 #: dialect -> its default driver (what a profile without ``driver`` gets)
 DIALECT_DRIVERS = {dialect: choices[0] for dialect, choices in DIALECT_DRIVER_CHOICES.items()}
+DIALECT_DRIVERS["postgresql"] = _default_postgresql_driver()
 
 _SCALARS = (str, int, float, bool)
 
@@ -390,7 +408,7 @@ def _prove(dbapi_conn):
 
 class PostgreSQLPg8000(PostgreSQLBase):
     """
-    pg8000 (pure Python), the default PostgreSQL driver (decision D15). VERIFIED on PostgreSQL 16 / pg8000 1.31.6.
+    pg8000 (pure Python), the PostgreSQL driver used when psycopg is not installed (decision D15). VERIFIED on PostgreSQL 16 / pg8000 1.31.6.
 
     Everything that differs from psycopg is in WIRE_SHAPES section 16. The connection arguments of pg8000 are not
     libpq's: there is no ``sslmode`` / ``keepalives`` / ``target_session_attrs``; TLS is an ``ssl_context`` that

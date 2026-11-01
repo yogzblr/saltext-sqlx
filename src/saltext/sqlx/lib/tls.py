@@ -307,7 +307,7 @@ def _unresolved(profile):
 
 
 def _libpq(profile):
-    """True when the PostgreSQL profile uses psycopg (libpq parameters); pg8000 is the default driver."""
+    """True when the PostgreSQL profile uses psycopg (libpq parameters); pg8000 is the other driver."""
     return profile.get("driver") == "psycopg"
 
 

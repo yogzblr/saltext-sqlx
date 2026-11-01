@@ -22,10 +22,10 @@ on by a minion policy and stays inside the limits that policy sets.
 | Salt | 3006 or newer (developed and tested on 3008) |
 | Python | 3.10 or newer (the Salt 3008.5 onedir ships Python 3.14; every driver wheel installs on it) |
 | SQLAlchemy | 2.0.x (installed as a dependency, pinned `>=2.0,<2.1`) |
-| Database driver | one per dialect, installed as an extra (below); PostgreSQL has two: **pg8000** (default) and psycopg |
+| Database driver | one per dialect, installed as an extra (below); PostgreSQL has two: **pg8000** and psycopg (a profile without `driver` uses psycopg if it is installed, otherwise pg8000) |
 | Network | minion must reach the database host and port |
 
-Drivers and licences: PostgreSQL `pg8000` (BSD-3, pure Python, the default) or `psycopg[binary]` (LGPL-3.0, unmodified pip
+Drivers and licences: PostgreSQL `pg8000` (BSD-3, pure Python) or `psycopg[binary]` (LGPL-3.0, unmodified pip
 package, optional), MySQL/MariaDB `PyMySQL` (MIT), Oracle `oracledb` thin mode (Apache-2.0/UPL, no Oracle client needed), SQL Server
 `pymssql` (LGPL). No GPL package is used.
 
@@ -132,7 +132,7 @@ Dialect notes (observed end to end):
   runs a whole batch, so the module refuses a `;` followed by a second statement; a batch written without `;` cannot be
   detected. TLS with `ssl_certs_dir` is not supported (`[E_PROFILE_INVALID]`).
 - **MySQL/MariaDB**: `select 1/0` returns NULL, not an error; `/*! ... */` comments are executed by the server.
-- **PostgreSQL drivers**: `driver: pg8000` is the default and needs nothing in the profile; `driver: psycopg` selects the libpq driver
+- **PostgreSQL drivers**: a profile without `driver` uses psycopg when it is installed (so an existing installation behaves exactly as before) and pg8000 when it is not (the `postgres` extra installs pg8000 only); `driver: pg8000` or `driver: psycopg` in the profile always decides
   (install `saltext-sqlx[postgres-psycopg]`). Error texts for SQL errors are identical. What differs, all observed (WIRE_SHAPES section 16):
   pg8000 puts the SQLSTATE on connect errors (`[E_AUTH_FAILED] postgresql 28P01: password authentication failed for user "rw"`,
   `[E_CONNECT] postgresql 3D000: database "nodb" does not exist`); in `query`/`connect_args` only `application_name` is accepted
@@ -362,7 +362,7 @@ ERROR: [E_TIMEOUT] mssql 20003: TDS server connection timed out; DBPROCESS is de
 | `E_SECRET` | `sdb://` reference did not resolve | check the sdb profile and key |
 | `E_POLICY` | refused by policy (host not allowed, certificate path or key mode, literal password) | see `SECURITY.md` |
 | `E_EXECUTE_DISABLED` | `execute` on a profile without `allow_execute: true` | use the write profile |
-| `E_DRIVER_MISSING` | the driver for that dialect is not installed (PostgreSQL: pg8000 by default; a profile with `driver: psycopg` needs `[postgres-psycopg]`) | `salt-pip install 'saltext-sqlx[<extra>]'` |
+| `E_DRIVER_MISSING` | the driver for that dialect is not installed (PostgreSQL: a profile with `driver: psycopg` needs `[postgres-psycopg]`, one with `driver: pg8000` needs `[postgres]`) | `salt-pip install 'saltext-sqlx[<extra>]'` |
 | `E_CONNECT` / `E_AUTH_FAILED` | cannot connect / wrong credentials or certificate | check host, port, firewall, account |
 | `E_SQL` / `E_SQL_DATA` / `E_CONSTRAINT` | SQL error / bad data / constraint violation | the message is the database's own |
 | `E_READ_ONLY` | write attempted in a read-only session | use a write profile |

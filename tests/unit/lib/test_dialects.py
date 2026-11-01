@@ -607,3 +607,19 @@ def test_pg8000_never_reads_the_libpq_environment_or_passfile():
     adapter = dialects.adapter("postgresql")
     args = adapter.connect_args(make("postgresql", password_dropped=True))
     assert "password" not in args and "passfile" not in args
+
+
+@pytest.mark.parametrize(("installed", "expected"), [(True, "psycopg"), (False, "pg8000")])
+def test_postgresql_default_driver_follows_what_is_installed(monkeypatch, installed, expected):
+    """A host with psycopg keeps psycopg (nothing changes for it); a host with only pg8000 gets pg8000."""
+    spec = object() if installed else None
+    monkeypatch.setattr(
+        dialects.importlib.util, "find_spec", lambda name: spec if name == "psycopg" else None
+    )
+    assert dialects._default_postgresql_driver() == expected  # pylint: disable=protected-access
+
+
+def test_postgresql_default_driver_is_decided_only_for_postgresql():
+    assert dialects.DIALECT_DRIVERS["mysql"] == "pymysql"
+    assert dialects.DIALECT_DRIVERS["oracle"] == "oracledb"
+    assert dialects.DIALECT_DRIVERS["mssql"] == "pymssql"

@@ -6,7 +6,7 @@ error. **Start with [docs/USER_GUIDE.md](docs/USER_GUIDE.md)** (install, connect
 
 ```bash
 pip install saltext-sqlx                      # SQLAlchemy only; no database driver
-pip install 'saltext-sqlx[postgres]'          # pg8000 (pure Python; default PostgreSQL driver)
+pip install 'saltext-sqlx[postgres]'          # pg8000 (pure Python; used when psycopg is not installed)
 pip install 'saltext-sqlx[postgres-psycopg]'  # psycopg[binary], only for profiles with `driver: psycopg`
 pip install 'saltext-sqlx[mysql]'             # PyMySQL
 pip install 'saltext-sqlx[oracle]'            # oracledb
@@ -33,7 +33,7 @@ sqlx:
   profiles:
     orders_pg:
       dialect: postgresql          # required: postgresql | mysql | oracle | mssql
-      driver: pg8000               # optional; PostgreSQL: pg8000 (default) or psycopg; the other dialects have one driver
+      driver: pg8000               # optional; PostgreSQL: pg8000 or psycopg (default: psycopg if installed, else pg8000); the other dialects have one driver
       host: db1.internal
       port: 5432
       database: orders
