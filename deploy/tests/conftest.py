@@ -66,7 +66,7 @@ def make_wheel(directory, name, version, requires=(), extras=None, body=""):
 def write_sums(directory, crlf=False, star=False):
     directory = Path(directory)
     lines = []
-    for w in sorted(directory.glob("*.whl")):
+    for w in [*sorted(directory.glob("*.whl")), *directory.glob("SALT_OWNED.txt")]:
         lines.append(f"{hashlib.sha256(w.read_bytes()).hexdigest()} {'*' if star else ' '}{w.name}")
     (directory / "SHA256SUMS").write_bytes((("\r\n" if crlf else "\n").join(lines) + "\n").encode())
 
@@ -133,6 +133,36 @@ class Env:
             text=True,
             env=e,
         )
+
+
+def install_salt_stubs(env, wheels, versions, tmp_path):
+    """
+    Give the test virtualenv the packages the Salt onedir ships (metadata-only stubs at Salt's versions).
+
+    A wheelhouse no longer contains them, so without this ``pip check`` would rightly complain. Returns their names.
+    """
+    osname = Path(wheels).name.split("-")[0]
+    lock = (
+        DEPLOY
+        / "wheelhouse"
+        / "requirements"
+        / "salt-locks"
+        / versions["salt_tag"]
+        / f"py{versions['python']}.{osname}.lock"
+    )
+    stubs = Path(tmp_path) / "salt-stubs"
+    subprocess.run(
+        [sys.executable, str(TOOL), "stub", str(stubs), "--lock", str(lock)],
+        check=True,
+        capture_output=True,
+    )
+    owned = [
+        line.split("==")[0]
+        for line in (Path(wheels) / "SALT_OWNED.txt").read_text().splitlines()
+        if "==" in line
+    ]
+    env.pip("install", "--no-index", "--find-links", str(stubs), "--no-deps", *owned)
+    return owned
 
 
 @pytest.fixture

@@ -2,3 +2,4 @@
 saltext-sqlx[postgres,mysql,oracle,mssql]
 saltext-kafka
 psycopg[binary]==3.3.6
+pymssql==2.4.6              # Salt ships no pymssql on Linux; this is the version T1b verified the mssql module with
