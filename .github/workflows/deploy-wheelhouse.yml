@@ -1,0 +1,72 @@
+---
+name: Deploy wheelhouse
+
+# Builds the offline wheelhouse (deploy/wheelhouse) for linux/windows x x86_64/arm64 and runs deploy/tests against it.
+# Not run for pull requests from forks (the job installs and executes code from PyPI and the PR).
+on:
+  push:
+    branches: [main, "feat/deploy-**", "deploy/**"]
+    paths: ["deploy/**", ".github/workflows/deploy-wheelhouse.yml"]
+  pull_request:
+    paths: ["deploy/**", ".github/workflows/deploy-wheelhouse.yml"]
+  workflow_dispatch:
+    inputs:
+      pyver:
+        description: "Python of the minions' Salt onedir (3.14 = Salt 3008; 3.11 = Salt 3006.27+/3007.15+)"
+        default: "3.14"
+
+permissions:
+  contents: read
+
+jobs:
+  wheelhouse:
+    name: Build wheelhouse and test (Python ${{ inputs.pyver || '3.14' }})
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      PYVER: ${{ inputs.pyver || '3.14' }}
+      # versions stamped on our own wheels (git tags are not used: an untagged checkout gives an unpinnable dev version)
+      SQLX_VERSION: "0.1.0"
+      KAFKA_VERSION: "0.0.1"
+      # TEST STAND-IN ONLY: the upstream Kafka extension. Our own Kafka extension lives elsewhere; production builds pass its repo/ref.
+      KAFKA_REPO: https://github.com/salt-extensions/saltext-kafka
+      KAFKA_REF: main
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+
+      - name: Set up Python ${{ env.PYVER }}
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
+        with:
+          python-version: ${{ env.PYVER }}
+
+      - name: Install build and test tools
+        run: |
+          python -m pip install --upgrade "pip>=24" setuptools wheel
+          python -m pip install "salt==3008.5" pytest pytest-salt-factories pyyaml
+
+      - name: Build our own wheels
+        run: |
+          mkdir -p "$RUNNER_TEMP/own"
+          OWN="$RUNNER_TEMP/own" SQLX_DIR="$GITHUB_WORKSPACE" \
+            KAFKA_REPO="$KAFKA_REPO" KAFKA_REF="$KAFKA_REF" \
+            bash deploy/wheelhouse/build_own_wheels.sh
+
+      - name: Build the wheelhouse (4 targets, licence gate)
+        run: |
+          OWN="$RUNNER_TEMP/own" OUT="$RUNNER_TEMP/out" bash deploy/wheelhouse/build_wheelhouse.sh 2>&1 | tee "$RUNNER_TEMP/build.log"
+
+      - name: Test (helper, state, orchestration on a real master and minions, stale-code experiment)
+        env:
+          SALTEXTS_WHEELHOUSE: ${{ runner.temp }}/out
+        run: python -m pytest deploy/tests -v -p no:cacheprovider --show-capture=no --tb=short
+
+      - name: Upload the wheelhouse
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: wheelhouse-py${{ env.PYVER }}
+          path: |
+            ${{ runner.temp }}/out
+            ${{ runner.temp }}/build.log
+          retention-days: 14

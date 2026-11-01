@@ -1,10 +1,15 @@
 saltexts:
-  python: '3.11'                       # must equal the Python inside the minions' Salt onedir
+  python: '3.14'                       # must equal the Python inside the minions' Salt onedir (Salt 3008: 3.14; 3006.27+/3007.15+: 3.11)
   modules: [sqlx, kafka]               # virtual names that must be loaded after an update (add elasticsearch, mongodb, redis ... once confirmed)
-  packages:                            # the one place to bump a version; extras are part of the key
-    saltext-sqlx[postgres,mysql,oracle,mssql]: 0.0.0
-    saltext-kafka: 0.0.0
+  packages:                            # the one place to bump a version; extras are part of the key. Take the own-package versions from VERSIONS.json
+    saltext-sqlx[postgres,mysql,oracle,mssql]: 0.1.0
+    saltext-kafka: 0.0.1               # UPSTREAM stand-in in the tests; production: our own Kafka extension
     saltext-elasticsearch: 1.2.3
+    elasticsearch: 9.5.1               # saltext-elasticsearch does not declare its client: pin it here (match the server major)
     saltext-mongodb: 1.0.0
     saltext-redis: 1.0.2
-# Windows ARM64 minions need their own pillar: saltext-sqlx[mysql,oracle,mssql] (no [postgres]).
+  # optional
+  # pip_target: auto                   # install into the onedir extras-X.Y directory like `salt-pip` (survives Salt upgrades); '' = plain pip
+  # restart_linux_cmd: systemd-run --on-active=10 --unit=saltexts-restart systemctl restart salt-minion
+  # restart_windows_cmd: Start-Process powershell -WindowStyle Hidden -ArgumentList '-Command','Start-Sleep 10; Restart-Service salt-minion'
+# Windows ARM64 minions need their own pillar: saltext-sqlx[mysql,oracle,mssql] (no [postgres]: psycopg-binary has no win_arm64 wheel).
