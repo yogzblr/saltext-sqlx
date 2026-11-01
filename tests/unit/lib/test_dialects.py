@@ -86,13 +86,23 @@ class FakeConn:
 
 
 def test_dialect_drivers_single_source():
-    assert dialects.DIALECT_DRIVERS == {
-        "postgresql": "psycopg",
-        "mysql": "pymysql",
-        "oracle": "oracledb",
-        "mssql": "pymssql",
+    assert dialects.DIALECT_DRIVER_CHOICES == {
+        "postgresql": ("pg8000", "psycopg"),
+        "mysql": ("pymysql",),
+        "oracle": ("oracledb",),
+        "mssql": ("pymssql",),
     }
+    assert (
+        dialects.DIALECT_DRIVERS
+        == {  # the first choice of a dialect is its default (decision D15)
+            "postgresql": "pg8000",
+            "mysql": "pymysql",
+            "oracle": "oracledb",
+            "mssql": "pymssql",
+        }
+    )
     assert profiles.DIALECT_DRIVERS is dialects.DIALECT_DRIVERS
+    assert profiles.DIALECT_DRIVER_CHOICES is dialects.DIALECT_DRIVER_CHOICES
 
 
 @pytest.mark.parametrize("dialect", DIALECTS)
@@ -100,8 +110,21 @@ def test_adapter_table(dialect):
     adapter = dialects.adapter(dialect)
     assert adapter.name == dialect
     assert adapter.driver == dialects.DIALECT_DRIVERS[dialect]
-    assert adapter.pip_extra in {"postgres", "mysql", "oracle", "mssql"}
+    assert adapter.pip_extra in {"postgres", "postgres-psycopg", "mysql", "oracle", "mssql"}
     assert adapter.ping_sql.upper().startswith("SELECT 1")
+
+
+def test_adapter_driver_choice():
+    assert dialects.adapter("postgresql").driver == "pg8000"  # the default (decision D15)
+    assert dialects.adapter("postgresql", "pg8000").pip_extra == "postgres"
+    assert dialects.adapter("postgresql", "psycopg").pip_extra == "postgres-psycopg"
+    assert dialects.adapter("mysql", "pymysql").driver == "pymysql"
+    for dialect, driver in (("postgresql", "psycopg2"), ("mysql", "psycopg"), ("oracle", None)):
+        if driver is None:
+            continue
+        with pytest.raises(SaltInvocationError) as exc:
+            dialects.adapter(dialect, driver)
+        assert str(exc.value).startswith("[E_PROFILE_INVALID]")
 
 
 def test_adapter_unknown_dialect():
@@ -189,7 +212,7 @@ def test_missing_driver_only_affects_its_dialect(monkeypatch):
     with pytest.raises(CommandExecutionError):
         dialects.adapter("oracle").load_driver()
     assert (
-        dialects.adapter("postgresql").load_driver().__name__ == "psycopg"
+        dialects.adapter("postgresql", "psycopg").load_driver().__name__ == "psycopg"
     )  # fake module, no real driver needed
 
 
@@ -210,7 +233,7 @@ def test_url_awkward_passwords_roundtrip(dialect, password):
 @pytest.mark.parametrize(
     "dialect,drivername",
     [
-        ("postgresql", "postgresql+psycopg"),
+        ("postgresql", "postgresql+pg8000"),
         ("mysql", "mysql+pymysql"),
         ("oracle", "oracle+oracledb"),
         ("mssql", "mssql+pymssql"),
@@ -220,6 +243,11 @@ def test_url_drivername_and_parts(dialect, drivername):
     url = dialects.adapter(dialect).url(make(dialect, port=1234), "pw")
     assert url.drivername == drivername
     assert (url.host, url.port, url.username) == ("db1.internal", 1234, "salt_ro")
+
+
+def test_url_drivername_psycopg_is_explicit():
+    url = dialects.adapter("postgresql", "psycopg").url(make(driver="psycopg"), "pw")
+    assert url.drivername == "postgresql+psycopg"
 
 
 def test_url_database_for_non_oracle():
@@ -246,14 +274,18 @@ def test_url_never_built_by_string_formatting():
 
 
 def test_url_query_passthrough():
-    url = dialects.adapter("postgresql").url(
-        make(query={"sslmode": "verify-full", "application_name": "salt"}), "pw"
+    url = dialects.adapter("postgresql", "psycopg").url(
+        make(driver="psycopg", query={"sslmode": "verify-full", "application_name": "salt"}), "pw"
     )
     assert dict(url.query) == {"sslmode": "verify-full", "application_name": "salt"}
+    url = dialects.adapter("postgresql").url(make(query={"application_name": "salt"}), "pw")
+    assert dict(url.query) == {"application_name": "salt"}
 
 
 def test_url_query_bool_and_int_become_strings():
-    url = dialects.adapter("postgresql").url(make(query={"keepalives": 1}), "pw")
+    url = dialects.adapter("postgresql", "psycopg").url(
+        make(driver="psycopg", query={"keepalives": 1}), "pw"
+    )
     assert url.query["keepalives"] == "1"
     url = dialects.adapter("mysql").url(make("mysql", query={"ssl_disabled": True}), "pw")
     assert url.query["ssl_disabled"] == "true"
@@ -267,6 +299,8 @@ def test_url_query_bool_and_int_become_strings():
         ("mysql", "init_command"),
         ("postgresql", "options"),
         ("postgresql", "sslkey"),
+        ("postgresql", "sslmode"),  # libpq only: pg8000 takes an ssl_context that lib/tls.py builds
+        ("postgresql", "keepalives"),
         ("oracle", "mode"),
         ("mssql", "conn_properties"),
         ("postgresql", "totally_unknown"),
@@ -289,8 +323,6 @@ def test_url_query_service_name_reserved_for_oracle_database():
     "dialect,key,value",
     [
         ("postgresql", "application_name", "salt"),
-        ("postgresql", "sslmode", "verify-full"),
-        ("postgresql", "keepalives_idle", 30),
         ("mysql", "charset", "utf8mb4"),
         ("mysql", "read_timeout", 5),
         ("oracle", "expire_time", 1),
@@ -301,6 +333,29 @@ def test_url_query_service_name_reserved_for_oracle_database():
 def test_connect_args_allowed(dialect, key, value):
     args = dialects.adapter(dialect).connect_args(make(dialect, connect_args={key: value}))
     assert args[key] == value
+
+
+@pytest.mark.parametrize(
+    "key,value",
+    [
+        ("application_name", "salt"),
+        ("sslmode", "verify-full"),
+        ("target_session_attrs", "read-write"),
+        ("keepalives", 1),
+        ("keepalives_idle", 30),
+    ],
+)
+def test_psycopg_connect_args_allowed(key, value):
+    prof = make(driver="psycopg", connect_args={key: value})
+    assert dialects.adapter("postgresql", "psycopg").connect_args(prof)[key] == value
+
+
+@pytest.mark.parametrize(
+    "key", ["sslmode", "keepalives_idle", "target_session_attrs", "sslrootcert"]
+)
+def test_pg8000_rejects_libpq_arguments(key):
+    msg = _policy(dialects.adapter("postgresql").connect_args, make(connect_args={key: "x"}))
+    assert key in msg
 
 
 @pytest.mark.parametrize(
@@ -353,7 +408,7 @@ def test_connect_args_error_never_echoes_value():
 @pytest.mark.parametrize(
     "dialect,expected",
     [
-        ("postgresql", {"connect_timeout": 7}),
+        ("postgresql", {"timeout": 7}),
         ("mysql", {"connect_timeout": 7}),
         ("oracle", {"tcp_connect_timeout": 7}),
         ("mssql", {"login_timeout": 7, "timeout": 30}),
@@ -497,14 +552,22 @@ def test_version_is_always_text():
 
 
 # --- T11 D1: PostgreSQL must reject multi-statement strings -------------------------------------
-def test_postgresql_connect_args_force_the_extended_protocol():
-    """``prepare_threshold=0`` is what makes PostgreSQL refuse ``a; b`` (T11 D1); it is module-owned."""
-    assert dialects.adapter("postgresql").connect_args(make())["prepare_threshold"] == 0
+def test_psycopg_connect_args_force_the_extended_protocol():
+    """``prepare_threshold=0`` is what makes psycopg refuse ``a; b`` (T11 D1); it is module-owned."""
+    args = dialects.adapter("postgresql", "psycopg").connect_args(make(driver="psycopg"))
+    assert args["prepare_threshold"] == 0
 
 
 def test_prepare_threshold_cannot_be_set_from_a_profile():
-    prof = make(connect_args={"prepare_threshold": 5})
-    _policy(dialects.adapter("postgresql").connect_args, prof)
+    prof = make(driver="psycopg", connect_args={"prepare_threshold": 5})
+    _policy(dialects.adapter("postgresql", "psycopg").connect_args, prof)
+
+
+def test_pg8000_has_no_prepare_threshold_and_numeric_dollar_paramstyle():
+    """pg8000 gets its one-statement guarantee from the cursor class (test_dialects_pg8000.py), not from a connect arg."""
+    adapter = dialects.adapter("postgresql")
+    assert "prepare_threshold" not in adapter.connect_args(make())
+    assert adapter.engine_kwargs == {"paramstyle": "numeric_dollar"}
 
 
 # --- T11 D2: PyMySQL read_timeout is the client-side backstop ------------------------------------
@@ -531,8 +594,16 @@ def test_only_the_mysql_family_gets_read_timeout(dialect):
     assert "read_timeout" not in dialects.adapter(dialect).connect_args(make(dialect))
 
 
-def test_postgresql_withheld_password_blocks_the_libpq_environment_and_passfile():
-    args = dialects.adapter("postgresql").connect_args(make("postgresql", password_dropped=True))
+def test_psycopg_withheld_password_blocks_the_libpq_environment_and_passfile():
+    adapter = dialects.adapter("postgresql", "psycopg")
+    args = adapter.connect_args(make("postgresql", driver="psycopg", password_dropped=True))
     assert args["password"] == "" and args["passfile"].startswith("/nonexistent/")
-    plain = dialects.adapter("postgresql").connect_args(make("postgresql"))
+    plain = adapter.connect_args(make("postgresql", driver="psycopg"))
     assert "password" not in plain and "passfile" not in plain
+
+
+def test_pg8000_never_reads_the_libpq_environment_or_passfile():
+    """pg8000 has no $PGPASSWORD / ~/.pgpass fallback (checked in WIRE_SHAPES section 16), so there is nothing to block."""
+    adapter = dialects.adapter("postgresql")
+    args = adapter.connect_args(make("postgresql", password_dropped=True))
+    assert "password" not in args and "passfile" not in args

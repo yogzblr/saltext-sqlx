@@ -19,6 +19,7 @@ import pytest
 from salt.exceptions import CommandExecutionError
 from salt.exceptions import SaltInvocationError
 
+from saltext.sqlx.lib import dialects
 from tests.security import harness
 from tests.security.harness import BOUND
 from tests.security.harness import META_PW
@@ -243,6 +244,15 @@ def test_timeout_readonly_and_internal_paths_do_not_leak(mod, meta, caplog, deta
     )
     assert str(exc).startswith("[E_READ_ONLY]"), str(exc)
     no_secret(texts, META_PW, "Zq7", BOUND)
+    if meta.key == "postgresql" and dialects.DIALECT_DRIVERS["postgresql"] == "pg8000":
+        # pg8000 adapts a dict to JSON text, so the psycopg trigger (an unadaptable dict) is not an error here; COPY
+        # without a stream is an InterfaceError that nothing maps, which is the same class-name-only path.
+        exc, texts = run(
+            lambda: mod.query(prof, f"COPY (SELECT 1) TO STDOUT /* {SQL_MARK} */"), caplog
+        )
+        assert str(exc).startswith("[E_INTERNAL]"), str(exc)
+        no_secret(texts, META_PW, "Zq7", SQL_MARK)
+        return
     exc, texts = run(
         lambda: mod.query(prof, "SELECT CAST(:v AS text)", params={"v": {"nested": BOUND}}), caplog
     )
@@ -267,8 +277,6 @@ def test_policy_and_disabled_paths_do_not_leak(mod, caplog):
 
 
 def test_driver_missing_path_does_not_leak(mod, caplog, monkeypatch):
-    from saltext.sqlx.lib import dialects  # pylint: disable=import-outside-toplevel
-
     def fail(name, *_a, **_k):
         raise ImportError(
             f"No module named {name!r} at /opt/secret-path/{META_PW} password={META_PW}"

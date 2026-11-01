@@ -36,7 +36,7 @@ sqlx:
   profiles:
     orders_pg:
       dialect: postgresql          # required: postgresql | mysql | oracle | mssql
-      driver: psycopg              # optional; defaults to the dialect's only driver (psycopg | pymysql | oracledb | pymssql), any other value is rejected
+      driver: pg8000               # optional; defaults to the dialect's first driver (postgresql: pg8000 | psycopg; mysql: pymysql; oracle: oracledb; mssql: pymssql), any other value is rejected (D15)
       host: db1.internal
       port: 5432
       database: orders
@@ -67,7 +67,7 @@ failure is `[E_PROFILE_INVALID]`, names keys only and never contains a value.
 |---|---|
 | unknown key | rejected |
 | `dialect` | **required**; one of `postgresql`, `mysql`, `oracle`, `mssql` (section 7; whether `mariadb` becomes a fifth value is D10) |
-| `driver` | optional; defaults to the dialect's only driver (`postgresql` psycopg, `mysql` pymysql, `oracle` oracledb, `mssql` pymssql); any other value is rejected. The single source of truth for this table is `lib/dialects.py` (`DIALECT_DRIVERS`); `profiles.py` imports it |
+| `driver` | optional; defaults to the first driver of the dialect (`postgresql` **pg8000**, alternative `psycopg`; `mysql` pymysql, `oracle` oracledb, `mssql` pymssql, decision D15); any other value is rejected, and the message names the choices. The single source of truth for this table is `lib/dialects.py` (`DIALECT_DRIVER_CHOICES`, `DIALECT_DRIVERS` is its first column); `profiles.py` imports both. A call cannot change it (section 3.2) |
 | `host`, `database`, `username` | **required**, non-empty strings |
 | `port` | **required**, integer 1-65535 (a bool is not an integer) |
 | `password` | **optional**. If present: a non-empty string, and not the bare prefix `sdb://`. A literal or an `sdb://` reference; validated for shape only and resolved later (`lib/secrets.py`, ARCHITECTURE section 7). Absent stays absent in the validated profile |
@@ -110,7 +110,8 @@ Mapping to the drivers (`tls.py`; the file arguments are the real paths found ab
 
 | Dialect | Arguments | Where |
 |---|---|---|
-| `postgresql` / psycopg 3 (libpq) | `sslmode` (`verify-full` or `verify-ca`), `sslrootcert`, and with a client pair `sslcert` and `sslkey`; without a pair `sslcertmode=disable`, so that libpq does not present `~/.postgresql/postgresql.crt` or `$PGSSLCERT` | URL query |
+| `postgresql` / pg8000 (default, D15) | `ssl_context`: `ssl.create_default_context(cafile=<profile CA>)` (only that CA is trusted, `CERT_REQUIRED`), `check_hostname` true for `verify-full` and false for `verify-ca`, and with a client pair `load_cert_chain(cert, key)`. Built by `tls.pg8000_context` when the engine is created, so a key that cannot be loaded fails there with `[E_CONNECT]` (WS 16.3) | `connect_args` |
+| `postgresql` / psycopg 3 (libpq), `driver: psycopg` | `sslmode` (`verify-full` or `verify-ca`), `sslrootcert`, and with a client pair `sslcert` and `sslkey`; without a pair `sslcertmode=disable`, so that libpq does not present `~/.postgresql/postgresql.crt` or `$PGSSLCERT` | URL query |
 | `mysql` (MySQL and MariaDB) / PyMySQL | `ssl_ca`, `ssl_verify_cert=True`, `ssl_verify_identity=True` for `verify-full` and `False` for `verify-ca`, and with a client pair `ssl_cert`, `ssl_key` | `connect_args`, not the URL: SQLAlchemy moves URL-query `ssl_ca`/`ssl_cert`/`ssl_key` into PyMySQL's deprecated `ssl` dict, which PyMySQL then ignores as soon as an `ssl_verify_*` keyword is also present (PyMySQL 1.2.3 `connections.py`) |
 | `oracle` / python-oracledb thin | `protocol="tcps"`, `wallet_location=<directory>`, `ssl_server_dn_match=True` for `verify-full`, `False` for `verify-ca`; the directory must contain `ewallet.pem` | `connect_args`. **UNVERIFIED(T1b)**: Oracle ran in T1b, but the Sakila image has no TCPS listener and none was configured, so only the argument mapping (unit tests) and the profile validation (`ewallet.pem` required, `[E_PROFILE_INVALID]` without it, observed end to end) are verified. The `ewallet.pem` name, the `wallet_password` case (an encrypted wallet is not supported: no password key exists) and the `verify-ca` meaning of `ssl_server_dn_match=False` come from the python-oracledb documentation |
 | `mssql` | refused (above) | observed (T1b, end to end): `[E_PROFILE_INVALID] ... 'ssl_certs_dir' is not supported for mssql yet`, before any connection |
@@ -286,8 +287,11 @@ is resolved or any connection is opened). Then, in `runner.run_execute`:
   (PostgreSQL nests block comments, MySQL does not, so the two servers disagree where the verb starts) are refused with
   `[E_POLICY]` on every dialect (T11 D5). This is a best-effort filter, **not a security boundary** (a CTE or a function
   call can still write): the database role limits what `execute` can do.
-- One statement per call. On PostgreSQL the connection uses psycopg's extended protocol (`prepare_threshold=0`, set by the
-  module and not settable from a profile), so a string with a second statement (`INSERT ...; COMMIT`) fails with
+- One statement per call. On PostgreSQL the connection uses the extended protocol for EVERY statement: psycopg through
+  `prepare_threshold=0`, pg8000 through a cursor that always calls `Connection.execute_unnamed` (stock pg8000 uses the simple
+  protocol when there are no binds and ran `select 1; select 2` and `commit; create ...` as written, WS 16.1); both are set
+  by the module and not settable from a profile, and pg8000's behaviour is proved on the first connection of the process
+  (`[E_DRIVER_MISSING]` if it fails, so no unguarded SQL ever runs). So a string with a second statement (`INSERT ...; COMMIT`) fails with
   `[E_SQL] postgresql 42601: cannot insert multiple commands into a prepared statement`; PyMySQL does not enable
   multi-statements, so MySQL and MariaDB answer 1064 (T11 D1); Oracle answers ORA-03405 `End of query reached; no additional
   text should follow` (T1b). SQL Server runs every statement of a batch (observed, T1b: `a; b`, `a b` without a separator,
@@ -377,7 +381,7 @@ Observed on PostgreSQL 16.15, MySQL 8.0.46 and MariaDB 10.11.14 (WS 5), and unch
 - A literal colon followed by a word or digit inside a string, for example `'{"a":1}'`, is mis-read as a bind by
   `text()` (`sqlalchemy.exc.InvalidRequestError`: `A value is required for bind parameter '1'`, on all five servers).
   Callers escape it as `\:`. The module does not rewrite the SQL (D3).
-- `%` is fine in `text()`: SQLAlchemy doubles it for psycopg and PyMySQL. Never use `exec_driver_sql` for caller SQL: a literal
+- `%` is fine in `text()`: SQLAlchemy doubles it for psycopg and PyMySQL, and with pg8000 (`numeric_dollar`, no `%` scanning) it reaches the server as written, so `5 % 3`, `LIKE '%b'` and `'%s'` are data (WS 16.1; stock pg8000 raised `Only %s and %% are supported` when binds were present). Never use `exec_driver_sql` for caller SQL: a literal
   `%` with no parameters fails with `psycopg.ProgrammingError` (psycopg) and a bare `ValueError` (PyMySQL); on Oracle and SQL
   Server it runs (observed). On SQL Server a literal `%` together with binds runs correctly through `text()` (observed:
   `case when 'abc' like '%b%' then cast(:x as int) ...`).
@@ -415,7 +419,8 @@ vendor documentation and must not be relied on.
 
 | dialect | driver (pip extra) | URL | Licence (package metadata) | timeout mechanism | in-session read-only |
 |---|---|---|---|---|---|
-| `postgresql` | `psycopg[binary]` (extra `postgres`) | `postgresql+psycopg://` | LGPL-3.0-only | `SET statement_timeout = <ms>`: cancels at the limit, SQLSTATE 57014. **observed** [WS 2] | `SET TRANSACTION READ ONLY`: refuses writes (25006) but **bypassable** (SECURITY.md section 2). **observed** [WS 3] |
+| `postgresql` | **`pg8000`** (extra `postgres`, default; pure Python, pinned `>=1.31.6,<1.32`) | `postgresql+pg8000://` | BSD-3-Clause | the same statements as for psycopg; the socket read timeout is set to `statement_timeout_ms / 1000 + 1` s after connecting as a backstop (pg8000 would keep the connect timeout there, WS 16.1). **observed** [WS 16] | the same; pg8000 refuses writes with 25006 too. **observed** [WS 16] |
+| `postgresql` | `psycopg[binary]` (extra `postgres-psycopg`, `driver: psycopg`) | `postgresql+psycopg://` | LGPL-3.0-only | `SET statement_timeout = <ms>`: cancels at the limit, SQLSTATE 57014. **observed** [WS 2] | `SET TRANSACTION READ ONLY`: refuses writes (25006) but **bypassable** (SECURITY.md section 2). **observed** [WS 3] |
 | `mysql` | `PyMySQL` (extra `mysql`) | `mysql+pymysql://` | MIT | `SET SESSION MAX_EXECUTION_TIME=<ms>`: raises 3024 (SQLSTATE `HY000`) for a SELECT that reads tables; a table-less `SELECT SLEEP(n)` is cut short **silently** (returns 1, no error); `INSERT ... SELECT` is **not limited** by it; a statement can also override it with `/*+ MAX_EXECUTION_TIME(n) */`. On MySQL 9.7.1 (T1b) a long SELECT that does real work fails
 with 3024, but `SLEEP()` is cut short **silently** even in a SELECT that reads a table (`select sleep(5) from actor limit 1`
 returned 1 after 1.0 s), and the hint override is ended by the `read_timeout` backstop (2013, `E_TIMEOUT`). The module therefore also sets PyMySQL `read_timeout` = timeout + 1 s (a lower profile value is honoured), which ends the caller's wait with 2013 / `E_TIMEOUT` (T11 D2). **observed** on 8.0.46 only [WS 2]. The earlier "MySQL >= 5.7.8" is **unverified**. | `SET SESSION TRANSACTION READ ONLY`: refuses writes (1792, SQLSTATE 25006) but **bypassable** by four statements. `START TRANSACTION READ ONLY` resists the most statements but is also bypassable. **observed** [WS 3] |
@@ -435,8 +440,13 @@ Notes, all **observed** unless stated.
 - A PostgreSQL database created as SQL_ASCII fails on the first connect with a bare `TypeError: cannot use a string pattern
   on a bytes-like object` (not a `DBAPIError`) [WS 7].
 - Choosing the MySQL/MariaDB read-only statement is a T4 decision; no tested statement is bypass-proof (WS 3).
-- The dialect-to-driver table (`postgresql` psycopg, `mysql` pymysql, `oracle` oracledb, `mssql` pymssql) lives in
-  `lib/dialects.py` (`DIALECT_DRIVERS`); `profiles.py` imports it.
+- The dialect-to-driver table (`postgresql` pg8000 or psycopg, `mysql` pymysql, `oracle` oracledb, `mssql` pymssql) lives in
+  `lib/dialects.py` (`DIALECT_DRIVER_CHOICES`, first entry = default); `profiles.py` imports it.
+- PostgreSQL drivers compared (D15, every difference observed, WS 16): the error text is the same for statement errors; pg8000 adds the
+  SQLSTATE to connect errors (`28P01`, `3D000`) and words socket failures from `__cause__`; pg8000 allows only `application_name` in
+  `query`/`connect_args` (TLS is the `ssl_context` of `ssl_certs_dir`; no `sslmode`, `keepalives*`, `target_session_attrs`); pg8000 does
+  not read `$PGPASSWORD`/`~/.pgpass` or Unix-socket hosts; without `ssl_certs_dir` both use TLS opportunistically and unverified
+  (libpq `prefer`); values psycopg cannot hold (`infinity`, year > 9999) come back as text with pg8000.
 - Only `mysql` is a valid `dialect` value; the `mariadb` row above is a flavour of it (D10). The module passes the profile's
   dialect name, so `errors.raise_for` and `errors.translate` receive `mysql` for MariaDB as well (the error table also accepts
   `mariadb`, but the module never passes it).
@@ -555,6 +565,17 @@ Observed on PostgreSQL 16.15 (re-verified 2026-10-29):
 | wrong password / unknown database / port closed | OperationalError / `psycopg.OperationalError` | none | `E_AUTH_FAILED` / `E_CONNECT` by message text only |
 | no password supplied / connect timeout / unknown host / `pg_hba.conf` reject | `psycopg.OperationalError` / `ConnectionTimeout` | none | `E_AUTH_FAILED` / `E_CONNECT` / `E_CONNECT` / `E_CONNECT` by message text only (WS section 13) |
 
+PostgreSQL with **pg8000** (default driver, D15; observed 2026-11-01 on 16.15, pg8000 1.31.6, WS 16). The server's ErrorResponse is the dict in
+`exc.orig.args[0]` (`C` SQLSTATE, `M` message, `D` detail, `H` hint; the source-position keys are ignored); the mapping is the SQLSTATE
+table above, so every statement error gives the same code and the same text as psycopg. Differences, all in the connect phase: pg8000
+**does** report a SQLSTATE there (`[E_AUTH_FAILED] postgresql 28P01: password authentication failed for user "rw"`, `[E_CONNECT] postgresql 3D000:
+database "nodb" does not exist`; 3D000, 53300 and 57P01/02/03 map to `E_CONNECT`, class 28 stays `E_AUTH_FAILED`, but a FATAL error or class 28/08 is first
+matched on its text so that `no pg_hba.conf entry` stays `E_CONNECT`); a socket failure is one `InterfaceError("Can't create a connection to host H and port P ...")`
+whose `__cause__` (`ConnectionRefusedError`, `TimeoutError`, `socket.gaierror`) gives `[E_CONNECT] postgresql: connection to server at "H", port P failed: Connection refused`
+(`timeout expired` for a timeout, still `E_CONNECT`); a server alert after the handshake is `InterfaceError("network error")` with the `ssl.SSLError` in the cause chain;
+a certificate that does not verify arrives as an unwrapped `ssl.SSLCertVerificationError`; a missing password with SCRAM is a bare `AttributeError`, turned by
+the adapter into pg8000's own `server requesting password authentication, but no password was provided` (`E_AUTH_FAILED`).
+
 Observed on MySQL 8.0.46 and MariaDB 10.11.14 (PyMySQL 1.2.3; both servers unless two values are shown, MySQL / MariaDB):
 
 | Input | SQLAlchemy / driver class | SQLSTATE | Vendor code | Code |
@@ -610,7 +631,7 @@ key value, truncated value, conversion value) are replaced by `...` unless `erro
 | port closed, host unreachable, unknown host | OperationalError / OperationalError | 20009 (or a stale earlier number) | `E_CONNECT` |
 
 Message text. Observed fields: psycopg `exc.orig.diag.message_primary` (plus `message_hint` on some errors and
-`message_detail` where the server sends one); PyMySQL `exc.orig.args == (code, message)` and `exc.orig.sqlstate`; oracledb
+`message_detail` where the server sends one); pg8000 `exc.orig.args[0]['M']`, `['H']`, `['D']`; PyMySQL `exc.orig.args == (code, message)` and `exc.orig.sqlstate`; oracledb
 `exc.orig.args[0]` is an error object with `full_code`, `code` and `message`; pymssql `exc.orig.args == (code, b"message")` for
 a statement error and `((code, b"message"),)` for a connect error (bytes in both). Use the message of `exc.orig` and **never `str()` of the SQLAlchemy exception**: it appends `[SQL: ...]` and
 `[parameters: ...]` with the bound values. `detail` is included only if `error_detail: true`, which works on
@@ -697,3 +718,9 @@ curl -sS -k https://salt-api.example:8000/run -H 'Content-Type: application/json
 | D12 | **Decided (owner) and implemented**: a TLS certificate directory so that profiles can use database TLS with verification and mutual TLS. | Profile keys `ssl_certs_dir`, `ssl_mode` (`verify-full` default, `verify-ca`), `ssl_files` (`ca`, `cert`, `key` as plain file names); default names `ca.pem`/`ca.crt`, `client.pem`/`client.crt`, `client.key`; the directory must resolve under `sqlx:_policy:ssl_certs_dir_root` (minion config or pillar), else `[E_POLICY]`; key files with group/world access are refused. Full rules and the per-driver mapping are in section 3.1. **Verified on real servers** (throw-away PKI, `tests-support/tls`): PostgreSQL 16.15 (libpq 18.0.6, psycopg 3.3.6), MySQL 8.0.46 and MariaDB 10.11.14 (PyMySQL 1.2.3): verify-full with and without a client certificate, mutual TLS, wrong CA, hostname not in the SANs, expired client and server certificate, client certificate from another CA, client certificate required but missing, plain connection to a TLS-only server, vanished or corrupt key file; error shapes in `docs/WIRE_SHAPES.md` section 12. **NOT verified**: Oracle (argument mapping only, `UNVERIFIED(T1b)`), SQL Server (refused as unsupported), `verify-ca` on Oracle, certificate revocation (no CRL support), encrypted private keys (there is no passphrase key; not tested), TLS 1.2-only or cipher policy (driver defaults). Open: whether the policy should also require the directory itself not to be group/world-writable (not checked today). |
 | D13 | `MaskingFilter.add_secret` (called by `sqlx_mod._run` for every resolved password) only ever adds: the set of registered secrets gains one entry per distinct password and is never emptied for the life of the minion process (a memory and hygiene issue; retired passwords stay in memory and keep being masked). Clear or replace the registered secret after each call? | Not decided; today it is never cleared. Clearing after the call keeps the set small and drops stale passwords, but a log record emitted after the call (by another thread, or a late handler) would then no longer be masked by value; the key-based masking (`password|secret|token`) would still apply. Stricter is to keep it, so keep it until decided. |
 | D14 | Should a call that retargets the connection (`host`, `port`, `username` or `dialect` differs from the base profile) keep the base profile's password? (Added with section 3.2.) | **No** (deviation from the owner's design, which did not mention it): the password is dropped unless the call supplies `password` or `sqlx:_policy:inherit_password: true`. Reason: otherwise `profile=prod host=<listed but attacker-influenced name>` sends the production password to another server (credential relay). Costs one extra argument for legitimate retargeting. |
+
+### Decision added with the pg8000 driver
+
+| ID | Decision | Assumption |
+|---|---|---|
+| D15 | **Decided (owner) and implemented**: pg8000 (pure Python, BSD-3) is the default PostgreSQL driver, psycopg stays available. Reason: one wheel set for all four platforms, including Windows ARM64 (no `psycopg-binary` wheel), and no LGPL package in the default PostgreSQL install. | Dialect URL `postgresql+pg8000`; the extra `postgres` installs `pg8000>=1.31.6,<1.32` and no longer psycopg; new extra `postgres-psycopg` (`psycopg[binary]`); profile key `driver: pg8000 \| psycopg`, default `pg8000` (a profile that relied on the default and has psycopg installed but not pg8000 gets `[E_DRIVER_MISSING] ... saltext-sqlx[postgres]`; the fix is `driver: psycopg` or the other extra). Only `application_name` is allowed in `query`/`connect_args` for pg8000; TLS is `ssl_certs_dir` only. **Risk accepted**: the one-statement-per-call guarantee needs one pg8000 internal (`Connection.execute_unnamed`) because stock pg8000 runs `a; b` through the simple protocol when there are no binds (WS 16.1); the minor version is pinned, a once-per-process proof refuses a driver that does not behave (`[E_DRIVER_MISSING]`), and `tests/functional/test_pg8000_functional.py` pins the behaviour. Everything observed to differ from psycopg is in WS 16. |

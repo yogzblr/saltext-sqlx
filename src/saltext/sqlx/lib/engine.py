@@ -46,15 +46,19 @@ def build_engine(profile, password, timeout_ms=None):
     ``connect_args``/``query`` key. The caller owns ``dispose()``; prefer ``managed_engine`` or ``connection``.
     """
     prof = _effective(profile, timeout_ms)
-    adapter = dialects.adapter(prof["dialect"])
+    adapter = dialects.adapter(prof["dialect"], prof.get("driver"))
     adapter.load_driver()
-    return create_engine(
+    eng = create_engine(
         adapter.url(prof, password),
         poolclass=NullPool,
-        connect_args=adapter.connect_args(prof),
+        # TLS files are loaded here for pg8000 and PyMySQL-style drivers, so a failure must take the one error path
+        connect_args=_guarded(prof, password, adapter.connect_args, prof),
         hide_parameters=True,
         echo=False,
+        **adapter.engine_kwargs,
     )
+    adapter.configure_engine(eng, prof)
+    return eng
 
 
 @contextlib.contextmanager
@@ -107,7 +111,7 @@ def connection(profile, password, timeout_ms=None, read_only=None):
     ``[E_CONNECT]``, ``[E_AUTH_FAILED]`` or ``[E_INTERNAL]`` without the password or URL.
     """
     prof = _effective(profile, timeout_ms)
-    adapter = dialects.adapter(prof["dialect"])
+    adapter = dialects.adapter(prof["dialect"], prof.get("driver"))
     with managed_engine(prof, password) as eng:
         conn = _guarded(prof, password, eng.connect)
         try:
@@ -127,7 +131,7 @@ def connection(profile, password, timeout_ms=None, read_only=None):
 
 def ping(profile, password, timeout_ms=None):
     """Connect, run the dialect's trivial statement and return the SPEC 4.5 result dict."""
-    adapter = dialects.adapter(profile["dialect"])
+    adapter = dialects.adapter(profile["dialect"], profile.get("driver"))
     start = time.perf_counter()
     with connection(profile, password, timeout_ms) as conn:
         _guarded(profile, password, conn.exec_driver_sql, adapter.ping_sql)

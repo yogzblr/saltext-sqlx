@@ -22,11 +22,12 @@ on by a minion policy and stays inside the limits that policy sets.
 | Salt | 3006 or newer (developed and tested on 3008) |
 | Python | 3.10 or newer (the Salt 3008.5 onedir ships Python 3.14; every driver wheel installs on it) |
 | SQLAlchemy | 2.0.x (installed as a dependency, pinned `>=2.0,<2.1`) |
-| Database driver | one per dialect, installed as an extra (below) |
+| Database driver | one per dialect, installed as an extra (below); PostgreSQL has two: **pg8000** (default) and psycopg |
 | Network | minion must reach the database host and port |
 
-Drivers and licences: PostgreSQL `psycopg[binary]` (LGPL-3.0, unmodified pip package), MySQL/MariaDB `PyMySQL` (MIT),
-Oracle `oracledb` thin mode (Apache-2.0/UPL, no Oracle client needed), SQL Server `pymssql` (LGPL). No GPL package is used.
+Drivers and licences: PostgreSQL `pg8000` (BSD-3, pure Python, the default) or `psycopg[binary]` (LGPL-3.0, unmodified pip
+package, optional), MySQL/MariaDB `PyMySQL` (MIT), Oracle `oracledb` thin mode (Apache-2.0/UPL, no Oracle client needed), SQL Server
+`pymssql` (LGPL). No GPL package is used.
 
 ## 2. Install
 
@@ -47,7 +48,7 @@ salt-pip install 'saltext-sqlx[postgres,mysql]'
 # Salt installed from system packages or a virtualenv: the same lines with pip instead of salt-pip
 ```
 
-Extras: `postgres`, `mysql` (MySQL and MariaDB), `oracle`, `mssql`. Without git and without the version variable the
+Extras: `postgres` (pg8000), `postgres-psycopg` (psycopg, only if you choose `driver: psycopg`), `mysql` (MySQL and MariaDB), `oracle`, `mssql`. Without git and without the version variable the
 archive install fails with `Failed to build 'saltext-sqlx' when getting requirements to build wheel` (observed).
 
 Then restart the minion so it loads the extension, and check it:
@@ -64,7 +65,7 @@ profiles of that dialect (`[E_DRIVER_MISSING]`).
 Notes:
 - A Salt upgrade replaces the onedir Python, so **reinstall** the extension afterwards.
 - Air-gapped hosts: mirror the wheels for each driver for Salt's Python version (and hashes) into your internal index.
-- Checked on the Salt 3008.5 onedir (Python 3.14.7): psycopg-binary, PyMySQL, oracledb and pymssql all install from wheels.
+- Checked on the Salt 3008.5 onedir (Python 3.14.7): pg8000, psycopg-binary, PyMySQL, oracledb and pymssql all install from wheels (pg8000 is a pure-Python wheel, so it also installs on Windows ARM64, where psycopg-binary has no wheel).
   The onedir already contains `cryptography`, which PyMySQL needs for MySQL 8+/9 `caching_sha2_password` accounts.
 - A container or a host without systemd: stop and start `salt-minion` by whatever runs it; `sqlx` profiles and the extension
   are read only when the minion starts (a stale minion answers `[E_PROFILE_UNKNOWN] profile is not configured`).
@@ -131,6 +132,14 @@ Dialect notes (observed end to end):
   runs a whole batch, so the module refuses a `;` followed by a second statement; a batch written without `;` cannot be
   detected. TLS with `ssl_certs_dir` is not supported (`[E_PROFILE_INVALID]`).
 - **MySQL/MariaDB**: `select 1/0` returns NULL, not an error; `/*! ... */` comments are executed by the server.
+- **PostgreSQL drivers**: `driver: pg8000` is the default and needs nothing in the profile; `driver: psycopg` selects the libpq driver
+  (install `saltext-sqlx[postgres-psycopg]`). Error texts for SQL errors are identical. What differs, all observed (WIRE_SHAPES section 16):
+  pg8000 puts the SQLSTATE on connect errors (`[E_AUTH_FAILED] postgresql 28P01: password authentication failed for user "rw"`,
+  `[E_CONNECT] postgresql 3D000: database "nodb" does not exist`); in `query`/`connect_args` only `application_name` is accepted
+  (`sslmode`, `keepalives*` and `target_session_attrs` are psycopg's; TLS is `ssl_certs_dir` below); it does not read
+  `$PGPASSWORD` or `~/.pgpass`; the host is a TCP name (no Unix-socket path); `infinity` and years above 9999 come back as text
+  instead of `[E_SQL_DATA]`; a bare `SELECT :list` gives the array as text (write `CAST(:list AS integer[])`). Without `ssl_certs_dir`
+  both drivers use TLS when the server offers it and do not verify it.
 
 #### Minion on the database server itself
 
@@ -173,7 +182,8 @@ certificate needs its key and the other way round; a private key readable by gro
 (their access cannot be checked there): use a directory with the CA file only, for server verification without a client
 certificate.
 File names default to `ca.pem`, `client.pem`, `client.key`; override with `ssl_files: {ca: ..., cert: ..., key: ...}`.
-Verified on PostgreSQL, MySQL and MariaDB; Oracle wallet mapping is unverified; SQL Server is refused.
+Verified on PostgreSQL (both drivers: pg8000 gets an `ssl.SSLContext` that trusts only this CA, psycopg gets libpq's `sslmode`/`sslrootcert`),
+MySQL and MariaDB; Oracle wallet mapping is unverified; SQL Server is refused.
 
 ### 3.2 Connection details in the call
 
@@ -352,7 +362,7 @@ ERROR: [E_TIMEOUT] mssql 20003: TDS server connection timed out; DBPROCESS is de
 | `E_SECRET` | `sdb://` reference did not resolve | check the sdb profile and key |
 | `E_POLICY` | refused by policy (host not allowed, certificate path or key mode, literal password) | see `SECURITY.md` |
 | `E_EXECUTE_DISABLED` | `execute` on a profile without `allow_execute: true` | use the write profile |
-| `E_DRIVER_MISSING` | the driver for that dialect is not installed | `salt-pip install 'saltext-sqlx[<extra>]'` |
+| `E_DRIVER_MISSING` | the driver for that dialect is not installed (PostgreSQL: pg8000 by default; a profile with `driver: psycopg` needs `[postgres-psycopg]`) | `salt-pip install 'saltext-sqlx[<extra>]'` |
 | `E_CONNECT` / `E_AUTH_FAILED` | cannot connect / wrong credentials or certificate | check host, port, firewall, account |
 | `E_SQL` / `E_SQL_DATA` / `E_CONSTRAINT` | SQL error / bad data / constraint violation | the message is the database's own |
 | `E_READ_ONLY` | write attempted in a read-only session | use a write profile |

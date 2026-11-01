@@ -509,9 +509,15 @@ def tls_profile(root, policy, dialect, mode="verify-full", **dirkw):
     return load(prof(path, dialect, ssl_mode=mode), policy)
 
 
+def libpq_profile(root, policy, **kw):
+    p = tls_profile(root, policy, "postgresql", **kw)
+    p["driver"] = "psycopg"
+    return p
+
+
 @UNIX_MODES
-def test_postgresql_mapping_mtls(root, policy):
-    p = tls_profile(root, policy, "postgresql")
+def test_postgresql_psycopg_mapping_mtls(root, policy):
+    p = libpq_profile(root, policy)
     real = p["tls"]["dir"]
     assert tls.query_args("postgresql", p) == {
         "sslmode": "verify-full",
@@ -522,11 +528,57 @@ def test_postgresql_mapping_mtls(root, policy):
     assert not tls.connect_args("postgresql", p)
 
 
-def test_postgresql_mapping_server_auth_only_disables_default_client_cert(root, policy):
-    p = tls_profile(root, policy, "postgresql", mode="verify-ca", cert=None, key=None)
+def test_postgresql_psycopg_mapping_server_auth_only_disables_default_client_cert(root, policy):
+    p = libpq_profile(root, policy, mode="verify-ca", cert=None, key=None)
     args = tls.query_args("postgresql", p)
     assert args["sslmode"] == "verify-ca" and args["sslcertmode"] == "disable"
     assert "sslcert" not in args and "sslkey" not in args
+
+
+class FakeContext:
+    """Stands in for ``ssl.SSLContext``: the unit tests do not have real PEM files."""
+
+    def __init__(self, cafile):
+        self.cafile = cafile
+        self.check_hostname = True
+        self.chain = None
+
+
+@pytest.fixture
+def fake_ssl(monkeypatch):
+    monkeypatch.setattr(tls.ssl, "create_default_context", lambda cafile=None: FakeContext(cafile))
+    monkeypatch.setattr(
+        FakeContext,
+        "load_cert_chain",
+        lambda self, cert, key: setattr(self, "chain", (cert, key)),
+        raising=False,
+    )
+
+
+@UNIX_MODES
+@pytest.mark.parametrize("mode,hostname", [("verify-full", True), ("verify-ca", False)])
+@pytest.mark.usefixtures("fake_ssl")
+def test_postgresql_pg8000_mapping_is_an_ssl_context(root, policy, mode, hostname):
+    """pg8000 (the default driver) takes ``ssl_context``, not libpq parameters (decision D15)."""
+    p = tls_profile(root, policy, "postgresql", mode=mode)
+    real = p["tls"]["dir"]
+    assert not tls.query_args("postgresql", p)
+    args = tls.connect_args("postgresql", p)
+    assert set(args) == {"ssl_context"}
+    ctx = args["ssl_context"]
+    assert ctx.cafile == f"{real}/ca.pem"  # only the profile's CA is trusted
+    assert ctx.check_hostname is hostname
+    assert ctx.chain == (f"{real}/client.pem", f"{real}/client.key")
+
+
+@pytest.mark.usefixtures("fake_ssl")
+def test_postgresql_pg8000_mapping_without_client_cert_presents_none(root, policy):
+    p = tls_profile(root, policy, "postgresql", cert=None, key=None)
+    assert tls.connect_args("postgresql", p)["ssl_context"].chain is None
+
+
+def test_postgresql_pg8000_context_is_not_built_without_tls():
+    assert not tls.connect_args("postgresql", profiles.validate_profile("p", dict(BASE)))
 
 
 @UNIX_MODES
@@ -569,9 +621,11 @@ def test_mapping_is_empty_without_tls_and_mssql_never_maps():
 
 @UNIX_MODES
 def test_adapters_apply_the_mapping(root, policy):
-    pg = tls_profile(root, policy, "postgresql")
-    url = dialects.adapter("postgresql").url(pg, "pw")
+    pg = libpq_profile(root, policy)
+    url = dialects.adapter("postgresql", "psycopg").url(pg, "pw")
     assert url.query["sslmode"] == "verify-full" and url.query["sslrootcert"].endswith("/ca.pem")
+    pg8 = tls_profile(root, policy, "postgresql")
+    assert not {"sslmode", "sslrootcert"} & set(dialects.adapter("postgresql").url(pg8, "pw").query)
     my = tls_profile(root, policy, "mysql")
     args = dialects.adapter("mysql").connect_args(my)
     assert args["ssl_ca"].endswith("/ca.pem") and args["ssl_verify_cert"] is True

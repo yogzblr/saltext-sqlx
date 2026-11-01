@@ -68,6 +68,8 @@ _PREFIXED = re.compile(r"^\[(E_[A-Z_]+)\] (.*)$", re.DOTALL)
 _WS = re.compile(r"\s*[\r\n\t]+\s*|\s{2,}")
 
 _MYSQL_FAMILY = ("mysql", "mariadb")
+#: Dialects whose client loads the TLS files in Python (PyMySQL, and pg8000 through ``tls.pg8000_context``).
+_TLS_FILE_DIALECTS = _MYSQL_FAMILY + ("postgresql",)
 
 _HINT_PERCENT = (
     "a literal '%' reached the driver unescaped; caller SQL must go through text() with bound parameters, "
@@ -111,12 +113,20 @@ def _first_line(text):
 
 
 # --------------------------------------------------------------------------------------------------
-# PostgreSQL (psycopg 3). Evidence: docs/wire_shapes/postgresql__sa2.0.55.json
+# PostgreSQL (psycopg 3 and pg8000). Evidence: docs/wire_shapes/postgresql__sa2.0.55.json and WIRE_SHAPES section 16
 # --------------------------------------------------------------------------------------------------
 # Exact SQLSTATE -> code. 57014 (statement_timeout) and 25006 (read-only transaction) observed.
 _PG_EXACT = {
     "57014": "E_TIMEOUT",
     "25006": "E_READ_ONLY",
+    # Connect-phase and server-going-away states. pg8000 reports the server's own SQLSTATE for these (psycopg
+    # reported none for connect failures); observed 3D000 and 28P01 (WIRE_SHAPES section 16), the others are the
+    # documented states of the same kind (UNVERIFIED).
+    "3D000": "E_CONNECT",  # invalid_catalog_name: database "x" does not exist
+    "53300": "E_CONNECT",  # too_many_connections
+    "57P01": "E_CONNECT",  # admin_shutdown
+    "57P02": "E_CONNECT",  # crash_shutdown
+    "57P03": "E_CONNECT",  # cannot_connect_now (starting up / shutting down)
 }
 # SQLSTATE class -> code. 22, 23, 42 observed (42601, 42P01, 42703, 42501; 22012, 22P02; 23505).
 _PG_CLASS = {
@@ -135,6 +145,10 @@ _PG_TEXT = (
         "fe_sendauth",
         "E_AUTH_FAILED",
     ),  # "fe_sendauth: no password supplied" (WIRE_SHAPES section 13)
+    (
+        "no password was provided",
+        "E_AUTH_FAILED",
+    ),  # pg8000: "server requesting password authentication, but no password was provided"
     ("is not permitted to log in", "E_AUTH_FAILED"),  # role without LOGIN
     ("Connection refused", "E_CONNECT"),
     ("could not connect", "E_CONNECT"),
@@ -175,29 +189,124 @@ _PG_DB_MISSING = re.compile(r'database ".*" does not exist')
 _PG_INVALID_INPUT = re.compile(r'(invalid input (?:syntax|value) for [^:]*): ".*"', re.DOTALL)
 
 
-def _pg(orig, error_detail):
+#: Keys of the ErrorResponse dictionary that pg8000 puts in ``exc.args[0]`` (protocol message fields):
+#: S severity, V severity (non-localised), C SQLSTATE, M primary message, D detail, H hint.
+_PG8000_CONNECT = re.compile(
+    r"Can't create a connection to host (?P<host>.*) and port (?P<port>\d+) \(timeout is"
+)
+
+
+def _pg_fields(orig):
+    """``(sqlstate, primary, hint, detail, fatal)`` from a psycopg exception or a pg8000 ErrorResponse dictionary."""
+    fields = orig.args[0] if orig.args and isinstance(orig.args[0], dict) else None
+    if fields is not None:
+        sqlstate = fields.get("C")
+        return (
+            str(sqlstate) if sqlstate else None,
+            fields.get("M"),
+            fields.get("H"),
+            fields.get("D"),
+            fields.get("V", fields.get("S")) in ("FATAL", "PANIC"),
+        )
     diag = getattr(orig, "diag", None)
     sqlstate = getattr(orig, "sqlstate", None) or getattr(diag, "sqlstate", None)
+    return (
+        str(sqlstate) if sqlstate else None,
+        getattr(diag, "message_primary", None),
+        getattr(diag, "message_hint", None),
+        getattr(diag, "message_detail", None),
+        False,
+    )
+
+
+def _pg_text_code(text):
+    for needle, code in _PG_TEXT:
+        if needle in text:
+            return code
+    return None
+
+
+def _pg8000_connect(orig):
+    """pg8000 wraps every socket failure in one InterfaceError; the cause says what happened."""
+    found = _PG8000_CONNECT.match(str(orig.args[0])) if orig.args else None
+    if found is None:
+        return None
+    cause = orig.__cause__ or orig.__context__
+    if isinstance(cause, socket.gaierror):
+        reason = "could not translate host name: " + (
+            cause.args[1] if len(cause.args) > 1 else "name resolution failed"
+        )
+    elif isinstance(cause, TimeoutError):  # socket.timeout is the same class since Python 3.10
+        reason = "timeout expired"  # psycopg: "connection timeout expired"
+    elif isinstance(cause, OSError):
+        reason = cause.strerror or type(cause).__name__
+    else:
+        reason = "connection failed"
+    return f'connection to server at "{found.group("host")}", port {found.group("port")} failed: {reason}'
+
+
+_PG_LOGIN_CLASSES = (
+    "28",
+    "08",
+)  # login and connection exceptions: the text says more than the class
+_SSL_SUFFIX = re.compile(r"\s*\(_ssl\.c:\d+\)")
+
+
+def _pg8000_network(orig):
+    """
+    pg8000 words a failed read or write "network error"; the ssl alert or the OS error is in the cause chain.
+
+    An alert from the server after the handshake (expired or unknown client certificate) arrives that way
+    (observed, WIRE_SHAPES section 16).
+    """
+    if not orig.args or orig.args[0] != "network error":
+        return None
+    chain, cur = [], orig.__cause__ or orig.__context__
+    while cur is not None and cur not in chain:
+        chain.append(cur)
+        cur = cur.__cause__ or cur.__context__
+    for exc in chain:
+        if (
+            isinstance(exc, ssl.SSLError)
+            and not isinstance(exc, ssl.SSLZeroReturnError)
+            and len(exc.args) > 1
+            and isinstance(exc.args[1], str)
+        ):
+            return _SSL_SUFFIX.sub("", exc.args[1])
+    for exc in chain:
+        if isinstance(exc, ssl.SSLError):
+            return "TLS/SSL connection has been closed (EOF)"
+        if isinstance(exc, OSError):
+            return "network error: " + (exc.strerror or type(exc).__name__)
+    return "network error"
+
+
+def _pg(orig, error_detail):
+    sqlstate, primary, hint, detail, fatal = _pg_fields(orig)
     if sqlstate:
-        sqlstate = str(sqlstate)
-        code = _PG_EXACT.get(sqlstate) or _PG_CLASS.get(sqlstate[:2])
-        primary = getattr(diag, "message_primary", None)
+        text_code = (
+            _pg_text_code(primary or "") if fatal or sqlstate[:2] in _PG_LOGIN_CLASSES else None
+        )
+        # A FATAL error is a refused or ended session (login, pg_hba.conf, shutdown): the message says more than the
+        # class does (``28000`` is both a bad pg_hba.conf entry and a bad role), and psycopg classed those by text.
+        code = text_code or _PG_EXACT.get(sqlstate) or _PG_CLASS.get(sqlstate[:2])
         if not primary:
             primary = _first_line(orig.args[0]) if orig.args else ""
         if not error_detail:
             primary = _PG_INVALID_INPUT.sub(r'\1: "..."', primary)  # 22P02 echoes the bound value
         parts = [primary]
-        hint = getattr(diag, "message_hint", None)
         if hint:
             parts.append(f"HINT: {hint}")
-        detail = getattr(diag, "message_detail", None)
         if error_detail and detail:
             parts.append(f"DETAIL: {detail}")
         return code, sqlstate, " ".join(parts)
-    text = str(orig.args[0]) if orig.args else ""
-    for needle, code in _PG_TEXT:
-        if needle in text:
-            return code, None, _HINT_PERCENT if code == "E_OPTION_INVALID" else text
+    connect_text = _pg8000_connect(orig) or _pg8000_network(orig)
+    text = connect_text or (str(orig.args[0]) if orig.args else "")
+    if connect_text is not None:
+        return "E_CONNECT", None, connect_text
+    code = _pg_text_code(text)
+    if code is not None:
+        return code, None, _HINT_PERCENT if code == "E_OPTION_INVALID" else text
     if any(c.__name__ == "DataError" for c in type(orig).__mro__):
         # Raised by psycopg itself, not the server, so there is no SQLSTATE: a value Python cannot hold, such as
         # 'infinity' or a year after 9999 ("timestamp too large (after year 10K): 'infinity'"). Observed on 16.15.
@@ -431,12 +540,16 @@ def _raw(exc, dialect):
     elif isinstance(exc, RuntimeError) and dialect in _MYSQL_FAMILY:
         if "'cryptography' package is required" in text:  # PyMySQL authentication (WS 6)
             return Translation("E_DRIVER_MISSING", None, _MSG_CRYPTOGRAPHY)
-    elif isinstance(exc, ssl.SSLError) and dialect in _MYSQL_FAMILY:
+    elif isinstance(exc, ssl.SSLError) and dialect in _TLS_FILE_DIALECTS:
         # PyMySQL loads the client certificate and key itself and lets the ssl error escape (observed: garbage key,
         # certificate/key mismatch). args == (code, "[SSL] PEM lib (_ssl.c:...)"): no path in it.
         detail = exc.args[1] if len(exc.args) > 1 and isinstance(exc.args[1], str) else "TLS error"
+        if (
+            dialect == "postgresql"
+        ):  # pg8000 lets the ssl module's error escape unwrapped; drop its source position
+            detail = _SSL_SUFFIX.sub("", detail)
         return Translation("E_CONNECT", None, detail)
-    elif isinstance(exc, (FileNotFoundError, PermissionError)) and dialect in _MYSQL_FAMILY:
+    elif isinstance(exc, (FileNotFoundError, PermissionError)) and dialect in _TLS_FILE_DIALECTS:
         # FileNotFoundError / PermissionError from the same step; the file name in the exception is deliberately dropped
         return Translation("E_CONNECT", None, _MSG_TLS_FILE.format(reason=exc.strerror))
     elif isinstance(exc, AttributeError) and dialect in _MYSQL_FAMILY:

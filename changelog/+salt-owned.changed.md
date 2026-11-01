@@ -1,0 +1,1 @@
+The offline wheelhouse no longer ships packages the Salt onedir already contains (for example `cryptography` and `pyopenssl`): the Salt lock files are vendored under `deploy/wheelhouse/requirements/salt-locks/`, used as pip constraints, and a pin that disagrees with Salt's fails the build; the minion helper never touches Salt-owned packages.

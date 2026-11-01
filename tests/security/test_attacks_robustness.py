@@ -13,6 +13,7 @@ import pytest
 from salt.exceptions import CommandExecutionError
 from salt.exceptions import SaltInvocationError
 
+from saltext.sqlx.lib import dialects
 from tests.security import harness
 from tests.security.harness import observe
 
@@ -247,14 +248,24 @@ def test_unknown_option_names_are_not_echoed_with_control_characters(request, se
 
 
 def test_values_python_cannot_hold_are_a_data_error_not_internal(server, salt):
-    """D7: psycopg raises DataError client-side for 'infinity' and for years after 9999; it must read as E_SQL_DATA."""
+    """D7: psycopg raises DataError client-side for 'infinity' and for years after 9999; it must read as E_SQL_DATA.
+
+    pg8000 (the default driver) does not: it hands such a value over as text, which is the better answer
+    (docs/WIRE_SHAPES.md section 16), so the rows come back and no error is raised.
+    """
     if server.key != "postgresql":
         pytest.skip("psycopg DataError for dates beyond year 9999 is PostgreSQL-specific")
+    pg8000 = dialects.DIALECT_DRIVERS["postgresql"] == "pg8000"
     for sql in (
         "SELECT 'infinity'::timestamp",
         "SELECT '-infinity'::date",
         "SELECT '5874897-12-31'::date",
     ):
+        if pg8000:
+            out = salt.query("ro", sql)
+            observe("robustness", f"postgresql/pg8000 {sql}", str(out["rows"]))
+            assert out["row_count"] == 1 and isinstance(out["rows"][0][0], str)
+            continue
         with pytest.raises(CommandExecutionError) as exc:
             salt.query("ro", sql)
         text = str(exc.value)

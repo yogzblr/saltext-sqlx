@@ -113,6 +113,7 @@ def test_profile_must_be_a_mapping(raw):
 @pytest.mark.parametrize(
     "dialect,driver",
     [
+        ("postgresql", "pg8000"),
         ("postgresql", "psycopg"),
         ("mysql", "pymysql"),
         ("oracle", "oracledb"),
@@ -124,11 +125,29 @@ def test_dialect_driver_pairs_accepted(dialect, driver):
     assert (prof["dialect"], prof["driver"]) == (dialect, driver)
 
 
+def test_driver_defaults_to_the_first_choice_of_the_dialect():
+    """Decision D15: pg8000 is the PostgreSQL default; psycopg needs ``driver: psycopg``."""
+    raw = make(dialect="postgresql")
+    raw.pop("driver", None)
+    assert profiles.validate_profile("p", raw)["driver"] == "pg8000"
+
+
+def test_driver_rejection_names_the_choices_not_the_value():
+    msg = _fails(
+        "E_PROFILE_INVALID",
+        profiles.validate_profile,
+        "p",
+        make(dialect="postgresql", driver="psycopg2"),
+    )
+    assert "pg8000, psycopg" in msg and "psycopg2" not in msg
+
+
 @pytest.mark.parametrize(
     "dialect,driver",
     [
         ("postgresql", "pymysql"),
         ("mysql", "psycopg"),
+        ("mysql", "pg8000"),
         ("oracle", "pymssql"),
         ("mssql", "oracledb"),
         ("postgresql", "psycopg2"),

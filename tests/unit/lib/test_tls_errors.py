@@ -137,8 +137,9 @@ def test_mysql_family_unreadable_tls_file_names_no_path(exc):
 
 
 def test_other_dialects_do_not_get_the_tls_file_rule():
-    assert errors.describe(FileNotFoundError(2, "No such file"), "postgresql").code == "E_INTERNAL"
+    assert errors.describe(FileNotFoundError(2, "No such file"), "oracle").code == "E_INTERNAL"
     assert errors.describe(ssl.SSLError(1, "x"), "oracle").code == "E_INTERNAL"
+    assert errors.describe(ssl.SSLError(1, "x"), "mssql").code == "E_INTERNAL"
 
 
 def test_raise_for_keeps_the_real_driver_message():
