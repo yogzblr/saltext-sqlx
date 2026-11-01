@@ -12,7 +12,7 @@ Observed on three databases (task T1, 2026-10-29; full tables in `docs/WIRE_SHAP
 obtained with SQLAlchemy 2.0.55 and 2.1.6. Test account `rw` (DML rights), a guard statement, then caller SQL through the
 same connection, then `INSERT` and `COMMIT`; "persisted" was read back on a second connection.
 
-**PostgreSQL 16.15** (psycopg 3.3.6), after `SET TRANSACTION READ ONLY`:
+**PostgreSQL 16.15** (psycopg 3.3.6; the same bypass and refusals with pg8000 1.31.6, WIRE_SHAPES section 16), after `SET TRANSACTION READ ONLY`:
 
 | Caller SQL sequence | Result |
 |---|---|
@@ -77,7 +77,8 @@ beyond what is needed, and no `EXECUTE` on write-capable packages). `read_only: 
 | Resource exhaustion | Row, byte, time and retry caps; hard maxima in code |
 | Credential in logs/URLs | Build URLs with `URL.create`; never log a URL or password; masking filter (`secrets.MaskingFilter`, `secrets.mask`). Observed (T1): the account password did not appear in `str`, `repr`, `repr(orig)`, `repr(orig.args)` or the formatted traceback of any case on PostgreSQL, MySQL and MariaDB, nor in the Oracle and SQL Server connection-failure rows. T1b (end to end, all five databases, Salt 3008.5): no password or resolved `sdb://` value in the master job cache, the master and minion logs at debug level, the event bus, or any CLI, `salt-call` or salt-api output (`tests-e2e/test_zz_leaks.py`). Not examined: driver debug output |
 | NUL character truncating a statement | psycopg and pymssql cut the statement text at a NUL (observed, T1b: `delete from t\x00 where id = 99999` deleted every row on PostgreSQL and SQL Server through raw SQLAlchemy). The module refuses a NUL in `sql` on every dialect and in a bound string on SQL Server (`[E_OPTION_INVALID]`); only salt-api/LocalClient can carry one (argv cannot) |
-| Unreviewed LGPL code paths | LGPL drivers (psycopg, pymssql) are accepted as unmodified pip dependencies (owner decision 2026-10-29); do not vendor or patch them |
+| Unreviewed LGPL code paths | LGPL drivers (psycopg, now optional, and pymssql) are accepted as unmodified pip dependencies (owner decision 2026-10-29); do not vendor or patch them. The default PostgreSQL driver pg8000 is BSD-3 |
+| A driver that runs `a; b` as written (the T11 D1 bypass of the read-only guard, time cap, verb filter and `dry_run`) | Stock pg8000 does when there are no binds (docs/WIRE_SHAPES.md section 16.1). The adapter sends every statement through the extended protocol, proves on the first connection of the process that a second statement is refused (42601) and otherwise refuses all calls (`[E_DRIVER_MISSING]`); pg8000 is pinned to `>=1.31.5,<1.32` because this uses the internal `Connection.execute_unnamed`. `tests/functional/test_pg8000_functional.py::test_a_second_statement_is_refused_by_the_server` |
 | Supply chain on an air-gapped host | Mirror wheels for each driver for Salt's Python version; pin versions; check hashes |
 
 ### Call-time connection parameters (opt-in, SPEC section 3.2, D1)
@@ -197,7 +198,7 @@ master, minions and salt-api.
   `test_call_surface.py`: every connection keyword is refused with `E_OPTION_UNKNOWN` and no socket is opened; dunder keys are
   dropped; `params={"host": ...}` is only a bind.
 - [x] `connect_args` allowlist reviewed per driver
-  `test_connect_args.py`: allowlist snapshot for psycopg, PyMySQL, oracledb and pymssql; 60 dangerous keys refused in
+  `test_connect_args.py`: allowlist snapshot for pg8000, psycopg, PyMySQL, oracledb and pymssql; 60 dangerous keys refused in
   `connect_args` and `query` on every dialect; values must be scalars; `URL.create` keeps host/port/user injection literal.
 - [x] `error_detail: false` verified not to leak `DETAIL` on a unique violation (PostgreSQL only; on MySQL/MariaDB the value is in the primary message, so document it instead)
   `test_secret_leak.py::test_unique_violation_detail_off_vs_on`: with `false` the value is absent on all three servers
@@ -211,7 +212,7 @@ master, minions and salt-api.
   authorisation engine is shared). Results and two cautions are in section 4 above.
 - [x] Dependency licences listed in `NOTICE` (MIT, BSD, Apache-2.0, LGPL accepted)
   `NOTICE` lists the declared dependencies and the full closure from real package metadata; `test_licences.py` fails on any GPL
-  or AGPL and on any LGPL outside `psycopg`, `psycopg-binary`, `pymssql`. No GPL present.
+  or AGPL and on any LGPL outside `psycopg`, `psycopg-binary`, `pymssql` (pg8000 is BSD-3). No GPL present.
 
 ### Defects found by the T11 review (fixed)
 

@@ -20,6 +20,7 @@ import yaml
 from salt.exceptions import CommandExecutionError
 
 import saltext.sqlx.modules.sqlx_mod as mod
+from saltext.sqlx.lib import dialects
 from saltext.sqlx.lib import engine
 from saltext.sqlx.lib import profiles
 
@@ -57,21 +58,33 @@ UNKNOWN_CA = {
     "mysql": "certificate verify failed",
     "mariadb": "certificate verify failed",
 }
+# pg8000 (the default PostgreSQL driver) hands the TLS errors of Python's ssl module through; libpq words them itself
+# (docs/WIRE_SHAPES.md section 16). The key "postgresql" is the libpq text, "postgresql-pg8000" the ssl module's.
 HOSTNAME = {
     "postgresql": 'does not match host name "127.0.0.2"',
+    "postgresql-pg8000": "IP address mismatch",
     "mysql": "IP address mismatch",
     "mariadb": "IP address mismatch",
 }
 EXPIRED_CLIENT = {
     "postgresql": "alert certificate expired",
+    "postgresql-pg8000": "CERTIFICATE_EXPIRED",
     "mysql": "CERTIFICATE_EXPIRED",
     "mariadb": "CERTIFICATE_EXPIRED",
 }
 CLIENT_CA_UNKNOWN = {
     "postgresql": "alert unknown ca",
+    "postgresql-pg8000": "UNKNOWN_CA",
     "mysql": "UNKNOWN_CA",
     "mariadb": "UNKNOWN_CA",
 }
+
+
+def frag(table, srv):
+    """The fragment for ``srv`` with the PostgreSQL driver the session runs (``SQLX_PG_DRIVER``, default pg8000)."""
+    if srv["key"] == "postgresql" and dialects.DIALECT_DRIVERS["postgresql"] == "pg8000":
+        return table["postgresql-pg8000"]
+    return table[srv["key"]]
 
 
 def _reachable(port):
@@ -109,6 +122,10 @@ def make_raw(srv, directory="good", who="cert", host="localhost", mode=None, **e
         raw["ssl_certs_dir"] = str(PKI / directory)
     if mode:
         raw["ssl_mode"] = mode
+    if srv["dialect"] == "postgresql" and os.environ.get("SQLX_PG_DRIVER"):
+        raw["driver"] = os.environ[
+            "SQLX_PG_DRIVER"
+        ]  # subprocesses (salt-call) do not see the pytest default
     raw.update(extra)
     return raw
 
@@ -166,15 +183,15 @@ def test_wrong_ca_is_refused(srv):
 
 
 def test_hostname_not_in_the_san_is_refused_by_verify_full(srv):
-    expect_failure(srv, "E_CONNECT", HOSTNAME[srv["key"]], host="127.0.0.2")
+    expect_failure(srv, "E_CONNECT", frag(HOSTNAME, srv), host="127.0.0.2")
 
 
 def test_expired_client_certificate_is_refused(srv):
-    expect_failure(srv, "E_CONNECT", EXPIRED_CLIENT[srv["key"]], directory="expired-client")
+    expect_failure(srv, "E_CONNECT", frag(EXPIRED_CLIENT, srv), directory="expired-client")
 
 
 def test_client_certificate_from_another_ca_is_refused(srv):
-    expect_failure(srv, "E_CONNECT", CLIENT_CA_UNKNOWN[srv["key"]], directory="other-client")
+    expect_failure(srv, "E_CONNECT", frag(CLIENT_CA_UNKNOWN, srv), directory="other-client")
 
 
 def test_certificate_user_without_a_client_certificate_is_refused(srv):
@@ -187,6 +204,8 @@ def test_certificate_user_without_a_client_certificate_is_refused(srv):
 def test_plain_connection_to_a_tls_only_server_is_refused(srv):
     """No ssl_certs_dir and TLS switched off through the allowlisted driver option (the only way to ask for plain)."""
     if srv["dialect"] == "postgresql":
+        if dialects.DIALECT_DRIVERS["postgresql"] == "pg8000":
+            pytest.skip("pg8000 has no way to ask for plain TCP; see the next test")
         raw = make_raw(srv, directory=None, who="pw", query={"sslmode": "disable"})
         code, fragment = "E_CONNECT", "no encryption"
     else:
@@ -196,6 +215,19 @@ def test_plain_connection_to_a_tls_only_server_is_refused(srv):
         profile = profiles.validate_profile("t", raw)
         engine.ping(profile, raw["password"])
     assert str(exc.value).startswith(f"[{code}]") and fragment in str(exc.value), str(exc.value)
+
+
+def test_pg8000_without_ssl_certs_dir_is_opportunistic_unverified_tls():
+    """Same strength as libpq's default ``sslmode=prefer``: TLS is used when offered, nothing is verified (section 16)."""
+    srv = dict(SERVERS["postgresql"], key="postgresql")
+    if _reachable(srv["port"]):
+        pytest.skip("PostgreSQL TLS server not reachable")
+    if dialects.DIALECT_DRIVERS["postgresql"] != "pg8000":
+        pytest.skip("pg8000 behaviour")
+    out = lib_ping(
+        srv, directory=None, who="pw"
+    )  # the server refuses plain TCP, so this proves TLS was used
+    assert out["ok"] is True
 
 
 def test_postgresql_certificate_name_mismatch_is_an_auth_failure():

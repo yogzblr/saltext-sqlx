@@ -12,4 +12,4 @@ saltexts:
   # pip_target: auto                   # install into the onedir extras-X.Y directory like `salt-pip` (survives Salt upgrades); '' = plain pip
   # restart_linux_cmd: systemd-run --on-active=10 --unit=saltexts-restart systemctl restart salt-minion
   # restart_windows_cmd: Start-Process powershell -WindowStyle Hidden -ArgumentList '-Command','Start-Sleep 10; Restart-Service salt-minion'
-# Windows ARM64 minions need their own pillar: saltext-sqlx[mysql,oracle,mssql] (no [postgres]: psycopg-binary has no win_arm64 wheel).
+# Windows ARM64 minions need their own pillar: saltext-sqlx[postgres,mysql,oracle] (no [mssql]: Salt's pymssql 2.3.11 has no win_arm64 wheel; PostgreSQL works through pure-Python pg8000).

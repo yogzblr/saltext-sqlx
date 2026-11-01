@@ -1,5 +1,6 @@
 # Appended to requirements.common.txt by build_wheelhouse.sh. Lines naming one of OUR wheels (in $OWN) get ==<its version>.
+# pymssql is NOT pinned here: the Windows Salt onedir ships pymssql==2.3.11 (salt-locks), which satisfies the mssql extra.
 saltext-sqlx[postgres,mysql,oracle,mssql]
 saltext-kafka
-psycopg[binary]==3.3.6
-tzdata==2026.6                  # psycopg needs it on Windows only; pip evaluates environment markers for the BUILD host, so add it by hand
+pg8000==1.31.6                 # the PostgreSQL driver of the [postgres] extra: pure Python, one wheel for every target
+tzdata==2026.6                  # salt-wins (the Windows Salt 3007.x onedir ships tzdata). pip evaluates environment markers for the BUILD host, so add it by hand

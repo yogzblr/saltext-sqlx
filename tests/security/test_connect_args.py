@@ -15,8 +15,13 @@ from saltext.sqlx.lib import profiles
 from tests.security import harness
 from tests.security.harness import observe
 
+#: The key is ``<dialect>`` for the default driver and ``<dialect>-<driver>`` for another one (decision D15: PostgreSQL
+#: has pg8000 by default and psycopg when asked).
 REVIEWED = {
     "postgresql": {
+        "application_name"
+    },  # pg8000: TLS comes from ssl_certs_dir as an ssl_context, never from a profile key
+    "postgresql-psycopg": {
         "application_name",
         "sslmode",
         "target_session_attrs",
@@ -76,6 +81,12 @@ DANGEROUS = {
     "creator",
     "sock",
     "socket",
+    "unix_sock",
+    "source_address",
+    "startup_params",
+    "replication",
+    "tcp_keepalive",
+    "client_encoding",
     "connect_timeout",
     "load_data_local",
     "sql_mode",
@@ -102,8 +113,13 @@ DANGEROUS = {
 }
 
 
+def split(name):
+    dialect, _, driver = name.partition("-")
+    return dialect, driver or dialects.DIALECT_DRIVER_CHOICES[dialect][0]  # not the session default
+
+
 def adapter(name):
-    return dialects.adapter(name)
+    return dialects.adapter(*split(name))
 
 
 @pytest.mark.parametrize("dialect", sorted(REVIEWED))
@@ -116,11 +132,13 @@ def test_no_dangerous_key_is_allowed(dialect):
     assert not set(adapter(dialect).allowed_args) & DANGEROUS
 
 
-def base(dialect, **extra):
+def base(name, **extra):
+    dialect, driver = split(name)
     return profiles.validate_profile(
         "p",
         {
             "dialect": dialect,
+            "driver": driver,
             "host": "127.0.0.1",
             "port": 5432,
             "database": "d",

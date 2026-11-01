@@ -5,7 +5,8 @@ pinned wheels offline on each minion → `orch.saltexts.rollout` updates, restar
 
 ```
 deploy/
-  wheelhouse/            build_own_wheels.sh  build_wheelhouse.sh  wheelhouse_tool.py  requirements/ (pins + frozen constraints)
+  wheelhouse/            build_own_wheels.sh  build_wheelhouse.sh  wheelhouse_tool.py  refresh_salt_locks.sh
+                         requirements/ (pins, frozen constraints, salt-locks/<tag>/ = what the Salt onedir already ships)
   salt/saltexts/         init.sls (= stage + apply)  stage.sls  apply.sls  restart.sls  verify.sls  map.jinja  files/saltexts_apply.py
   salt/orch/saltexts/    rollout.sls
   pillar/                saltexts.sls.example          master.d/  roots.conf  saltexts-schedule.conf (hourly, opt-in)
@@ -22,7 +23,7 @@ from Salt's source or worked out, not executed.
 |---|---|
 | Wheelhouse build for linux-x86_64, linux-arm64, windows-x86_64, windows-arm64 (Python 3.14 and 3.11), offline dry-run install per target, SHA256SUMS, VERSIONS.json, licence gate | **Verified** (it builds; the cross-built wheels were never installed on their own platform) |
 | Installing the linux-x86_64 wheelhouse offline into a Salt 3008.5 / Python 3.14 environment, `pip check`, the `sqlx` and `kafka` modules load | **Verified** |
-| Helper `saltexts_apply.py` (idempotency, bump, extras, failure, `pip check`, checksums, spaces in paths, target dir) | **Verified** with real venvs and pip |
+| Helper `saltexts_apply.py` (idempotency, bump, extras, failure, `pip check`, checksums, spaces in paths, target dir, never touching Salt-owned packages) | **Verified** with real venvs and pip; the Salt-owned set was simulated with metadata stubs in the test venvs, and once with a real `salt==3008.5` installation (and once in a real `salt==3008.5` environment installed with exactly the versions of Salt's own lock: `pip freeze` of the base environment identical before and after, no Salt-owned package in the extras directory, `pip check` clean, `cryptography` imported from Salt's copy) |
 | Minion state through `salt-call --local`: first apply, second apply = zero changes, one pin = one package, `test=True`, wrong Python, unsupported platform, missing wheel, `clean: True` | **Verified** on Linux x86_64 |
 | Windows and ARM64 branches of the state | **Rendered and reviewed only** (the exact `cmd.run` text is asserted by a test). **Not executed.** |
 | Orchestration on a real master and 3 real minions (batches, restart for real by stopping/starting the minion process, start-event wait, retry, parallel, onchanges, failhard, a minion that never returns) | **Verified** on Linux x86_64 |
@@ -50,6 +51,65 @@ The wheels are built for ONE CPython minor version, the one inside the minions' 
 or an upgrade first. Upgrading Salt across a Python minor version also moves the onedir's `extras-3.N` directory
 (release notes 3006.27/3008.2/3008.3): extensions installed there must be reinstalled, which this state does by itself (pins vs installed).
 
+## Respect what Salt ships
+
+The Salt onedir already contains a lot of Python packages, and the extensions run inside that Python. A wheelhouse that carries its own
+copy of one of them is wrong twice: it makes the download bigger, and `pip install --target <extras-3.N>` puts a second copy next to the
+one Salt runs on (which one wins then depends on `sys.path`). Salt publishes the exact list per release:
+`requirements/static/pkg/py<X.Y>/{linux,windows}.lock` in github.com/saltstack/salt. Found there (tag v3008.5, Python 3.14):
+
+| | Linux | Windows |
+|---|---|---|
+| `cryptography` | 50.0.1 | 50.0.1 |
+| `pyopenssl` | 26.4.0 | 26.4.0 |
+| `pymssql` | not shipped | **2.3.11** (`requirements/base.txt`: `pymssql==2.3.11; sys_platform == 'win32'`) |
+| `certifi`, `idna`, `urllib3`, `typing-extensions`, `six`, `python-dateutil`, `cffi`, `pycparser`, `requests`, `packaging`, `pyyaml`, `jinja2`, `markupsafe` ... | shipped (79 packages in all) | shipped (87) |
+| `pg8000`, `psycopg`, `PyMySQL`, `oracledb`, `SQLAlchemy`, `redis`, `pymongo`, `elasticsearch`, kafka clients | **not shipped** | **not shipped** (PyMySQL and tzdata are shipped by the Salt 3007.x Windows onedir, not by 3008.5) |
+
+What the build does with that (`SALT_TAG`, default `v3008.5` for Python 3.14 and `v3007.15` for 3.11; `v3006.27` is vendored too):
+
+1. The lock files are vendored under `wheelhouse/requirements/salt-locks/<tag>/py<X.Y>.<linux|windows>.lock`, each with a header (tag, date,
+   source URL). `refresh_salt_locks.sh [TAG:PYVER ...]` re-downloads them. The 3.11 lines differ from each other (cryptography 47 / 48 / 50),
+   so each Salt line has its own lock; a 3.11 wheelhouse is built against one of them. Linux targets use the `linux` lock, Windows targets the
+   `windows` lock (Salt publishes no Windows ARM64 onedir that we could find in its CI matrix at v3008.2, so that target uses the Windows lock
+   as the best available statement; unverified).
+2. **Pins are checked first** (`wheelhouse_tool.py check-pins`). A requirement line that names a Salt-owned package with a version other
+   than Salt's fails the build before anything is downloaded: `ERROR requirements.common.txt:12: 'cryptography==50.0.2' - the Salt onedir
+   (v3008.5, python 3.14, linux) already ships cryptography==50.0.1 ... Remove the pin ...`. A pin that is meant only for platforms where
+   Salt does not ship the package carries the comment `# salt-wins`; where Salt ships it the line is dropped with a `NOTE:` (PyMySQL on a
+   3.11 Windows Salt, tzdata).
+3. **The resolver is told the Salt packages are installed.** For every package of the lock a metadata-only stub wheel is created at Salt's
+   version plus a local label (`cryptography-50.0.1+salt3008.5`; PEP 440: `==50.0.1` matches it and it sorts above the real
+   `50.0.1`), and Salt's versions are passed as constraints. `pip download` therefore never fetches those packages, and a dependency that
+   wants a *newer* one is backtracked or refused by pip itself. Observed: `anyio 4.15.1` needs `typing_extensions>=4.16`, Salt ships 4.15.0,
+   so the wheelhouse has `anyio 4.14.2`. The stubs are deleted from the output (`wheelhouse_tool.py strip`, run once to delete and once with
+   `--check` to prove none is left) and the offline dry-run install uses the stubs again, i.e. it checks the wheelhouse **plus a Salt**.
+4. Each target folder gets `SALT_OWNED.txt` (the lock as `name==version`, listed in `SHA256SUMS`).
+5. **Windows `pymssql`:** x86_64 gets none: Salt's 2.3.11 satisfies the `mssql` extra. **2.3.11 has wheels for win32 and win_amd64 only (cp39 - cp314),
+   none for win_arm64** (PyPI file list checked; 2.4.6 does have cp314 win_arm64 wheels, but it is not Salt's version), so the Windows ARM64
+   target is built without the `mssql` extra. Linux gets `pymssql==2.4.6` (Salt ships none there).
+
+**Size of the wheelhouse (Python 3.14, measured on the built folders).** "Before" is the wheelhouse before respecting Salt's lock files;
+"after A" is that change alone; "after B" adds the move from psycopg to pg8000 (`psycopg` + `psycopg-binary` out, `pg8000` + `scramp`
++ `asn1crypto` in; Windows ARM64 gains PostgreSQL).
+
+| Target | before | after A (Salt-owned) | after B (+ pg8000) |
+|---|---|---|---|
+| linux-x86_64 | 31 wheels, 23.9 MB | 21 wheels, 18.3 MB | 22 wheels, 13.3 MB |
+| linux-arm64 | 31 wheels, 25.1 MB | 21 wheels, 19.5 MB | 22 wheels, 12.9 MB |
+| windows-x86_64 | 31 wheels, 18.4 MB | 21 wheels, 11.8 MB | 22 wheels, 8.2 MB |
+| windows-arm64 | 29 wheels, 12.8 MB | 19 wheels, 7.5 MB | 22 wheels, 7.7 MB (now with PostgreSQL) |
+
+(`du` of each target folder, wheels plus `SHA256SUMS` and `SALT_OWNED.txt`; Python 3.11 against Salt v3007.15: 22 / 22 / 20 / 20 wheels.)
+
+The minion helper obeys the same list. `pip install --target DIR` forces `--ignore-installed`, so with a target directory pip does not see
+Salt's packages and would install every dependency again, `cryptography` included, into the extras directory (shown by
+`test_helper_without_the_owned_list_in_target_mode_would_have_copied_it`). The helper therefore does not ask pip to resolve anything: it reads
+the `Requires-Dist` of the wheels (markers evaluated for the minion's own interpreter), installs the wheelhouse wheels that are needed and not
+installed yet with `pip install --no-deps`, leaves every package in `SALT_OWNED.txt` alone, refuses with a message naming the requirement when a
+wheel needs a different version of a Salt-owned package (`... requires cryptography>=51, but this Salt ships cryptography==50.0.1 and the helper never
+changes a package Salt ships`), and runs `pip check` as before. A wheelhouse without `SALT_OWNED.txt` is handled as before (no package is special).
+
 ## Build the wheelhouse
 
 ```bash
@@ -73,18 +133,19 @@ wheel per target), `LICENCES.md`, `build-<target>.log`. Rules enforced by the sc
   published as an sdist, so `pip download --only-binary=:all:` could not otherwise finish. The stub is never copied to the output.
 * Transitive versions are frozen in `requirements/constraints.py<PYV>.<target>.txt` (regenerate with `LOCK_UPDATE=1` when you
   change a pin, review the diff, commit). Without the lock a rebuild a month later would ship different versions.
-* An offline `pip install --dry-run --no-index` of the finished folder proves it is complete.
-* Licence gate: wheel metadata of all four targets; GPL/AGPL fails; LGPL is accepted (psycopg, psycopg-binary, pymssql); MPL (certifi)
+* An offline `pip install --dry-run --no-index` of the finished folder (plus the stubs of Salt's own packages) proves it is complete.
+* Licence gate: wheel metadata of all four targets; GPL/AGPL fails; LGPL is accepted (pymssql; psycopg only if a minion opts in with `postgres-psycopg`); MPL (certifi)
   is listed as "weak" for information. Where this host matches a target, `pip-licenses` is run on the installed set as a second opinion.
 
 ### Known gaps found by the real build (Python 3.14 and 3.11)
 
 | Finding | Detail |
 |---|---|
-| `psycopg-binary` has **no wheel for win_arm64** | confirmed for cp311 and cp314 ("from versions: none"). Windows ARM64 gets `saltext-sqlx[mysql,oracle,mssql]` and no PostgreSQL. |
+| `psycopg-binary` has **no wheel for win_arm64** | confirmed for cp311 and cp314 ("from versions: none"). This is why the default PostgreSQL driver is now `pg8000` (pure Python, `py3-none-any`): every target, Windows ARM64 included, gets `saltext-sqlx[postgres,...]`. Profiles that ask for `driver: psycopg` need the `postgres-psycopg` extra, which no target of this wheelhouse installs. |
 | `redis-py-cluster 2.1.3` pins `redis<4` | confirmed from its metadata. `saltext-redis` declares an unpinned `redis`; both are pinned: `redis==3.5.3`. Whether `saltext-redis` works with redis-py 3.5 is **not tested**. |
 | `saltext-elasticsearch` does **not** declare the `elasticsearch` client | confirmed (only under its `tests` extra). Pin it yourself (`elasticsearch==9.5.1`, a **guess**: it must match the server major; the extension has modules for 6, 8 and 9). |
-| `cryptography` on win_arm64 resolves to 46.0.3, other targets 50.0.2 | the resolver found no newer win_arm64 wheel; harmless, listed because the targets are not identical. |
+| `cryptography` / `pyopenssl` | no longer built at all: Salt ships them (see "Respect what Salt ships"). The earlier `cryptography` 46.0.3 on win_arm64 vs 50.0.2 elsewhere is gone with them. |
+| `pymssql 2.3.11` (Salt's Windows pin) has no win_arm64 wheel | the Windows ARM64 target has no `mssql` extra (it does have PostgreSQL, through pg8000). |
 | `pymssql 2.4.6` needs manylinux_2_28 / 2_27 | glibc >= 2.28 on Linux minions (RHEL 7 / CentOS 7 / Ubuntu 18.04 are out). |
 | Python 3.10 | `pymongo 4.19.0` has no cp310 wheel (see above). |
 | Wheel names of the extensions differ (`saltext.redis-...` vs `saltext_kafka-...`) | harmless; the helper matches distributions by normalised name. |

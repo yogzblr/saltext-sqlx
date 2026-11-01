@@ -17,6 +17,27 @@ for handler in logging.root.handlers[:]:  # pragma: no cover
     handler.close()
 
 
+@pytest.fixture(scope="session", autouse=True)
+def pg_driver():
+    """
+    Run the whole session with another default PostgreSQL driver: ``SQLX_PG_DRIVER=psycopg pytest ...``.
+
+    Profiles in the tests do not name a driver, so they get the dialect's default, which this fixture pins (pg8000 unless SQLX_PG_DRIVER says otherwise; the automatic choice has its own tests). This swaps that default for the
+    session; the value is validated, and nothing in ``src/`` reads the environment.
+    """
+    from saltext.sqlx.lib import dialects  # pylint: disable=import-outside-toplevel
+
+    chosen = os.environ.get(
+        "SQLX_PG_DRIVER", "pg8000"
+    )  # the suites are written for pg8000 unless told otherwise
+    original = dialects.DIALECT_DRIVERS["postgresql"]
+    if chosen:
+        assert chosen in dialects.DIALECT_DRIVER_CHOICES["postgresql"], chosen
+        dialects.DIALECT_DRIVERS["postgresql"] = chosen
+    yield dialects.DIALECT_DRIVERS["postgresql"]
+    dialects.DIALECT_DRIVERS["postgresql"] = original
+
+
 @pytest.fixture(scope="session")
 def salt_factories_config():  # pragma: no cover
     """

@@ -1,8 +1,8 @@
 """Per-dialect adapter table (ARCHITECTURE section 8).
 
 One small adapter per dialect: URL building, the ``connect_args`` allowlist, session setup (statement timeout and
-the best-effort read-only guard), ping statement and server version. ``DIALECT_DRIVERS`` is the single source of
-truth for the dialect to driver pairing; ``lib/profiles.py`` imports it.
+the best-effort read-only guard), ping statement and server version. ``DIALECT_DRIVER_CHOICES`` is the single source of
+truth for the dialect to driver pairing (the first driver of a dialect is its default); ``lib/profiles.py`` imports it.
 
 Rules honoured here:
 
@@ -14,28 +14,57 @@ Rules honoured here:
 * The module's own SQL is constant text plus at most one integer that went through ``int()`` (ARCHITECTURE
   section 3). Caller SQL never passes through this module.
 
+PostgreSQL has two drivers (decision D15): ``pg8000`` (pure Python) and ``psycopg`` (libpq). A profile without ``driver`` gets psycopg when it is installed (so nothing
+changes for an existing installation) and pg8000 otherwise; the profile key ``driver`` always decides. Everything that is specific to pg8000 and differs from psycopg is in ``Pg8000PostgreSQL`` and recorded in
+docs/WIRE_SHAPES.md section 16.
+
 PostgreSQL, MySQL and MariaDB behaviour is verified (docs/WIRE_SHAPES.md, T1); Oracle 23.26.2 and SQL Server 2022 were
 verified by task T1b (WIRE_SHAPES sections 14-15, end to end through ``tests-e2e/``). Each mechanism sits in its own small
 function so that recorded facts can replace it without touching anything else. This module has no Salt dunders.
 """
 
+import datetime
+import decimal
 import importlib
+import importlib.util
 import math
+import threading
+import uuid
 
 from salt.exceptions import CommandExecutionError
 from salt.exceptions import SaltInvocationError
+from sqlalchemy import event
 from sqlalchemy.engine import URL
 
 from saltext.sqlx.lib import options
 from saltext.sqlx.lib import tls
 
-#: dialect -> the only driver allowed with it (SPEC section 7). Single source of truth.
-DIALECT_DRIVERS = {
-    "postgresql": "psycopg",
-    "mysql": "pymysql",
-    "oracle": "oracledb",
-    "mssql": "pymssql",
+#: dialect -> the drivers allowed with it; the first one is the default (SPEC section 7, decision D15). Single source of truth.
+DIALECT_DRIVER_CHOICES = {
+    "postgresql": ("pg8000", "psycopg"),
+    "mysql": ("pymysql",),
+    "oracle": ("oracledb",),
+    "mssql": ("pymssql",),
 }
+
+
+def _default_postgresql_driver():
+    """
+    The driver a PostgreSQL profile without ``driver`` gets: ``psycopg`` when it is installed, else ``pg8000``.
+
+    Existing installations (which have psycopg) keep exactly the behaviour they have today, with no configuration change.
+    A host that was given only pg8000 (the ``postgres`` extra, the fleet wheelhouse) uses pg8000. Decided once, when the
+    library is imported; a profile or call that names ``driver`` always wins.
+    """
+    try:
+        return "psycopg" if importlib.util.find_spec("psycopg") is not None else "pg8000"
+    except (ImportError, ValueError):  # pragma: no cover
+        return "pg8000"
+
+
+#: dialect -> its default driver (what a profile without ``driver`` gets)
+DIALECT_DRIVERS = {dialect: choices[0] for dialect, choices in DIALECT_DRIVER_CHOICES.items()}
+DIALECT_DRIVERS["postgresql"] = _default_postgresql_driver()
 
 _SCALARS = (str, int, float, bool)
 
@@ -81,6 +110,7 @@ class Adapter:
     drivername = ""  #: SQLAlchemy ``dialect+driver``
     ping_sql = "SELECT 1"
     allowed_args = frozenset()  #: keys accepted in profile ``query`` and ``connect_args``
+    engine_kwargs = {}  #: extra ``create_engine`` keywords (module-owned)
 
     # -- driver ----------------------------------------------------------------------------------
 
@@ -147,6 +177,9 @@ class Adapter:
         args.update(tls.connect_args(self.name, profile))  # module-produced, not allowlist-checked
         return args
 
+    def configure_engine(self, eng, profile):  # pylint: disable=unused-argument
+        """Hook run once after ``create_engine`` (event listeners). Nothing by default."""
+
     # -- session ---------------------------------------------------------------------------------
 
     def _set_timeout(self, conn, ms):
@@ -178,13 +211,25 @@ class Adapter:
     _version_sql = "SELECT 1"
 
 
-class PostgreSQL(Adapter):
-    """VERIFIED on PostgreSQL 16 / psycopg 3.3.6 / SQLAlchemy 2.0.55 (SPEC section 7)."""
+class PostgreSQLBase(Adapter):  # pylint: disable=abstract-method
+    """What both PostgreSQL drivers share: the module-owned SQL for the time cap and the read-only guard."""
 
     name = "postgresql"
+    _version_sql = "SHOW server_version"
+
+    def _set_timeout(self, conn, ms):
+        conn.exec_driver_sql(f"SET statement_timeout = {int(ms)}")
+
+    def _set_read_only(self, conn):
+        conn.exec_driver_sql("SET TRANSACTION READ ONLY")
+
+
+class PostgreSQLPsycopg(PostgreSQLBase):
+    """VERIFIED on PostgreSQL 16 / psycopg 3.3.6 / SQLAlchemy 2.0.55 (SPEC section 7). Profile ``driver: psycopg``."""
+
     driver = "psycopg"
     module = "psycopg"
-    pip_extra = "postgres"
+    pip_extra = "postgres-psycopg"
     drivername = "postgresql+psycopg"
     allowed_args = frozenset(
         {
@@ -197,7 +242,6 @@ class PostgreSQL(Adapter):
             "keepalives_count",
         }
     )
-    _version_sql = "SHOW server_version"
 
     def _timeout_connect_args(self, profile):
         # ``prepare_threshold=0`` makes psycopg use the extended query protocol for EVERY statement, and PostgreSQL
@@ -212,11 +256,214 @@ class PostgreSQL(Adapter):
             args.update(password="", passfile="/nonexistent/sqlx-no-passfile")
         return args
 
-    def _set_timeout(self, conn, ms):
-        conn.exec_driver_sql(f"SET statement_timeout = {int(ms)}")
 
-    def _set_read_only(self, conn):
-        conn.exec_driver_sql("SET TRANSACTION READ ONLY")
+#: Set once per process when a pg8000 connection has proved that a second statement is refused (see ``_prove``).
+_PG8000_PROVEN = False
+_PG8000_LOCK = threading.Lock()
+_PG8000_CURSOR = (
+    None  # the single-statement cursor class, built on first use (it subclasses a pg8000 class)
+)
+
+
+#: Python type -> PostgreSQL type OID that pg8000 should declare for a bound value (anything else is left to the server).
+_PG8000_OIDS = {
+    float: 701,  # float8
+    decimal.Decimal: 1700,  # numeric
+    bytes: 17,  # bytea
+    bytearray: 17,
+    datetime.date: 1082,
+    datetime.timedelta: 1186,  # interval
+    uuid.UUID: 2950,
+}
+
+
+def _pg8000_oid(value):
+    """
+    The OID psycopg would declare for ``value``, or 0 (unknown: the server infers it from the statement).
+
+    pg8000 declares nothing, so the server types every bind from its context: ``SELECT :a`` then returns text for 5,
+    and ``SELECT :a + :b`` is "operator is not unique: unknown + unknown". Declaring the type of plain scalars gives
+    the same answers as psycopg (WIRE_SHAPES section 16). Integers pick the smallest integer type like psycopg, so
+    ``repeat('x', :n)`` keeps working for small ``n``. Lists, dicts and strings stay undeclared.
+    """
+    kind = type(value)
+    if kind is bool:
+        return 16
+    if kind is int:
+        for bound, oid in ((15, 21), (31, 23), (63, 20)):
+            if -(2**bound) <= value < 2**bound:
+                return oid
+        return 1700
+    if kind is datetime.datetime:
+        return 1184 if value.tzinfo else 1114
+    if kind is datetime.time:
+        return 1266 if value.tzinfo else 1083
+    return _PG8000_OIDS.get(kind, 0)
+
+
+def _pg8000_unsafe(why):
+    raise CommandExecutionError(
+        "[E_DRIVER_MISSING] postgresql driver pg8000 cannot be used safely here "
+        f"({why}); install the pip extra 'saltext-sqlx[postgres]' at the version the extra pins"
+    )
+
+
+def _pg8000_cursor_class():
+    """
+    Return the cursor class that runs every statement through PostgreSQL's extended query protocol.
+
+    pg8000's own cursor sends a statement without arguments through the SIMPLE protocol, and the simple protocol runs
+    ``COMMIT; INSERT ...`` as written: that is the T11 defect D1 (read-only guard, time cap, ``execute`` verb filter
+    and ``dry_run`` all bypassed). It also scans the text for ``%`` and fails on a literal one. This class sends
+    everything with ``Connection.execute_unnamed`` (Parse/Bind/Execute, one statement per message: PostgreSQL answers
+    42601 to a second one) and takes the ``$1`` placeholders SQLAlchemy renders for ``paramstyle="numeric_dollar"``.
+    ``execute_unnamed`` is a pg8000 internal, hence ``pg8000`` is pinned to a minor version in ``pyproject.toml`` and
+    ``_prove`` refuses a driver that does not behave as expected. WIRE_SHAPES section 16.
+    """
+    global _PG8000_CURSOR  # pylint: disable=global-statement
+    if _PG8000_CURSOR is not None:
+        return _PG8000_CURSOR
+    dbapi = importlib.import_module("pg8000.dbapi")
+    core = importlib.import_module("pg8000.core")
+    for owner, attr in (
+        (core.CoreConnection, "execute_unnamed"),
+        (core.CoreConnection, "execute_simple"),
+        (dbapi.Cursor, "execute"),
+    ):
+        if not hasattr(owner, attr):
+            _pg8000_unsafe(f"{owner.__name__}.{attr} is missing")
+    failed = core.IN_FAILED_TRANSACTION
+
+    class SingleStatementCursor(
+        dbapi.Cursor
+    ):  # pylint: disable=too-few-public-methods,attribute-defined-outside-init
+        """pg8000 cursor: extended protocol only, ``$n`` placeholders, no ``%`` scanning."""
+
+        def execute(self, operation, args=(), stream=None):  # pylint: disable=unused-argument
+            conn = self._c
+            try:
+                if (
+                    not conn._in_transaction
+                ):  # the module never switches a connection to its non-transactional mode
+                    conn.execute_simple("begin transaction")
+                if operation.startswith("CLOSE ") and conn._transaction_status == failed:
+                    # SQLAlchemy's server-side cursor closes with CLOSE <name>; in an aborted transaction the cursor is
+                    # gone already and the statement could only add a second, misleading error.
+                    self._context = None
+                    self._row_iter = None
+                    return
+                values = tuple(args)
+                self._context = conn.execute_unnamed(
+                    operation, vals=values, oids=tuple(_pg8000_oid(v) for v in values)
+                )
+                self._row_iter = None if self._context.rows is None else iter(self._context.rows)
+                self._input_oids = ()
+            except AttributeError as exc:
+                if self._c is None:
+                    raise dbapi.InterfaceError("Cursor closed") from exc
+                if self._c._sock is None:
+                    raise dbapi.InterfaceError("connection is closed") from exc
+                raise
+            self.input_types = []
+
+    _PG8000_CURSOR = SingleStatementCursor
+    return _PG8000_CURSOR
+
+
+def _prove(dbapi_conn):
+    """
+    Once per process: check on a real connection that a second statement is refused.
+
+    Fails closed. If the installed pg8000 ever runs ``SELECT 1; SELECT 2`` as one call, the single-statement guarantee
+    is gone and every call is refused with ``[E_DRIVER_MISSING]`` instead of running unguarded SQL.
+    """
+    global _PG8000_PROVEN  # pylint: disable=global-statement
+    if _PG8000_PROVEN:
+        return
+    with _PG8000_LOCK:
+        if _PG8000_PROVEN:
+            return
+        refused = False
+        cur = dbapi_conn.cursor()
+        # pylint: disable=broad-exception-caught
+        try:
+            cur.execute("SELECT 1; SELECT 2")
+        except Exception as exc:
+            args = getattr(exc, "args", ())
+            refused = bool(args) and isinstance(args[0], dict) and args[0].get("C") == "42601"
+        try:
+            dbapi_conn.rollback()
+        except Exception:
+            refused = False
+        if not refused:
+            try:
+                dbapi_conn.close()
+            except Exception:  # nosec B110 - closing a connection we refuse anyway
+                pass
+        # pylint: enable=broad-exception-caught
+        if not refused:
+            _pg8000_unsafe("it did not refuse a second statement")
+        _PG8000_PROVEN = True
+
+
+class PostgreSQLPg8000(PostgreSQLBase):
+    """
+    pg8000 (pure Python), the PostgreSQL driver used when psycopg is not installed (decision D15). VERIFIED on PostgreSQL 16 with pg8000 1.31.6 (Python 3.12-3.14) and 1.31.5 (Python 3.10; 1.31.6 pins scramp==1.5.0, which needs Python 3.11).
+
+    Everything that differs from psycopg is in WIRE_SHAPES section 16. The connection arguments of pg8000 are not
+    libpq's: there is no ``sslmode`` / ``keepalives`` / ``target_session_attrs``; TLS is an ``ssl_context`` that
+    ``lib/tls.py`` builds from ``ssl_certs_dir`` (without it the connection is plain TCP, as with psycopg's default
+    ``sslmode=prefer`` on a server that does not offer TLS, but without the opportunistic attempt).
+    """
+
+    driver = "pg8000"
+    module = "pg8000"
+    pip_extra = "postgres"
+    drivername = "postgresql+pg8000"
+    allowed_args = frozenset({"application_name"})
+    #: SQLAlchemy renders ``$1`` placeholders; the cursor above sends them as they are (no ``%`` scanning).
+    engine_kwargs = {"paramstyle": "numeric_dollar"}
+
+    #: Seconds added to the statement timeout before the client gives up on a silent server (as for PyMySQL, T11 D2).
+    READ_TIMEOUT_MARGIN_S = 1.0
+
+    def load_driver(self):
+        module = super().load_driver()
+        _pg8000_cursor_class()  # raises [E_DRIVER_MISSING] for a pg8000 without the expected internals
+        return module
+
+    def _timeout_connect_args(self, profile):
+        # ``timeout`` is the connect timeout AND stays on the socket as the read timeout after the connection is made;
+        # ``configure_engine`` replaces it by the statement backstop once connected.
+        return {"timeout": profile["connect_timeout_s"]}
+
+    def configure_engine(self, eng, profile):
+        backstop = int(profile["statement_timeout_ms"]) / 1000 + self.READ_TIMEOUT_MARGIN_S
+        cursor_class = _pg8000_cursor_class()
+
+        def on_connect(dbapi_conn, _record):
+            dbapi_conn.cursor = lambda: cursor_class(dbapi_conn)
+            _prove(dbapi_conn)
+            # The connect timeout would otherwise be the limit for every later statement (observed, section 16).
+            dbapi_conn._usock.settimeout(backstop)  # pylint: disable=protected-access
+
+        event.listen(eng, "connect", on_connect, insert=True)
+
+        exceptions = importlib.import_module("pg8000.exceptions")
+
+        def do_connect(dialect, _record, cargs, cparams):
+            try:
+                return dialect.connect(*cargs, **cparams)
+            except AttributeError:
+                if cparams.get("password"):
+                    raise
+                # SCRAM with no password: pg8000 fails with ``'NoneType' object has no attribute 'decode'`` where it
+                # raises this text for the other password methods (observed, section 16).
+                raise exceptions.InterfaceError(  # pylint: disable=raise-missing-from
+                    "server requesting password authentication, but no password was provided"
+                )
+
+        event.listen(eng, "do_connect", do_connect)
 
 
 class MySQL(Adapter):
@@ -345,19 +592,32 @@ class MSSQL(Adapter):
         """No in-session read-only on SQL Server."""
 
 
-_ADAPTERS = {a.name: a for a in (PostgreSQL(), MySQL(), Oracle(), MSSQL())}
-assert set(_ADAPTERS) == set(
-    DIALECT_DRIVERS
-)  # nosec - import-time consistency check, no user input
+_ADAPTERS = {
+    (a.name, a.driver): a
+    for a in (PostgreSQLPg8000(), PostgreSQLPsycopg(), MySQL(), Oracle(), MSSQL())
+}
+assert set(_ADAPTERS) == {  # nosec - import-time consistency check, no user input
+    (dialect, driver) for dialect, drivers in DIALECT_DRIVER_CHOICES.items() for driver in drivers
+}
 
 
-def adapter(dialect):
-    """Return the adapter for ``dialect``; ``[E_PROFILE_INVALID]`` if there is none."""
-    try:
-        return _ADAPTERS[dialect]
-    except (KeyError, TypeError):
+def adapter(dialect, driver=None):
+    """
+    Return the adapter for ``dialect`` and ``driver`` (default: the dialect's default driver).
+
+    ``[E_PROFILE_INVALID]`` if there is none.
+    """
+    if dialect not in DIALECT_DRIVERS:
         _fail(
             "E_PROFILE_INVALID",
             f"unsupported dialect (expected one of: {', '.join(sorted(DIALECT_DRIVERS))})",
+        )
+    chosen = DIALECT_DRIVERS[dialect] if driver is None else driver
+    try:
+        return _ADAPTERS[(dialect, chosen)]
+    except (KeyError, TypeError):
+        _fail(
+            "E_PROFILE_INVALID",
+            f"unsupported driver for {dialect} (expected one of: {', '.join(DIALECT_DRIVER_CHOICES[dialect])})",
         )
     return None  # pragma: no cover

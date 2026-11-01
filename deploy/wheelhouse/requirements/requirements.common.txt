@@ -9,6 +9,5 @@ saltext-redis==1.0.2
 redis-py-cluster==2.1.3         # declares redis<4; saltext-redis declares an unpinned redis, so redis is pinned to the last 3.x:
 redis==3.5.3
 SQLAlchemy==2.0.55              # saltext-sqlx allows >=2.0,<2.1; 2.0.55 is the version the wire shapes were observed with
-PyMySQL==1.2.3
+PyMySQL==1.2.3                  # salt-wins: the Windows Salt 3007.x onedir ships PyMySQL (not 3008.x, not Linux)
 oracledb==26.1.0
-pymssql==2.4.6

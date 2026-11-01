@@ -180,7 +180,7 @@ def test_first_apply_installs_second_apply_is_zero_changes(host_minion):
         _version(m.python, "saltext.sqlx")
         == m.base_pins["saltext-sqlx[postgres,mysql,oracle,mssql]"]
     )
-    assert _version(m.python, "psycopg") is not None
+    assert _version(m.python, "pg8000") is not None
     second = m.apply()
     assert all(v["result"] is True and not v["changes"] for v in second.values()), {
         k: v["changes"] for k, v in second.items() if v["changes"]

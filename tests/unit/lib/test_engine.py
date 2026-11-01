@@ -56,6 +56,9 @@ def no_real_driver(monkeypatch):
 
     monkeypatch.setattr(dialects.importlib, "import_module", types.ModuleType)
     monkeypatch.setattr(engine, "create_engine", fake_create)
+    # The pg8000 hooks need the real driver (tests/unit/lib/test_dialects_pg8000.py and the functional tests cover them).
+    monkeypatch.setattr(dialects, "_pg8000_cursor_class", lambda: object)
+    monkeypatch.setattr(dialects.PostgreSQLPg8000, "configure_engine", lambda *a, **k: None)
     return created
 
 
@@ -91,7 +94,7 @@ def test_build_engine_uses_nullpool(no_real_driver):
     assert seen["poolclass"] is NullPool
     assert isinstance(seen["url"], sqlalchemy.engine.URL)
     assert seen["url"].password == PASSWORD
-    assert seen["url"].drivername == "postgresql+psycopg"
+    assert seen["url"].drivername == "postgresql+pg8000"
 
 
 def test_build_engine_hides_parameters_and_does_not_echo(no_real_driver):
@@ -103,16 +106,26 @@ def test_build_engine_hides_parameters_and_does_not_echo(no_real_driver):
 def test_build_engine_passes_connect_timeout_and_allowlisted_args(no_real_driver):
     prof = make(connect_timeout_s=7, connect_args={"application_name": "salt"})
     engine.build_engine(prof, PASSWORD).dispose()
-    assert no_real_driver[0]["connect_args"] == {
+    assert no_real_driver[0]["connect_args"] == {"application_name": "salt", "timeout": 7}
+    assert no_real_driver[0]["paramstyle"] == "numeric_dollar"
+
+
+def test_build_engine_psycopg_connect_args_and_default_paramstyle(no_real_driver):
+    prof = make(driver="psycopg", connect_timeout_s=7, connect_args={"application_name": "salt"})
+    engine.build_engine(prof, PASSWORD).dispose()
+    seen = no_real_driver[0]
+    assert seen["url"].drivername == "postgresql+psycopg"
+    assert seen["connect_args"] == {
         "application_name": "salt",
         "connect_timeout": 7,
         "prepare_threshold": 0,
     }
+    assert "paramstyle" not in seen
 
 
 def test_build_engine_rejects_forbidden_connect_args():
     with pytest.raises(SaltInvocationError) as exc:
-        engine.build_engine(make(connect_args={"ssl_context": object()}), PASSWORD)
+        engine.build_engine(make(connect_args={"sslmode": "disable"}), PASSWORD)
     assert str(exc.value).startswith("[E_POLICY]")
 
 

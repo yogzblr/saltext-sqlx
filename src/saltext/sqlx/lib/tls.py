@@ -15,6 +15,10 @@ Rules kept here:
 * A client private key is accepted only after its Unix file mode passes ``key_mode_ok``; Windows has no such modes,
   so a Windows minion refuses every client key (``[E_POLICY]``). A CA-only directory works there.
 * No driver imports and no Salt dunders (R15). The only Salt import is the exception class, as in ``profiles.py``.
+* PostgreSQL has two drivers (SPEC decision D15). psycopg takes libpq parameters in the URL (``query_args``); pg8000
+  takes an ``ssl.SSLContext`` as the connect argument ``ssl_context`` (``connect_args``). The context is built from the
+  same mode and files: ``verify-full`` checks the chain and the host name, ``verify-ca`` only the chain, and only the
+  profile's CA file is trusted (the system store is not loaded, as with libpq's ``sslrootcert``).
 
 Oracle TLS is UNVERIFIED(T1b): Oracle ran in T1b, but without a TCPS listener; see ``OracleTLS`` below. SQL Server is
 refused in ``validate`` (observed end to end in T1b).
@@ -22,6 +26,7 @@ refused in ``validate`` (observed end to end in T1b).
 
 import os
 import re
+import ssl
 import stat
 
 from salt.exceptions import SaltInvocationError
@@ -31,6 +36,7 @@ __all__ = [
     "SSL_MODES",
     "connect_args",
     "key_mode_ok",
+    "pg8000_context",
     "query_args",
     "scrub",
     "validate",
@@ -300,11 +306,30 @@ def _unresolved(profile):
         )
 
 
+def _libpq(profile):
+    """True when the PostgreSQL profile uses psycopg (libpq parameters); pg8000 is the other driver."""
+    return profile.get("driver") == "psycopg"
+
+
+def pg8000_context(conf):
+    """
+    The ``ssl.SSLContext`` pg8000 needs for the resolved TLS settings ``conf`` (the ``profile["tls"]`` mapping).
+
+    Loading the client certificate reads the key file (``ssl.SSLError`` for a garbage key or one that does not match
+    the certificate, ``OSError`` for a file that vanished since the profile was loaded); ``engine`` translates both.
+    """
+    context = ssl.create_default_context(cafile=conf["ca"])  # trusts only this CA, CERT_REQUIRED
+    context.check_hostname = conf["mode"] == "verify-full"
+    if conf["cert"]:
+        context.load_cert_chain(conf["cert"], conf["key"])
+    return context
+
+
 def query_args(dialect, profile):
     """URL query arguments produced by the TLS layer for ``dialect`` (empty without TLS). Not caller-settable."""
     _unresolved(profile)
     conf = profile.get("tls")
-    if not conf or dialect != "postgresql":
+    if not conf or dialect != "postgresql" or not _libpq(profile):
         return {}
     args = {"sslmode": conf["mode"], "sslrootcert": conf["ca"]}
     if conf["cert"]:
@@ -333,6 +358,8 @@ def connect_args(dialect, profile):
         if conf["cert"]:
             args.update(ssl_cert=conf["cert"], ssl_key=conf["key"])
         return args
+    if dialect == "postgresql":
+        return {} if _libpq(profile) else {"ssl_context": pg8000_context(conf)}
     if dialect == "oracle":
         # UNVERIFIED(T1b): names from the python-oracledb thin-mode documentation; the T1b Oracle server had no TCPS listener.
         return {

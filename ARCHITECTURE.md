@@ -117,7 +117,7 @@ errors.raise_for(exc, dialect, error_detail=False)    # raises; message "[E_CODE
 The caller must catch `Exception`, not only `DBAPIError`; `sqlx_mod._run` and `engine.connection` do. The message comes from
 `exc.orig`, never from `str()` of the SQLAlchemy exception (it embeds the SQL and the bound values); it is whitespace-normalised
 and cut at 1000 characters, and row values echoed by the server are replaced by `...` unless `error_detail` is true. Observed
-fields: psycopg 3 `orig.sqlstate`, `orig.diag.message_primary`; PyMySQL `orig.args == (code, message)` and `orig.sqlstate`.
+fields: psycopg 3 `orig.sqlstate`, `orig.diag.message_primary`; pg8000 `orig.args[0]` is a dict (`C` SQLSTATE, `M` message, `H` hint, `D` detail); PyMySQL `orig.args == (code, message)` and `orig.sqlstate`.
 `raise_for` raises from inside a handler and then clears `__cause__` and `__context__`, so the original text cannot reach the
 caller through chaining. The engine no longer classifies errors itself: `engine.connection` calls `raise_for` and only removes
 the password and any URL from the final text as a second line of defence.
@@ -148,7 +148,7 @@ with `MaskingFilter.add_secret(value)` once it has been resolved. It never drops
 ```python
 class Adapter(Protocol):
     name: str                      # "postgresql"
-    driver: str                    # "psycopg"
+    driver: str                    # "pg8000" or "psycopg" for postgresql; unset = psycopg if installed, else pg8000 (SPEC D15)
     pip_extra: str
     def url(self, profile, password) -> sqlalchemy.engine.URL: ...      # URL.create(), never string-format
     def connect_args(self, profile) -> dict: ...                        # allowlisted only

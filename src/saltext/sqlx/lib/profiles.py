@@ -14,7 +14,10 @@ from salt.exceptions import SaltInvocationError
 
 from saltext.sqlx.lib import options
 from saltext.sqlx.lib import tls
-from saltext.sqlx.lib.dialects import DIALECT_DRIVERS  # single source of truth (SPEC section 7)
+from saltext.sqlx.lib.dialects import (
+    DIALECT_DRIVER_CHOICES,  # single source of truth (SPEC section 7)
+)
+from saltext.sqlx.lib.dialects import DIALECT_DRIVERS
 
 DEFAULT_EXECUTE_VERBS = ("INSERT", "UPDATE", "DELETE")
 
@@ -101,10 +104,11 @@ def validate_profile(name, raw, policy=None):
     out["dialect"] = dialect
 
     driver = raw.get("driver", DIALECT_DRIVERS[dialect])
-    if driver != DIALECT_DRIVERS[dialect]:
+    if not isinstance(driver, str) or driver not in DIALECT_DRIVER_CHOICES[dialect]:
         _invalid(
             name,
-            f"'driver' does not match dialect '{dialect}' (expected '{DIALECT_DRIVERS[dialect]}')",
+            f"'driver' does not match dialect '{dialect}' "
+            f"(expected one of: {', '.join(DIALECT_DRIVER_CHOICES[dialect])})",
         )
     out["driver"] = driver
 

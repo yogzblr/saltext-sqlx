@@ -16,11 +16,22 @@ import pytest
 from salt.exceptions import CommandExecutionError
 
 import saltext.sqlx.modules.sqlx_mod as mod
+from saltext.sqlx.lib import dialects
 from tests.functional.test_runner_functional import DIALECTS
 from tests.functional.test_runner_functional import HOST
 from tests.functional.test_runner_functional import _reachable
 
 pytestmark = [pytest.mark.pg, pytest.mark.mysql, pytest.mark.mariadb]
+
+
+def _nopw(server):
+    """The real "no password" text per driver (WIRE_SHAPES sections 13 and 16)."""
+    if server.key != "postgresql":
+        return "using password: NO"
+    if dialects.DIALECT_DRIVERS["postgresql"] == "pg8000":
+        return "no password was provided"
+    return "no password supplied"
+
 
 PASSWORD = "Zq-never-in-a-message-91"  # a distinctive wrong password: it must not appear anywhere
 REF = "sdb://vault/ro"
@@ -86,7 +97,7 @@ def test_baseline_good_profile_connects(cfg, server):
 def test_no_password_to_a_server_that_requires_one(cfg, server):
     text = fail(profile="nopw")
     assert text.startswith("[E_AUTH_FAILED]")
-    assert ("no password supplied" if server.key == "postgresql" else "using password: NO") in text
+    assert _nopw(server) in text
 
 
 def test_password_withheld_after_the_call_retargets(cfg, server):
@@ -94,7 +105,7 @@ def test_password_withheld_after_the_call_retargets(cfg, server):
     cfg["profiles"]["moved"] = dict(cfg["profiles"]["good"], port=1)
     text = fail(profile="moved", port=server.cfg["port"])
     assert text.startswith("[E_AUTH_FAILED]")
-    assert ("no password supplied" if server.key == "postgresql" else "using password: NO") in text
+    assert _nopw(server) in text
 
 
 def test_wrong_password(cfg, server):
@@ -149,5 +160,8 @@ def test_server_closes_the_connection(cfg, server):
         text = fail(profile="wrongpw", port=port)
     assert text.startswith("[E_CONNECT]")
     assert (
-        "closed the connection" in text or "Lost connection" in text or "Connection reset" in text
+        "closed the connection" in text
+        or "Lost connection" in text
+        or "Connection reset" in text
+        or "network error" in text  # pg8000: "network error: Broken pipe" (section 16)
     )

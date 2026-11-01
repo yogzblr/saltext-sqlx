@@ -22,6 +22,7 @@ from salt.exceptions import CommandExecutionError
 from salt.exceptions import SaltInvocationError
 
 import saltext.sqlx.modules.sqlx_mod as mod
+from saltext.sqlx.lib import dialects
 from tests.security.test_secret_leak import surfaces
 
 HOST = "127.0.0.1"
@@ -328,9 +329,31 @@ def test_the_minions_own_libpq_environment_is_not_offered_to_a_retargeted_target
 
 def test_control_the_environment_is_used_when_the_target_is_not_retargeted(cfg, fake, monkeypatch):
     """The guard is limited to retargeted calls: a profile without a password keeps libpq's normal behaviour."""
+    if dialects.DIALECT_DRIVERS["postgresql"] == "pg8000":
+        pytest.skip("libpq behaviour; pg8000 has no environment fallback (next test)")
     cfg["profiles"]["base"].pop("password")
     cfg["profiles"]["base"]["port"] = fake.port
     monkeypatch.setenv("PGPASSWORD", "PGPASSWORD-ENV-PW-61ce")
     with pytest.raises((CommandExecutionError, SaltInvocationError)):
         mod.ping(profile="base", database="other")
     assert b"PGPASSWORD-ENV-PW-61ce" in fake.seen()
+
+
+def test_pg8000_never_offers_the_minions_environment_or_passfile(cfg, fake, monkeypatch, tmp_path):
+    """pg8000 reads neither $PGPASSWORD nor ~/.pgpass, retargeted or not: a missing password is a clean auth error."""
+    if dialects.DIALECT_DRIVERS["postgresql"] != "pg8000":
+        pytest.skip("pg8000 behaviour")
+    passfile = tmp_path / "pgpass"
+    passfile.write_text(f"{HOST}:*:*:*:PGPASSFILE-PW-8d2f\n")
+    passfile.chmod(0o600)
+    monkeypatch.setenv("PGPASSWORD", "PGPASSWORD-ENV-PW-61ce")
+    monkeypatch.setenv("PGPASSFILE", str(passfile))
+    cfg["profiles"]["base"].pop("password")
+    cfg["profiles"]["base"]["port"] = fake.port
+    with pytest.raises(CommandExecutionError) as exc:
+        mod.ping(profile="base", database="other")
+    assert str(exc.value).startswith("[E_AUTH_FAILED]") and "no password was provided" in str(
+        exc.value
+    )
+    for leaked in (b"PGPASSWORD-ENV-PW-61ce", b"PGPASSFILE-PW-8d2f", BASE_PW.encode()):
+        assert leaked not in fake.seen()

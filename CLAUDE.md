@@ -24,12 +24,14 @@ DatabaseLibrary; connection details live in **profiles**, never in the call.
 - Catch `Exception`, not only `DBAPIError`; take the message from `exc.orig`, never `str()` of the SQLAlchemy exception (it embeds SQL and bound values); map on the vendor code first.
 - `text()` + binds only; `CAST(:x AS t)`, never `:x::t`; literal colons as `\:`; never `exec_driver_sql` for caller SQL.
 - Test PostgreSQL databases as UTF8 (SQL_ASCII breaks psycopg 3).
+- PostgreSQL has two drivers (SPEC D15): pg8000 (`postgres` extra) and psycopg (`postgres-psycopg` extra, `driver: psycopg`); a profile without `driver` gets psycopg if installed, else pg8000, so nothing breaks on existing hosts. pg8000's one-statement guarantee uses one internal (`Connection.execute_unnamed`), so its version is pinned; read WIRE_SHAPES section 16 before touching `PostgreSQLPg8000`.
 - Never run Python from inside `src/saltext/`.
 
 ## Commands (after T0)
 ```bash
 python -m venv .venv && source .venv/bin/activate && pip install -e '.[tests,dev]'
 nox -s lint ; nox -s unit ; nox -s functional-pg
+SQLX_PG_DRIVER=psycopg pytest tests/functional -m 'pg or tls'   # the PostgreSQL suites with the alternative driver (the test session pins pg8000 unless set)
 SQLX_PROBE_URL='postgresql+psycopg://user@host:5432/db' python -I scripts/sa_probe.py
 ```
 

@@ -2,7 +2,7 @@
 """Dependency licence collection and the GPL gate (SECURITY section 6, BUILD_PROMPT R16).
 
 Reads REAL package metadata with ``importlib.metadata`` (``License-Expression``, ``License``, ``Classifier``), walks the
-requirement closure of ``saltext.sqlx`` with every extra (``postgres``, ``mysql``, ``oracle``, ``mssql``), and classifies
+requirement closure of ``saltext.sqlx`` with every extra (``postgres``, ``postgres-psycopg``, ``mysql``, ``oracle``, ``mssql``), and classifies
 each distribution:
 
 * ``gpl``     GPL / AGPL of any version, with or without an "exception": the check FAILS.
@@ -22,7 +22,7 @@ import re
 import sys
 
 ROOT = "saltext.sqlx"
-EXTRAS = ("postgres", "mysql", "oracle", "mssql")
+EXTRAS = ("postgres", "postgres-psycopg", "mysql", "oracle", "mssql")
 
 #: LGPL packages the owner accepted as UNMODIFIED pip dependencies (BUILD_PROMPT R16, owner decision 2026-10-29).
 ACCEPTED_LGPL = {"psycopg", "psycopg-binary", "pymssql"}

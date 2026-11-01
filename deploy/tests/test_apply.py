@@ -8,6 +8,7 @@ import sys
 
 import pytest
 from conftest import APPLY
+from conftest import install_salt_stubs
 from conftest import make_wheel
 from conftest import result_line
 from conftest import write_sums
@@ -289,10 +290,11 @@ def test_real_wheelhouse_installs_offline_and_is_idempotent(env, real_wheelhouse
     ):
         pins[name] = pkgs[name]
     wh = real_wheelhouse / target
+    install_salt_stubs(env, wh, versions, tmp_path)  # what the minion's Salt already has
     r = env.apply(pins, wh, tmp_path / "applied.json")
     assert r.returncode == 0, r.stderr
     assert result_line(r)["changed"] == "yes"
-    for name in ("psycopg", "PyMySQL", "oracledb", "pymssql", "SQLAlchemy"):
+    for name in ("pg8000", "PyMySQL", "oracledb", "pymssql", "SQLAlchemy"):
         assert env.version(name) is not None, name
     assert env.pip("check").returncode == 0
     assert result_line(env.apply(pins, wh, tmp_path / "applied.json"))["changed"] == "no"

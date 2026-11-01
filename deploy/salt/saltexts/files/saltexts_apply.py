@@ -9,11 +9,19 @@ MARKER_JSON  where the pins that were applied successfully are recorded (written
              `auto` = the onedir extras directory when this Python is a relenv/onedir Python (sys.RELENV), otherwise no target.
 --check      change nothing; exit 0 if everything is already at the pins, 1 if work is needed (used as `unless:` in the state)
 
+Packages the Salt onedir already ships (WHEELS_DIR/SALT_OWNED.txt, written by build_wheelhouse.sh) are NEVER installed, upgraded or
+downgraded by this helper. `pip install --target` makes pip ignore everything already installed (it would then try to install every
+dependency again, cryptography included, into the extras directory where it shadows the copy Salt runs on), so pip is not asked to
+resolve anything: the helper walks the Requires-Dist metadata of the wheels itself, installs the wheels of the wheelhouse that are
+needed and not yet installed with `pip install --no-deps`, refuses with a clear message if a wheel needs a different version of a
+Salt-owned package, and then runs `pip check`.
+
 Exit status: 0 = ok (stdout: {"changed": "yes"|"no", "comment": "..."}), 1 = failed (reason on stderr, marker untouched).
 Standard library only; it must run in the Salt onedir Python on Linux and Windows. On success nothing is written to stderr.
 """
 
 import argparse
+import email.parser
 import hashlib
 import json
 import os
@@ -21,17 +29,23 @@ import re
 import shutil
 import subprocess
 import sys
+import zipfile
 from importlib import metadata
 
-try:  # pip vendors it; the standalone packaging may be absent in a onedir
+try:  # Salt ships packaging; pip vendors it; the standalone packaging may be absent
+    from packaging.requirements import InvalidRequirement
+    from packaging.requirements import Requirement
     from packaging.version import InvalidVersion
     from packaging.version import Version
 except ImportError:  # pragma: no cover
     try:
+        from pip._vendor.packaging.requirements import InvalidRequirement
+        from pip._vendor.packaging.requirements import Requirement
         from pip._vendor.packaging.version import InvalidVersion
         from pip._vendor.packaging.version import Version
     except ImportError:
         Version = None
+        Requirement = None
 
 
 class ApplyError(Exception):
@@ -87,7 +101,7 @@ def load_json(path, default):
 
 
 def verify_checksums(wheels):
-    """Every *.whl must be listed in SHA256SUMS and match. Guards against truncated/partial/replaced copies (not authenticity)."""
+    """Every *.whl (and SALT_OWNED.txt) must be listed in SHA256SUMS and match. Guards against truncated/partial/replaced copies (not authenticity)."""
     sums_file = os.path.join(wheels, "SHA256SUMS")
     if not os.path.isfile(sums_file):
         raise ApplyError(f"{sums_file} is missing: refusing to install unverified wheels")
@@ -99,7 +113,7 @@ def verify_checksums(wheels):
                 continue
             digest, _, name = line.partition(" ")
             expected[name.strip().lstrip("*").lstrip("./")] = digest.lower()
-    present = sorted(n for n in os.listdir(wheels) if n.endswith(".whl"))
+    present = sorted(n for n in os.listdir(wheels) if n.endswith(".whl") or n == OWNED_FILE)
     for name in present:
         if name not in expected:
             raise ApplyError(f"{name} is not listed in SHA256SUMS")
@@ -113,6 +127,140 @@ def verify_checksums(wheels):
                 h.update(chunk)
         if h.hexdigest() != digest:
             raise ApplyError(f"SHA-256 mismatch for {name}")
+
+
+OWNED_FILE = "SALT_OWNED.txt"
+
+
+def canon(name):
+    return re.sub(r"[-_.]+", "-", name).lower()
+
+
+def load_owned(wheels):
+    """{canonical name: version} of the packages Salt ships (empty if the wheelhouse has no SALT_OWNED.txt)."""
+    owned = {}
+    try:
+        with open(os.path.join(wheels, OWNED_FILE), encoding="utf-8") as fh:
+            for line in fh:
+                line = line.split("#", 1)[0].strip()
+                name, sep, version = line.partition("==")
+                if sep:
+                    owned[canon(name)] = version.strip()
+    except OSError:
+        pass
+    return owned
+
+
+def wheel_index(wheels):
+    """{canonical name: [(version, path)]} of the wheels in the folder (names and versions come from the file names)."""
+    index = {}
+    for fname in sorted(os.listdir(wheels)):
+        if fname.endswith(".whl"):
+            parts = fname[: -len(".whl")].split("-")
+            if len(parts) >= 5:
+                index.setdefault(canon(parts[0]), []).append(
+                    (parts[1], os.path.join(wheels, fname))
+                )
+    return index
+
+
+def wheel_requires(path):
+    """Requires-Dist lines of a wheel."""
+    with zipfile.ZipFile(path) as zf:
+        meta = next((n for n in zf.namelist() if n.endswith(".dist-info/METADATA")), None)
+        if meta is None:
+            return []
+        msg = email.parser.Parser().parsestr(zf.read(meta).decode("utf-8", "replace"))
+    return msg.get_all("Requires-Dist") or []
+
+
+def split_extras(spec):
+    name, bracket = split_spec(spec)
+    extras = [e.strip() for e in bracket.strip("[]").split(",") if e.strip()]
+    return name, extras
+
+
+def plan_install(todo, wheels, owned):
+    """
+    Return the wheel paths to install (``pip install --no-deps``) so that every pin in ``todo`` works.
+
+    Walks Requires-Dist (markers evaluated for THIS interpreter). A requirement is met, in this order, by: a Salt-owned package that is
+    installed and satisfies it (never touched; if it does not satisfy: ApplyError); a wheel of the wheelhouse (installed unless that
+    exact version is already there); an installed package that satisfies it. Anything else is an ApplyError naming the requirement.
+    """
+    if Requirement is None:
+        raise ApplyError(
+            "the 'packaging' module is not available (neither packaging nor pip's vendored copy)"
+        )
+    index = wheel_index(wheels)
+    chosen = {}  # canonical name -> (version, path)
+    queue = []
+    for spec, want in sorted(todo.items()):
+        name, extras = split_extras(spec)
+        key = canon(name)
+        if key in owned:
+            raise ApplyError(
+                f"pip install failed: {name} is shipped by the Salt onedir ({key}=={owned[key]}); it cannot be pinned here"
+            )
+        match = [(v, p) for v, p in index.get(key, []) if same_version(v, want)]
+        if not match:
+            raise ApplyError(f"pip install failed: no wheel for {name}=={want} in {wheels}")
+        chosen[key] = match[0]
+        queue.append((key, match[0][1], extras))
+    seen = set()
+    while queue:
+        key, path, extras = queue.pop()
+        marker_key = (key, tuple(sorted(extras)))
+        if marker_key in seen:
+            continue
+        seen.add(marker_key)
+        for line in wheel_requires(path):
+            try:
+                req = Requirement(line)
+            except InvalidRequirement:
+                continue
+            if req.marker is not None and not any(
+                req.marker.evaluate({"extra": e}) for e in ["", *extras]
+            ):
+                continue
+            dep = canon(req.name)
+            have = installed_version(req.name)
+            if dep in owned:
+                if have is None:
+                    raise ApplyError(
+                        f"{os.path.basename(path)} requires {req}, which Salt provides ({dep}=={owned[dep]}) but which is not installed here"
+                    )
+                if req.specifier and not req.specifier.contains(have, prereleases=True):
+                    raise ApplyError(
+                        f"{os.path.basename(path)} requires {req}, but this Salt ships {dep}=={have} and the helper never changes a "
+                        "package Salt ships; use a wheelhouse built for this Salt release (refresh the Salt locks and rebuild)"
+                    )
+                continue
+            if dep in chosen and (
+                not req.specifier or req.specifier.contains(chosen[dep][0], prereleases=True)
+            ):
+                queue.append((dep, chosen[dep][1], list(req.extras)))
+                continue
+            fits = [
+                (v, p)
+                for v, p in index.get(dep, [])
+                if not req.specifier or req.specifier.contains(v, prereleases=True)
+            ]
+            if fits:
+                chosen[dep] = max(fits, key=lambda vp: Version(vp[0]))
+                queue.append((dep, chosen[dep][1], list(req.extras)))
+            elif have is not None and (
+                not req.specifier or req.specifier.contains(have, prereleases=True)
+            ):
+                continue
+            else:
+                raise ApplyError(
+                    f"pip install failed: {os.path.basename(path)} requires {req}, which is neither in the wheelhouse nor installed "
+                    f"({'installed: ' + have if have else 'not installed'})"
+                )
+    return {
+        key: (v, p) for key, (v, p) in chosen.items() if not same_version(installed_version(key), v)
+    }
 
 
 def pending(pins, applied):
@@ -197,20 +345,16 @@ def main(argv=None):
         return 0
 
     verify_checksums(args.wheels)
-    pip_args = [
-        "install",
-        "--no-index",
-        "--find-links",
-        args.wheels,
-        "--only-binary=:all:",
-        "--no-input",
-    ]
-    if target:
-        pip_args += ["--target", target, "--upgrade"]
-    pip_args += [f"{spec}=={want}" for spec, want in sorted(todo.items())]
-    res = run_pip(pip_args, target)
-    if res.returncode != 0:
-        raise ApplyError("pip install failed:\n" + (res.stdout[-2000:] + res.stderr[-2000:]))
+    owned = load_owned(args.wheels)
+    planned = plan_install(todo, args.wheels, owned)
+    if planned:
+        pip_args = ["install", "--no-index", "--no-deps", "--only-binary=:all:", "--no-input"]
+        if target:
+            pip_args += ["--target", target, "--upgrade"]
+        pip_args += [p for _, p in sorted(planned.values(), key=lambda vp: vp[1])]
+        res = run_pip(pip_args, target)
+        if res.returncode != 0:
+            raise ApplyError("pip install failed:\n" + (res.stdout[-2000:] + res.stderr[-2000:]))
     chk = run_pip(["check"], target)
     if chk.returncode != 0:
         raise ApplyError(
@@ -219,8 +363,8 @@ def main(argv=None):
             + chk.stderr[-1000:]
         )
     if target:
-        for spec, want in todo.items():
-            prune_stale_dist_info(target, split_spec(spec)[0], want)
+        for key, (version, _) in planned.items():
+            prune_stale_dist_info(target, key, version)
     write_marker(args.marker, pins)
     print(
         json.dumps(

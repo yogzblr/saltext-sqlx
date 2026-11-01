@@ -79,10 +79,17 @@ def test_nothing_else_can_commit():
         "set_isolation_level",
         "connect",
     }
+    # The pg8000 hooks in lib/dialects.py (decision D15) are the only raw driver-level calls: ``_prove`` opens a cursor on
+    # a fresh connection to check that a second statement is refused (it never runs caller SQL and rolls back), and
+    # ``do_connect`` is the connect call itself, wrapped to translate one pg8000 error.
+    reviewed = {
+        ("lib/dialects.py", "_prove", "cursor"),
+        ("lib/dialects.py", "do_connect", "connect"),
+    }
     bad = []
     for path, tree in trees():
         for call, name in calls(tree):
-            if name in forbidden_calls:
+            if name in forbidden_calls and (rel(path), enclosing(tree, call), name) not in reviewed:
                 bad.append((rel(path), call.lineno, name))
             for kw in call.keywords:
                 if kw.arg in {"isolation_level", "autocommit"}:
@@ -265,6 +272,7 @@ def test_info_dict_holds_no_sql_params_rows_or_secret():
 
 def test_no_driver_is_imported_outside_dialects():
     drivers = {
+        "pg8000",
         "psycopg",
         "psycopg2",
         "pymysql",

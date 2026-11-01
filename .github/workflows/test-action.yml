@@ -181,7 +181,7 @@ jobs:
           name: ${{ github.job }}-Py${{ matrix.python-version }}-Salt${{ matrix.salt-version }}
 
   macOS:
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 40
 
     strategy:
