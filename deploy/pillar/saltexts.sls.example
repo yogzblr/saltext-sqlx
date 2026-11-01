@@ -1,0 +1,10 @@
+saltexts:
+  python: '3.11'                       # must equal the Python inside the minions' Salt onedir
+  modules: [sqlx, kafka]               # virtual names that must be loaded after an update (add elasticsearch, mongodb, redis ... once confirmed)
+  packages:                            # the one place to bump a version; extras are part of the key
+    saltext-sqlx[postgres,mysql,oracle,mssql]: 0.0.0
+    saltext-kafka: 0.0.0
+    saltext-elasticsearch: 1.2.3
+    saltext-mongodb: 1.0.0
+    saltext-redis: 1.0.2
+# Windows ARM64 minions need their own pillar: saltext-sqlx[mysql,oracle,mssql] (no [postgres]).

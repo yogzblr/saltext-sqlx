@@ -1,0 +1,30 @@
+# Salt master image that carries the offline wheelhouse and the saltexts state, orchestration and pillar.
+# SKETCH: untested. Build:  docker build -f deploy/Dockerfile.master -t salt-master-saltexts .
+ARG PYVER=3.11
+# ---- stage 1: build OUR OWN pure-Python wheels once (platform independent) ----
+FROM python:${PYVER}-slim AS own
+ARG SQLX_REPO=https://github.com/yogzblr/saltext-sqlx
+ARG SQLX_REF=main
+ARG KAFKA_REPO=
+ARG KAFKA_REF=main
+RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
+RUN set -eu; mkdir -p /own; \
+    pip wheel --no-deps -w /own "git+${SQLX_REPO}@${SQLX_REF}"; \
+    if [ -n "$KAFKA_REPO" ]; then pip wheel --no-deps -w /own "git+${KAFKA_REPO}@${KAFKA_REF}"; fi; \
+    # fail the build if any of our wheels is not pure Python (they must work on every target)
+    bad=$(ls /own | grep -v -- '-py3-none-any.whl$' || true); [ -z "$bad" ] || { echo "not pure: $bad"; exit 1; }
+
+# ---- stage 2: download every dependency as a wheel for every target ----
+FROM python:${PYVER}-slim AS wheelhouse
+ARG PYVER
+COPY --from=own /own /own
+COPY deploy/wheelhouse /wh
+RUN pip install --no-cache-dir "pip>=24" && PYVER=${PYVER} OWN=/own OUT=/out REQ=/wh/requirements bash /wh/build_wheelhouse.sh
+
+# ---- stage 3: the master ----
+FROM saltproject/salt:3008
+COPY --from=wheelhouse /out /srv/salt/saltexts/wheels
+COPY deploy/salt /srv/salt
+COPY deploy/pillar /srv/pillar
+COPY deploy/master.d /etc/salt/master.d
+# master config needs: file_roots: {base: [/srv/salt]}  pillar_roots: {base: [/srv/pillar]}

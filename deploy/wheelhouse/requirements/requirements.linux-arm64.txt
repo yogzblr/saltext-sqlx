@@ -1,0 +1,4 @@
+-r requirements.common.txt
+saltext-sqlx[postgres,mysql,oracle,mssql]
+saltext-kafka
+psycopg[binary]==<pin>

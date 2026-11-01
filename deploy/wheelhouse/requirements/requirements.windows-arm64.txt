@@ -1,0 +1,5 @@
+# No psycopg-binary wheel exists for Windows ARM64 (Python 3.11): PostgreSQL profiles are unsupported on this target.
+-r requirements.common.txt
+saltext-sqlx[mysql,oracle,mssql]
+saltext-kafka
+tzdata

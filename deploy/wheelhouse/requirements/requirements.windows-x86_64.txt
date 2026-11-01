@@ -1,0 +1,5 @@
+-r requirements.common.txt
+saltext-sqlx[postgres,mysql,oracle,mssql]
+saltext-kafka
+psycopg[binary]==<pin>
+tzdata            # psycopg needs it on Windows only; pip evaluates that marker for the build host, so add it by hand
