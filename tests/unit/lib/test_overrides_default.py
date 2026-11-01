@@ -8,6 +8,7 @@ opens a socket: DNS is a fake resolver, except the numeric host forms that need 
 
 # pylint: disable=unused-argument,protected-access
 import copy
+import socket
 
 import pytest
 from salt.exceptions import CommandExecutionError
@@ -305,10 +306,25 @@ def test_metadata_and_link_local_targets_are_refused_by_default(host):
     "host", ["2852039166", "0xa9fea9fe", "0251.0376.0251.0376", "169.254.43518"]
 )
 def test_numeric_spellings_of_the_metadata_address_are_refused_by_the_real_resolver(host):
-    """The check is on the resolved address, so inet_aton forms cannot slip through (the driver resolves the same way)."""
-    with pytest.raises(SaltInvocationError) as exc:
-        go(nopolicy(), dict(ADHOC, host=host), resolver=None)
-    assert code(exc) == "[E_POLICY]"
+    """
+    The check is on the resolved address, so inet_aton forms cannot slip through (the driver resolves the same way).
+
+    Whether the platform resolver accepts these spellings differs (glibc does; the Windows resolver does not). Where it
+    does not, the host cannot be reached either, and the call must fail closed with ``[E_CONNECT]``.
+    """
+    try:
+        socket.getaddrinfo(host, None)
+        resolves = True
+    except OSError:
+        resolves = False
+    if resolves:
+        with pytest.raises(SaltInvocationError) as exc:
+            go(nopolicy(), dict(ADHOC, host=host), resolver=None)
+        assert code(exc) == "[E_POLICY]"
+    else:
+        with pytest.raises(CommandExecutionError) as exc:
+            go(nopolicy(), dict(ADHOC, host=host), resolver=None)
+        assert str(exc.value).startswith("[E_CONNECT]")
 
 
 def test_an_unresolvable_name_fails_closed_without_naming_it():
