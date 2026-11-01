@@ -101,7 +101,9 @@ def test_server_error_dictionary_maps_on_the_sqlstate(sqlstate, message, severit
 
 
 @pytest.mark.parametrize("sqlstate,message,severity,code", SERVER)
-def test_same_code_and_text_as_the_psycopg_shape(sqlstate, message, severity, code):
+def test_same_code_and_text_as_the_psycopg_shape(
+    sqlstate, message, severity, code
+):  # pylint: disable=unused-argument
     """psycopg: attributes ``sqlstate`` and ``diag``; pg8000: the dictionary. Same result for the same error."""
     psycopg_style = DatabaseError(message)
     psycopg_style.sqlstate = sqlstate

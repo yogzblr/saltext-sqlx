@@ -781,7 +781,7 @@ guard, the time cap, the `execute` verb filter and `dry_run` all defeated by `CO
 4. declares the PostgreSQL type of plain bound scalars (16.4) and skips `CLOSE <cursor>` in an aborted transaction (the streaming cursor
    of SQLAlchemy would log a second, misleading error).
 
-`execute_unnamed` is a pg8000 internal, so `pyproject.toml` pins `pg8000>=1.31.6,<1.32` and step 2 guards the rest.
+`execute_unnamed` is a pg8000 internal, so `pyproject.toml` pins `pg8000>=1.31.5,<1.32` and step 2 guards the rest.
 
 ### 16.2 Error shapes
 
