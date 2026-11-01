@@ -98,10 +98,7 @@ if [ -z "${SKIP_LICENCES:-}" ]; then
     if [ -n "$HT" ] && [ -d "$OUT/$HT" ]; then
       python -m venv "$WORK/lic"
       "$WORK/lic/bin/python" -m pip install -q --disable-pip-version-check pip-licenses
-      "$WORK/lic/bin/python" -m pip install -q --disable-pip-version-check --no-index --no-deps --find-links "$OUT/$HT" \
-        $(grep -v '^#' "$WORK/now.$HT.txt" | sed 's/==.*//') $(ls "$OUT/$HT" | sed -n 's/^\(saltext_[a-z]*\)-.*whl$/\1/p')
-      "$WORK/lic/bin/pip-licenses" --format=markdown --with-urls --ignore-packages pip-licenses prettytable wcwidth tomli pip setuptools \
-        > "$OUT/LICENCES-pip-licenses-$HT.md"
+      "$WORK/lic/bin/python" -m pip install -q --disable-pip-version-check --no-index --no-deps "$OUT/$HT"/*.whl
       PL=("$WORK/lic/bin/pip-licenses" --ignore-packages pip-licenses prettytable wcwidth tomli pip setuptools)
       # exact SPDX ids on the metadata first (a partial match on "GPL-3.0" would also hit "LGPL-3.0-only"), then the trove classifiers
       # (not the free-text License field: pymssql pastes the whole LGPL text there, which contains the words "General Public License")
@@ -115,4 +112,4 @@ if [ -z "${SKIP_LICENCES:-}" ]; then
     echo "pip-licenses cross-check skipped (needs Linux with python $PYVER on this host)"
   fi
 fi
-echo "wheelhouse built: $(ls -d "$OUT"/*/ | xargs -n1 basename | tr '\n' ' ')"
+echo "wheelhouse built: $(for d in "$OUT"/*/; do basename "$d"; done | tr '\n' ' ')"

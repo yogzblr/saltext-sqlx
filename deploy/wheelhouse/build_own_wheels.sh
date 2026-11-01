@@ -26,6 +26,7 @@ build_one() {  # name dir repo ref version
 [ -z "${KAFKA_DIR:-}${KAFKA_REPO:-}" ] || build_one KAFKA "${KAFKA_DIR:-}" "${KAFKA_REPO:-}" "${KAFKA_REF:-main}" "${KAFKA_VERSION:-}"
 
 # every one of our wheels must be pure Python: py3-none-any or py2.py3-none-any
-bad="$(ls "$OWN" | grep -v -- '-none-any\.whl$' || true)"
-[ -z "$bad" ] || { echo "build_own_wheels: not a pure-Python wheel: $bad" >&2; exit 1; }
+for w in "$OWN"/*.whl; do
+  case "$w" in *-none-any.whl) ;; *) echo "build_own_wheels: not a pure-Python wheel: $w" >&2; exit 1;; esac
+done
 ls -1 "$OWN"

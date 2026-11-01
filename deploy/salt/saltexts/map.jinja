@@ -32,7 +32,7 @@
     and a single quote inside a value is escaped ('\'' for sh, '' for PowerShell). On Windows the string contains no double quote at all,
     so Salt's list2cmdline() adds no \" escaping when it hands -Command to powershell.exe. `exit $LASTEXITCODE` keeps the helper's code. #}
 {%- macro q(v) -%}
-  {%- if win -%}'{{ v|string|replace("'", "''") }}'{%- else -%}'{{ v|string|replace("'", "'\\\\''") }}'{%- endif -%}
+  {%- if win -%}'{{ v|string|replace("'", "''") }}'{%- else -%}'{{ v|string|replace("'", "'\\''") }}'{%- endif -%}
 {%- endmacro %}
 {%- set argl = q(py) ~ ' ' ~ q(helper) ~ ' ' ~ q(pinsf) ~ ' ' ~ q(cache) ~ ' ' ~ q(marker) ~ (' --target ' ~ q(ptarget) if ptarget else '') %}
 {%- set guard = '' %}

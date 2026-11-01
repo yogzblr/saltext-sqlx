@@ -31,7 +31,7 @@ def version():
     from saltext.demo.lib import late                 # imported at first CALL
 
     return {{"module_file": MODULE_FILE_VERSION, "package_init": package.__version__, "helper_at_load": helper.VERSION,
-            "late_at_call": late.VERSION, "pid": os.getpid()}}
+            "late_at_call": late.VERSION, "pid": os.getpid(), "ppid": os.getppid()}}
 '''
 
 

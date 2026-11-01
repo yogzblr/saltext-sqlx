@@ -13,6 +13,10 @@
         batch_size      minions per batch, default 10
         wait_timeout    seconds to wait for the start events, default 600
         verify_attempts / verify_interval   default 12 x 10 s
+        force_restart   default false. true = restart and wait for every batch even when apply changed nothing (the way to recover a
+                        run that was interrupted between apply and restart: the next run would otherwise see changed=no)
+        restart         default true. false = install only, no restart, no wait (see deploy/README.md "Is the restart mandatory?":
+                        job processes already load the new module files; the minion's main process keeps the OLD package __init__)
         sls             state to apply, default saltexts (stage+apply). Do not change.
     The restart commands are MINION pillar: saltexts:restart_linux_cmd / saltexts:restart_windows_cmd (see saltexts/restart.sls).
 
@@ -24,6 +28,8 @@
 {%- set wait_to = pillar.get('wait_timeout', 600)|int %}
 {%- set v_att   = pillar.get('verify_attempts', 12)|int %}
 {%- set v_int   = pillar.get('verify_interval', 10)|int %}
+{%- set restart = pillar.get('restart', True) %}
+{%- set force   = pillar.get('force_restart', False) %}
 {%- set up      = salt.saltutil.runner('manage.up', tgt=tgt, tgt_type='compound')|sort %}
 
 {%- if not up %}
@@ -57,6 +63,7 @@ apply_{{ n }}:
     - failhard: True
     - require: [{salt: stage_{{ n }}}]
 
+{%- if restart %}
 restart_{{ n }}:
   salt.state:
     - tgt: {{ L|tojson }}
@@ -64,7 +71,10 @@ restart_{{ n }}:
     - sls: saltexts.restart
     - failhard: True
     - parallel: True
+    - require: [{salt: apply_{{ n }}}]
+    {%- if not force %}
     - onchanges: [{salt: apply_{{ n }}}]
+    {%- endif %}
 
 wait_{{ n }}:
   salt.wait_for_event:
@@ -73,7 +83,12 @@ wait_{{ n }}:
     - timeout: {{ wait_to }}
     - failhard: True
     - parallel: True
+    - require: [{salt: apply_{{ n }}}]
+    {%- if not force %}
     - onchanges: [{salt: apply_{{ n }}}]
+    {%- endif %}
+
+{%- endif %}
 
 verify_{{ n }}:
   salt.state:
@@ -82,5 +97,5 @@ verify_{{ n }}:
     - sls: saltexts.verify
     - failhard: True
     - retry: {attempts: {{ v_att }}, interval: {{ v_int }}, until: True}
-    - require: [{salt: apply_{{ n }}}, {salt: restart_{{ n }}}, {salt: wait_{{ n }}}]
+    - require: [{salt: apply_{{ n }}}{% if restart %}, {salt: restart_{{ n }}}, {salt: wait_{{ n }}}{% endif %}]
 {%- endfor %}
