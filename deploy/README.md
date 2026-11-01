@@ -64,7 +64,7 @@ one Salt runs on (which one wins then depends on `sys.path`). Salt publishes the
 | `pyopenssl` | 26.4.0 | 26.4.0 |
 | `pymssql` | not shipped | **2.3.11** (`requirements/base.txt`: `pymssql==2.3.11; sys_platform == 'win32'`) |
 | `certifi`, `idna`, `urllib3`, `typing-extensions`, `six`, `python-dateutil`, `cffi`, `pycparser`, `requests`, `packaging`, `pyyaml`, `jinja2`, `markupsafe` ... | shipped (79 packages in all) | shipped (87) |
-| `psycopg`, `PyMySQL`, `oracledb`, `SQLAlchemy`, `redis`, `pymongo`, `elasticsearch`, kafka clients | **not shipped** | **not shipped** (PyMySQL and tzdata are shipped by the Salt 3007.x Windows onedir, not by 3008.5) |
+| `pg8000`, `psycopg`, `PyMySQL`, `oracledb`, `SQLAlchemy`, `redis`, `pymongo`, `elasticsearch`, kafka clients | **not shipped** | **not shipped** (PyMySQL and tzdata are shipped by the Salt 3007.x Windows onedir, not by 3008.5) |
 
 What the build does with that (`SALT_TAG`, default `v3008.5` for Python 3.14 and `v3007.15` for 3.11; `v3006.27` is vendored too):
 
@@ -88,6 +88,19 @@ What the build does with that (`SALT_TAG`, default `v3008.5` for Python 3.14 and
 5. **Windows `pymssql`:** x86_64 gets none: Salt's 2.3.11 satisfies the `mssql` extra. **2.3.11 has wheels for win32 and win_amd64 only (cp39 - cp314),
    none for win_arm64** (PyPI file list checked; 2.4.6 does have cp314 win_arm64 wheels, but it is not Salt's version), so the Windows ARM64
    target is built without the `mssql` extra. Linux gets `pymssql==2.4.6` (Salt ships none there).
+
+**Size of the wheelhouse (Python 3.14, measured on the built folders).** "Before" is the wheelhouse before respecting Salt's lock files;
+"after A" is that change alone; "after B" adds the move from psycopg to pg8000 (`psycopg` + `psycopg-binary` out, `pg8000` + `scramp`
++ `asn1crypto` in; Windows ARM64 gains PostgreSQL).
+
+| Target | before | after A (Salt-owned) | after B (+ pg8000) |
+|---|---|---|---|
+| linux-x86_64 | 31 wheels, 23.9 MB | 21 wheels, 18.3 MB | 22 wheels, 13.3 MB |
+| linux-arm64 | 31 wheels, 25.1 MB | 21 wheels, 19.5 MB | 22 wheels, 12.9 MB |
+| windows-x86_64 | 31 wheels, 18.4 MB | 21 wheels, 11.8 MB | 22 wheels, 8.2 MB |
+| windows-arm64 | 29 wheels, 12.8 MB | 19 wheels, 7.5 MB | 22 wheels, 7.7 MB (now with PostgreSQL) |
+
+(`du` of each target folder, wheels plus `SHA256SUMS` and `SALT_OWNED.txt`; Python 3.11 against Salt v3007.15: 22 / 22 / 20 / 20 wheels.)
 
 The minion helper obeys the same list. `pip install --target DIR` forces `--ignore-installed`, so with a target directory pip does not see
 Salt's packages and would install every dependency again, `cryptography` included, into the extras directory (shown by
@@ -121,18 +134,18 @@ wheel per target), `LICENCES.md`, `build-<target>.log`. Rules enforced by the sc
 * Transitive versions are frozen in `requirements/constraints.py<PYV>.<target>.txt` (regenerate with `LOCK_UPDATE=1` when you
   change a pin, review the diff, commit). Without the lock a rebuild a month later would ship different versions.
 * An offline `pip install --dry-run --no-index` of the finished folder (plus the stubs of Salt's own packages) proves it is complete.
-* Licence gate: wheel metadata of all four targets; GPL/AGPL fails; LGPL is accepted (psycopg, psycopg-binary, pymssql); MPL (certifi)
+* Licence gate: wheel metadata of all four targets; GPL/AGPL fails; LGPL is accepted (pymssql; psycopg only if a minion opts in with `postgres-psycopg`); MPL (certifi)
   is listed as "weak" for information. Where this host matches a target, `pip-licenses` is run on the installed set as a second opinion.
 
 ### Known gaps found by the real build (Python 3.14 and 3.11)
 
 | Finding | Detail |
 |---|---|
-| `psycopg-binary` has **no wheel for win_arm64** | confirmed for cp311 and cp314 ("from versions: none"). Windows ARM64 gets `saltext-sqlx[mysql,oracle,mssql]` and no PostgreSQL. |
+| `psycopg-binary` has **no wheel for win_arm64** | confirmed for cp311 and cp314 ("from versions: none"). This is why the default PostgreSQL driver is now `pg8000` (pure Python, `py3-none-any`): every target, Windows ARM64 included, gets `saltext-sqlx[postgres,...]`. Profiles that ask for `driver: psycopg` need the `postgres-psycopg` extra, which no target of this wheelhouse installs. |
 | `redis-py-cluster 2.1.3` pins `redis<4` | confirmed from its metadata. `saltext-redis` declares an unpinned `redis`; both are pinned: `redis==3.5.3`. Whether `saltext-redis` works with redis-py 3.5 is **not tested**. |
 | `saltext-elasticsearch` does **not** declare the `elasticsearch` client | confirmed (only under its `tests` extra). Pin it yourself (`elasticsearch==9.5.1`, a **guess**: it must match the server major; the extension has modules for 6, 8 and 9). |
 | `cryptography` / `pyopenssl` | no longer built at all: Salt ships them (see "Respect what Salt ships"). The earlier `cryptography` 46.0.3 on win_arm64 vs 50.0.2 elsewhere is gone with them. |
-| `pymssql 2.3.11` (Salt's Windows pin) has no win_arm64 wheel | the Windows ARM64 target has no `mssql` extra. |
+| `pymssql 2.3.11` (Salt's Windows pin) has no win_arm64 wheel | the Windows ARM64 target has no `mssql` extra (it does have PostgreSQL, through pg8000). |
 | `pymssql 2.4.6` needs manylinux_2_28 / 2_27 | glibc >= 2.28 on Linux minions (RHEL 7 / CentOS 7 / Ubuntu 18.04 are out). |
 | Python 3.10 | `pymongo 4.19.0` has no cp310 wheel (see above). |
 | Wheel names of the extensions differ (`saltext.redis-...` vs `saltext_kafka-...`) | harmless; the helper matches distributions by normalised name. |

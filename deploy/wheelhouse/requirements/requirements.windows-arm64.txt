@@ -1,6 +1,6 @@
 # Appended to requirements.common.txt by build_wheelhouse.sh. Lines naming one of OUR wheels (in $OWN) get ==<its version>.
-# No psycopg-binary wheel exists for Windows ARM64 (see deploy/README.md): PostgreSQL profiles are unsupported on this target.
 # No mssql extra: Salt's Windows pin pymssql==2.3.11 has no win_arm64 wheel for any CPython (verified on PyPI), see deploy/README.md.
-saltext-sqlx[mysql,oracle]
+saltext-sqlx[postgres,mysql,oracle]
 saltext-kafka
+pg8000==1.31.6                 # pure Python: PostgreSQL works on this target too (psycopg-binary has no win_arm64 wheel)
 tzdata==2026.6  # salt-wins: the Windows Salt 3007.x onedir ships tzdata
