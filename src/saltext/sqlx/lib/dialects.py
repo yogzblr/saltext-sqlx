@@ -408,7 +408,7 @@ def _prove(dbapi_conn):
 
 class PostgreSQLPg8000(PostgreSQLBase):
     """
-    pg8000 (pure Python), the PostgreSQL driver used when psycopg is not installed (decision D15). VERIFIED on PostgreSQL 16 / pg8000 1.31.6.
+    pg8000 (pure Python), the PostgreSQL driver used when psycopg is not installed (decision D15). VERIFIED on PostgreSQL 16 with pg8000 1.31.6 (Python 3.12-3.14) and 1.31.5 (Python 3.10; 1.31.6 pins scramp==1.5.0, which needs Python 3.11).
 
     Everything that differs from psycopg is in WIRE_SHAPES section 16. The connection arguments of pg8000 are not
     libpq's: there is no ``sslmode`` / ``keepalives`` / ``target_session_attrs``; TLS is an ``ssl_context`` that

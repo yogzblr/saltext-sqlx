@@ -53,7 +53,7 @@ Tracker = "https://github.com/yogzblr/saltext-sqlx/issues"
 [project.optional-dependencies]
 # pg8000 (pure Python, BSD-3) is the default PostgreSQL driver (SPEC decision D15). The minor version is pinned because
 # lib/dialects.py uses one pg8000 internal (Connection.execute_unnamed) to keep the one-statement-per-call guarantee.
-postgres = ["pg8000>=1.31.6,<1.32"]
+postgres = ["pg8000>=1.31.5,<1.32"]
 # psycopg 3 (libpq, LGPL, unmodified pip package) stays available as an explicit choice: profile `driver: psycopg`.
 postgres-psycopg = ["psycopg[binary]"]
 mysql = ["PyMySQL"]
@@ -92,7 +92,7 @@ lint = [
     "pylint==4.0.4",
 ]
 tests = [
-    "pg8000>=1.31.6,<1.32",
+    "pg8000>=1.31.5,<1.32",
     "psycopg[binary]",
     "pytest>=7.2.0",
     "pytest-salt-factories>=1.0.0",
