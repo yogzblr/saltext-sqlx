@@ -170,4 +170,4 @@ bounds server time; `connect_timeout_s` bounds connect time; the minion's own jo
 `sqlx.psql_query`) are the only new modules; `sqlx_mod._run` calls `prepare`, `build_profile`, `resolve_secrets`, `overridden`
 and `target`, and `profiles.validate_profile` honours a per-profile `allow_call_params` list. Neither module has Salt dunders
 or driver imports; the policy mapping is passed in by the module. SPEC section 3.2 is the contract, SECURITY section 3 the
-threat table.
+threat table. The default policy is the object `overrides.DEFAULT_POLICY` (D16): `parse_policy` returns it when `sqlx:_policy:allow_call_params` is absent, `STRICT_POLICY` for `[]`, and a policy built from the explicit list otherwise; `build_profile` marks the profile `adhoc` / `execute_blocked` and `sqlx_mod._run` refuses `execute` for those.

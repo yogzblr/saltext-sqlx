@@ -892,3 +892,19 @@ server-side cursor (SQLAlchemy `stream_results` -> `DECLARE ... NO SCROLL CURSOR
 - The once-per-process proof statement (`SELECT 1; SELECT 2`, refused with 42601) costs one round trip on the first connection of a process.
 - Not run: pg8000 against PostgreSQL 14/15/17/18, against a server with `md5`/`password` authentication, over a Unix socket,
   through PgBouncer, with `ssl_certs_dir` on Windows, and `COPY ... FROM STDIN` (the cursor does not offer `stream=`).
+
+## 17. Host spellings and the link-local check (call-time `host`, observed 2026-11-01, D16)
+
+`getaddrinfo` (what the check and the drivers both call) on Linux/glibc turns inet_aton spellings into the address they
+mean, so the deny list for link-local and cloud-metadata targets is applied to the **resolved** address, never to the text:
+
+| `host` text | `getaddrinfo` answer |
+|---|---|
+| `2852039166`, `0xa9fea9fe`, `0251.0376.0251.0376`, `169.254.43518` | `169.254.169.254` (refused) |
+| `2130706433`, `127.1`, `0x7f.1`, `localhost` | `127.0.0.1` (allowed by default) |
+| `::ffff:169.254.169.254` | returned as the IPv4-mapped IPv6 address; the check unwraps it to `169.254.169.254` (refused) |
+
+On the command line a bare `host=2852039166` is turned into an integer by YAML and refused earlier as `option 'host' must be a
+non-empty string`; the quoted form `host='"2852039166"'` reaches the check. Unit and security tests pin each spelling above
+(`tests/unit/lib/test_overrides_default.py`, `tests/security/test_call_params_default.py`). Not checked: macOS, Windows or musl
+resolvers, which may accept fewer spellings.

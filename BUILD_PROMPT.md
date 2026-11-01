@@ -13,7 +13,7 @@ each gate.
 - R3. Never put the SQL text, bound values, the URL, or a secret in any message, log record or return.
 
 **Safety**
-- R4. Callers select a **profile**; by default they never supply host, port, driver, URL, `connect_args` or credentials. Only an operator policy (`sqlx:_policy:allow_call_params`, SPEC section 3.2) opens named fields, and no policy relaxes the hard rules there.
+- R4. A caller either selects a **profile** or sends the connection in the call (`dialect`, `driver`, `host`, `port`, `database`, `username`, `password`: the D16 default, owner decision 2026-11-01, so that Salt's `postgres.psql_query`-style calls work with no minion configuration). The operator narrows or switches that off in `sqlx:_policy` (`allow_call_params: []` = profile only, SPEC section 3.2). No default and no policy relaxes the hard rules there: caps only lower, no `allow_execute` / `error_detail` / `read_only=False` from a call, no `execute` on an ad-hoc connection, no profile password to a retargeted host, no link-local or metadata target unless `allowed_hosts` lists it.
 - R5. `query` never commits. `commit(` exists only inside `runner.run_execute`.
 - R6. `execute` is refused unless the profile has `allow_execute: true`; apply the verb filter and `dry_run`.
 - R7. The in-session read-only guard is best effort (it was **observed bypassable** on PostgreSQL, MySQL and MariaDB; Oracle and SQL Server NOT RUN). Never claim read-only is enforced by the module; the database role does that. Say so in docs and tests.
