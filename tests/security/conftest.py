@@ -28,3 +28,10 @@ def meta(server):
         yield server
     finally:
         harness.drop_meta_account(server)
+
+
+@pytest.fixture
+def salt_strict(server):
+    """Same profiles, but ``sqlx:_policy:allow_call_params: []`` (D16 strict): the profile-only contract."""
+    with harness.injected(server.profiles(), policy={"allow_call_params": []}) as module:
+        yield module

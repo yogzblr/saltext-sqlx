@@ -261,6 +261,16 @@ def test_pub_kwargs_are_ignored(fake):
 
 def test_unknown_option_is_e_option_unknown(fake):
     with pytest.raises(SaltInvocationError) as exc:
+        mod.query(profile="pg_ro", sql="select 1", nonsense="evil.example")
+    assert str(exc.value).startswith("[E_OPTION_UNKNOWN]")
+    assert fake.connections == []
+
+
+def test_connection_keyword_is_e_option_unknown_under_the_strict_config(fake):
+    fake.config["sqlx"] = dict(
+        CONFIG, _policy={"allow_call_params": []}
+    )  # D16: strict = profile-only
+    with pytest.raises(SaltInvocationError) as exc:
         mod.query(profile="pg_ro", sql="select 1", host="evil.example")
     assert str(exc.value).startswith("[E_OPTION_UNKNOWN]")
     assert fake.connections == []

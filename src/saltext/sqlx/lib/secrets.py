@@ -111,6 +111,10 @@ def _mask_pairs(text):
     return _SENSITIVE_PAIR.sub(_sub, text)
 
 
+#: Most distinct secret values a ``MaskingFilter`` remembers (the key-based masking has no limit).
+MAX_SECRETS = 512
+
+
 class MaskingFilter(logging.Filter):
     """
     Logging filter that hides secrets from log records, including exception and stack text.
@@ -122,12 +126,21 @@ class MaskingFilter(logging.Filter):
 
     def __init__(self, secrets=None, name=""):
         super().__init__(name)
-        self._secrets = set(_secret_list(secrets))
+        self._secrets = dict.fromkeys(_secret_list(secrets))  # insertion-ordered set
 
     def add_secret(self, secret):
-        """Register a resolved secret value to be masked wherever it appears. Empty values are ignored."""
+        """
+        Register a resolved secret value to be masked wherever it appears. Empty values are ignored.
+
+        The registry is bounded (``MAX_SECRETS``, oldest dropped first): since D16 any caller can send a literal
+        password, and an unbounded registry would let a stream of distinct passwords grow the minion's memory and slow
+        every log line down.
+        """
         if isinstance(secret, str) and secret:
-            self._secrets.add(secret)
+            self._secrets.pop(secret, None)
+            self._secrets[secret] = None
+            while len(self._secrets) > MAX_SECRETS:
+                del self._secrets[next(iter(self._secrets))]
 
     def mask_text(self, text):
         """Apply key-based and value-based masking to ``text``."""

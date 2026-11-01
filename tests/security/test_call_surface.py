@@ -1,9 +1,16 @@
 # pylint: disable=use-dict-literal,unused-argument,unused-variable,cell-var-from-loop,expression-not-assigned,bidirectional-unicode,use-implicit-booleaness-not-comparison,unnecessary-lambda-assignment,consider-using-with
-"""SECURITY section 6, box 5: call arguments cannot set host / port / driver / URL / connect_args / credentials.
+"""SECURITY section 6, box 5: what a call can and cannot set, under the strict config and under the D16 default.
 
 Every public function is called with every connection-ish keyword, with profile-shaped names, with ``__``-prefixed
-keys, and with ``host`` inside ``params`` (a bind value, nothing more). Everything that is not a documented option is
-refused with ``[E_OPTION_UNKNOWN]`` before any profile is loaded or any socket is opened (a counting socket proves it).
+keys, and with ``host`` inside ``params`` (a bind value, nothing more).
+
+* **Strict** (``sqlx:_policy:allow_call_params: []``, the contract before D16): every connection keyword is refused with
+  ``[E_OPTION_UNKNOWN]`` before any profile is loaded or any socket is opened (a counting socket proves it).
+* **Default** (no ``sqlx:_policy``, D16): the seven connection fields are accepted, so they are tested separately
+  (``test_call_params_default.py``); every OTHER keyword here is still refused before any socket: opt-in fields
+  (``ssl_*``, ``query``, ``connect_args``, ``read_only``, timeouts) with ``[E_POLICY]``, everything else, including
+  ``allow_execute``, ``row_limit``, ``error_detail``, ``execute_verbs``, URL-ish names and ``profiles``, with
+  ``[E_OPTION_UNKNOWN]``.
 """
 
 import socket
@@ -85,24 +92,60 @@ def forbid_sockets(monkeypatch):
     return attempts
 
 
+#: The seven fields the D16 default lets a caller send (``overrides.DEFAULT_ALLOWED_FIELDS``).
+DEFAULT_FIELDS = {"dialect", "driver", "host", "port", "database", "username", "password"}
+#: Known connection fields that stay opt-in: refused with ``[E_POLICY]`` under the default.
+OPT_IN_FIELDS = {
+    "query",
+    "connect_args",
+    "read_only",
+    "statement_timeout_ms",
+}
+
+
 @pytest.mark.parametrize("function", sorted(CALLS))
-def test_every_connection_keyword_is_refused_before_any_io(salt, forbid_sockets, function):
+def test_strict_every_connection_keyword_is_refused_before_any_io(
+    salt_strict, forbid_sockets, function
+):
+    """Mirror of the pre-D16 test, unchanged in what it asserts, run under ``allow_call_params: []``."""
     refused = 0
     for keyword in CONNECTION_KEYWORDS:
         if keyword.startswith("__"):
             continue  # dropped by design, covered below
         with pytest.raises(SaltInvocationError) as exc:
-            CALLS[function](salt, **{keyword: "evil.example:1"})
+            CALLS[function](salt_strict, **{keyword: "evil.example:1"})
         message = str(exc.value)
-        assert message.startswith("[E_OPTION_UNKNOWN]") or (
-            keyword in {"read_only", "allow_execute"} and message.startswith("[E_OPTION_UNKNOWN]")
-        ), (keyword, message)
+        assert message.startswith("[E_OPTION_UNKNOWN]"), (keyword, message)
         assert keyword in message
         refused += 1
     observe(
         "call-surface",
-        f"sqlx.{function}",
+        f"sqlx.{function} (strict)",
         f"{refused} connection keywords refused with E_OPTION_UNKNOWN, 0 sockets opened",
+    )
+    assert forbid_sockets == []
+
+
+@pytest.mark.parametrize("function", sorted(CALLS))
+def test_default_every_keyword_outside_the_default_fields_is_refused_before_any_io(
+    salt, forbid_sockets, function
+):
+    """D16: with no policy the seven fields pass through to the policy gates; everything else is still refused."""
+    refused = 0
+    for keyword in CONNECTION_KEYWORDS:
+        if keyword.startswith("__") or keyword in DEFAULT_FIELDS:
+            continue
+        with pytest.raises(SaltInvocationError) as exc:
+            CALLS[function](salt, **{keyword: "evil.example:1"})
+        message = str(exc.value)
+        expected = "[E_POLICY]" if keyword in OPT_IN_FIELDS else "[E_OPTION_UNKNOWN]"
+        assert message.startswith(expected), (keyword, message)
+        assert keyword in message
+        refused += 1
+    observe(
+        "call-surface",
+        f"sqlx.{function} (default)",
+        f"{refused} non-default keywords refused (E_POLICY / E_OPTION_UNKNOWN), 0 sockets opened",
     )
     assert forbid_sockets == []
 
