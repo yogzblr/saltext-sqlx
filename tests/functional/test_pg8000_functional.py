@@ -267,10 +267,8 @@ def test_none_with_and_without_a_cast(salt):
         [None]
     ]
     assert mod.query("ro", "SELECT :v AS v", params={"v": None})["rows"] == [[None]]
-    assert (
-        mod.query("ro", f"SELECT n FROM {salt.table} WHERE k = :k", params={"k": None})["rows"]
-        == []
-    )
+    rows = mod.query("ro", f"SELECT n FROM {salt.table} WHERE k = :k", params={"k": None})["rows"]
+    assert not rows  # `= NULL` matches nothing
 
 
 def test_arrays_and_jsonb_with_a_cast(salt):
