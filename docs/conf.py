@@ -123,6 +123,7 @@ exclude_patterns = [
     # Not pages of the published docs: inputs of scripts/probes/render_wire_shapes.py and project working notes.
     "wire_shapes",
     "CLAUDE_CODE_PROMPT.md",
+    "DEPLOYMENT_CURSOR_PROMPT.md",
     "PACK_README.md",
     "SECURITY_REVIEW.md",
 ]
