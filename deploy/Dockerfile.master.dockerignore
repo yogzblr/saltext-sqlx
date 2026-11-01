@@ -1,0 +1,5 @@
+# context = repository root; only deploy/ is needed (BuildKit picks up <Dockerfile>.dockerignore)
+*
+!deploy/
+deploy/tests/
+**/__pycache__/

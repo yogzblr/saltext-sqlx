@@ -16,6 +16,8 @@ import argparse
 import hashlib
 import json
 import os
+import re
+import shutil
 import subprocess
 import sys
 from importlib import metadata
@@ -136,6 +138,16 @@ def run_pip(args, target):
     return subprocess.run(cmd, capture_output=True, text=True, check=False, env=pip_env(target), timeout=1800)
 
 
+def prune_stale_dist_info(target, name, want):
+    """`pip install --target DIR --upgrade` replaces the package folder but leaves the OLD <name>-<old>.dist-info next to the new one,
+    and importlib.metadata may then report the old version forever (found by test_target_directory_install_like_salt_pip)."""
+    norm = re.sub(r"[-_.]+", "_", name).lower()
+    for entry in os.listdir(target):
+        m = re.match(r"^(.+)-([^-]+)\.dist-info$", entry)
+        if m and re.sub(r"[-_.]+", "_", m.group(1)).lower() == norm and not same_version(m.group(2), want):
+            shutil.rmtree(os.path.join(target, entry), ignore_errors=True)
+
+
 def write_marker(path, data):
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     tmp = path + ".tmp"
@@ -179,6 +191,9 @@ def main(argv=None):
     chk = run_pip(["check"], target)
     if chk.returncode != 0:
         raise ApplyError("pip check failed after the install (broken dependency set; marker NOT written):\n" + chk.stdout[-2000:] + chk.stderr[-1000:])
+    if target:
+        for spec, want in todo.items():
+            prune_stale_dist_info(target, split_spec(spec)[0], want)
     write_marker(args.marker, pins)
     print(json.dumps({"changed": "yes", "comment": f"installed {len(todo)} package(s)", "installed": dict(sorted(todo.items()))}))
     return 0
