@@ -1,5 +1,5 @@
-# No psycopg-binary wheel exists for Windows ARM64 (Python 3.11): PostgreSQL profiles are unsupported on this target.
--r requirements.common.txt
+# Appended to requirements.common.txt by build_wheelhouse.sh. Lines naming one of OUR wheels (in $OWN) get ==<its version>.
+# No psycopg-binary wheel exists for Windows ARM64 (see deploy/README.md): PostgreSQL profiles are unsupported on this target.
 saltext-sqlx[mysql,oracle,mssql]
 saltext-kafka
-tzdata
+tzdata==2026.6

@@ -1,5 +1,5 @@
--r requirements.common.txt
+# Appended to requirements.common.txt by build_wheelhouse.sh. Lines naming one of OUR wheels (in $OWN) get ==<its version>.
 saltext-sqlx[postgres,mysql,oracle,mssql]
 saltext-kafka
-psycopg[binary]==<pin>
-tzdata            # psycopg needs it on Windows only; pip evaluates that marker for the build host, so add it by hand
+psycopg[binary]==3.3.6
+tzdata==2026.6                  # psycopg needs it on Windows only; pip evaluates environment markers for the BUILD host, so add it by hand
