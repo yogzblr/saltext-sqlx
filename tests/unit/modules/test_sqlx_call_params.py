@@ -75,7 +75,9 @@ def audit(caplog):
 
 
 def test_feature_off_connection_keywords_are_unknown_options_and_nothing_connects(fake):
-    fake.cfg["_policy"] = {}
+    fake.cfg["_policy"] = {
+        "allow_call_params": []
+    }  # strict (D16): the behaviour before the default flipped
     for kw in ({"host": "db2.corp.example"}, {"connection": {"host": "x"}}, {"password": LITERAL}):
         with pytest.raises(SaltInvocationError, match=r"^\[E_OPTION_UNKNOWN\]"):
             mod.query(profile="pg_ro", sql="select 1", **kw)
@@ -331,7 +333,7 @@ def test_psql_query_runas_is_refused(fake):
 
 def test_psql_query_connection_arguments_with_the_feature_off_are_e_policy(fake):
     fake.cfg["default_profile"] = "pg_ro"
-    fake.cfg["_policy"] = {}
+    fake.cfg["_policy"] = {"allow_call_params": []}  # strict (D16)
     with pytest.raises(SaltInvocationError, match=r"^\[E_POLICY\].*allow_call_params"):
         mod.psql_query("select 1", user="svc")
     assert mod.psql_query("select 1")  # no override: runs on the default profile

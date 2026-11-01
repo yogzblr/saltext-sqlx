@@ -18,7 +18,7 @@ DatabaseLibrary; connection details live in **profiles**, never in the call.
 
 ## Hard rules (summary)
 - One error path (`lib/errors.py`); never return `[]`/`False` for a failure.
-- Callers pick a profile only by default; call-time connection parameters exist only under `sqlx:_policy` (SPEC 3.2). `query` never commits. `execute` needs `allow_execute: true` (it then runs without the session read-only guard).
+- Callers may send the connection (`dialect`, `driver`, `host`, `port`, `database`, `username`, `password`) in the call by default, like Salt's own `postgres.psql_query` (D16, owner decision); the operator tightens it with `sqlx:_policy` (`allow_call_params: []` = profile-only; SPEC 3.2). Never relaxed by any default: caps, `allow_execute`, `error_detail`, `read_only`, no `execute` on an ad-hoc connection, no profile password to a retargeted host, link-local/metadata targets denied. `query` never commits. `execute` needs `allow_execute: true` (it then runs without the session read-only guard).
 - On the command line, YAML-quote comparison operators: `operator='">"'` (SPEC section 4).
 - The in-session read-only guard is bypassable (observed on PostgreSQL, MySQL and MariaDB); the DB role is the real control.
 - Catch `Exception`, not only `DBAPIError`; take the message from `exc.orig`, never `str()` of the SQLAlchemy exception (it embeds SQL and bound values); map on the vendor code first.

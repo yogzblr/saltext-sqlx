@@ -1,17 +1,22 @@
-"""Call-time connection parameters: an opt-in, policy-gated layer over profiles (SPEC section 3.2, decision D1).
+"""Call-time connection parameters: a policy-gated layer over profiles (SPEC section 3.2, decisions D1 and D16).
 
-By default (``sqlx:_policy:allow_call_params`` absent or empty) nothing here changes behaviour: a call that names a
-connection keyword is ``[E_OPTION_UNKNOWN]``, exactly as before. When the operator lists field names there, a caller may
-overlay those fields on a base profile (or, with ``allow_adhoc_connection``, supply a whole connection). Policy lives
-only in minion config or pillar, is passed in by the module, and is never read from the call. This module has no Salt
-dunders and imports no driver.
+**Default (D16, owner decision 2026-11-01):** with no ``sqlx:_policy:allow_call_params`` in the minion config a caller
+may send ``dialect``, ``driver``, ``host``, ``port``, ``database``, ``username`` and ``password`` in the call, with or
+without a profile, on every function and dialect, exactly as Salt's own ``postgres.psql_query`` takes its connection in
+the call. That default is the explicit object :data:`DEFAULT_POLICY`. The operator tightens it from minion config or
+pillar: ``allow_call_params: []`` is strict (a connection keyword is ``[E_OPTION_UNKNOWN]``, as before D16), a shorter
+list narrows it, and ``allowed_hosts`` / ``allowed_ports`` / ``allowed_dialects`` /
+``allow_adhoc_connection`` / ``allow_call_literal_password`` restrict it further. An explicit list, including the empty
+one, replaces the default completely. Policy lives only in minion config or pillar, is passed in by the module, and is
+never read from the call. This module has no Salt dunders and imports no driver.
 
-Hard rules that no policy relaxes (SPEC section 3.2): a call can only lower ``statement_timeout_ms`` and
+Hard rules that no policy and no default relaxes (SPEC section 3.2): a call can only lower ``statement_timeout_ms`` and
 ``connect_timeout_s``; it can never set ``allow_execute``, ``execute_verbs``, ``error_detail``, ``row_limit``,
 ``max_bytes`` or ``_policy`` (they are not in the schema: ``[E_OPTION_UNKNOWN]``); it can turn ``read_only`` on but never
-off; ``ssl_mode`` may only tighten; TLS-owned ``query``/``connect_args`` keys cannot come from a call; a literal
-``password`` is refused unless ``allow_call_literal_password``; and the base profile's password is not sent to a
-retargeted connection (``host``, ``port``, ``username`` or ``dialect`` changed) unless ``inherit_password``.
+off; ``ssl_mode`` may only tighten; TLS-owned ``query``/``connect_args`` keys cannot come from a call; an ad-hoc
+connection (no profile) can never ``execute``; and the base profile's password is not sent to a retargeted connection
+(``host``, ``port``, ``username`` or ``dialect`` changed) unless ``inherit_password``. Under the default (no explicit
+list) a literal ``password`` is accepted; an explicit list refuses it unless ``allow_call_literal_password``.
 
 Messages name keys only, never a value, a host, a password or an ``sdb://`` reference (R3).
 """
@@ -34,6 +39,8 @@ from saltext.sqlx.lib.dialects import DIALECT_DRIVERS
 
 __all__ = [
     "ADHOC_NAME",
+    "DEFAULT_ALLOWED_FIELDS",
+    "DEFAULT_POLICY",
     "FIELDS",
     "Call",
     "build_profile",
@@ -91,14 +98,61 @@ _DENIED = tuple(
     )
 )
 
+#: Denied when ``allowed_hosts`` is NOT configured (the D16 default): only link-local and cloud-metadata targets.
+#: Loopback and private addresses stay allowed (Salt's own ``psql_query`` allows them). Resolved addresses are checked,
+#: so a name, a decimal form (``2852039166``) or an IPv4-mapped IPv6 address cannot slip through. An operator lifts
+#: this by listing the address in ``allowed_hosts`` (which then restricts callers to that list, see ``_check_host``).
+_COMPAT_DENIED = tuple(
+    ipaddress.ip_network(n)
+    for n in (
+        "169.254.0.0/16",  # link-local, includes the AWS/Azure/GCP/OCI metadata address 169.254.169.254
+        "fe80::/10",  # IPv6 link-local
+        "fd00:ec2::254/128",  # AWS IPv6 metadata address
+        "100.100.100.200/32",  # Alibaba Cloud metadata address
+    )
+)
+
+#: The connection fields a caller may send when the operator configured nothing (D16). ``ssl_mode``,
+#: ``ssl_certs_dir``, ``ssl_files``, ``query``, ``connect_args``, ``read_only`` and the timeouts are NOT in it.
+DEFAULT_ALLOWED_FIELDS = (
+    "dialect",
+    "driver",
+    "host",
+    "port",
+    "database",
+    "username",
+    "password",
+)
+
 Call = collections.namedtuple("Call", "kwargs supplied adhoc")
 Call.__doc__ = (
     "Result of :func:`prepare`: kwargs for ``options.validate``, the override fields, ad-hoc flag."
 )
 
 Policy = collections.namedtuple(
-    "Policy", "allow hosts ports dialects adhoc literal_password inherit_password"
+    "Policy", "allow hosts ports dialects adhoc literal_password inherit_password default"
 )
+Policy.__doc__ = (
+    "Parsed ``sqlx:_policy``. ``hosts`` is ``None`` when no ``allowed_hosts`` is configured (any host that is not "
+    "link-local or cloud metadata), otherwise the parsed list. ``default`` is true when ``allow_call_params`` was absent "
+    "(the D16 compat default), false for an explicit list (including ``[]``)."
+)
+
+#: The documented default policy (D16): what applies when ``sqlx:_policy:allow_call_params`` is absent. Individual
+#: ``allowed_*`` lists and the two ``allow_*`` flags in ``sqlx:_policy`` are still honoured on top of it.
+DEFAULT_POLICY = Policy(
+    allow=frozenset(DEFAULT_ALLOWED_FIELDS),
+    hosts=None,
+    ports=[],
+    dialects=None,
+    adhoc=True,
+    literal_password=True,
+    inherit_password=False,
+    default=True,
+)
+
+#: The policy for ``allow_call_params: []`` (strict, the behaviour before D16): nothing may be sent in a call.
+STRICT_POLICY = Policy(frozenset(), None, [], None, False, False, False, False)
 
 
 def _fail(code, message, error=SaltInvocationError):
@@ -182,8 +236,10 @@ def _parse_dialects(raw):
     return out
 
 
-def _flag(section, key):
-    value = section.get(key, False)
+def _flag(section, key, default=False):
+    if key not in section:
+        return default
+    value = section[key]
     if not isinstance(value, bool):
         _bad_policy(key, "must be true or false")
     return value
@@ -193,27 +249,39 @@ def parse_policy(config):
     """
     Parse ``sqlx:_policy`` (the ``config`` mapping holds ``profiles`` and ``_policy``) into a :class:`Policy`.
 
-    ``allow`` is empty (feature off) when ``allow_call_params`` is absent, null or ``[]``; nothing else is looked at in
-    that case. Otherwise every entry must be an explicit field name from :data:`FIELDS` (``"*"`` is refused) and the
-    rest of the policy is validated; ``allowed_hosts`` is required when ``host`` can be set or ad-hoc is enabled. Any
-    problem is ``[E_POLICY]`` naming the key (the feature fails closed).
+    * ``allow_call_params`` **absent**: :data:`DEFAULT_POLICY` (D16). ``allowed_hosts``, ``allowed_ports``,
+      ``allowed_dialects``, ``allow_adhoc_connection`` and ``allow_call_literal_password`` in the same section still
+      narrow it (``allow_adhoc_connection: false`` or ``allow_call_literal_password: false`` switch those two off).
+    * ``allow_call_params`` **null or ``[]``**: :data:`STRICT_POLICY`, the feature is off and nothing else is looked at.
+    * ``allow_call_params`` **a list**: it replaces the default completely. Every entry must be an explicit field name
+      from :data:`FIELDS` (``"*"`` is refused); ``allowed_hosts`` is required when ``host`` can be set or ad-hoc is
+      enabled; the two flags default to false, as before D16.
+
+    Any problem is ``[E_POLICY]`` naming the key (the feature fails closed).
     """
     section = config.get("_policy") if isinstance(config, dict) else None
     if section is None:
         section = {}
     if not isinstance(section, dict):
         _fail("E_PROFILE_INVALID", "sqlx:_policy must be a mapping")
+    explicit = "allow_call_params" in section
     raw = section.get("allow_call_params")
-    if raw is None or raw == []:
-        return Policy(frozenset(), [], [], None, False, False, False)
-    if not isinstance(raw, list) or not all(isinstance(n, str) for n in raw):
-        _bad_policy("allow_call_params", "must be a list of field names")
-    unknown = [n for n in raw if n not in FIELDS]
-    if unknown:
-        _bad_policy("allow_call_params", "must list explicit field names (no '*', no unknown name)")
-    adhoc = _flag(section, "allow_adhoc_connection")
-    hosts = []
-    if "host" in raw or adhoc:
+    if explicit and (raw is None or raw == []):
+        return STRICT_POLICY
+    if explicit:
+        if not isinstance(raw, list) or not all(isinstance(n, str) for n in raw):
+            _bad_policy("allow_call_params", "must be a list of field names")
+        unknown = [n for n in raw if n not in FIELDS]
+        if unknown:
+            _bad_policy(
+                "allow_call_params", "must list explicit field names (no '*', no unknown name)"
+            )
+    adhoc = _flag(
+        section, "allow_adhoc_connection", DEFAULT_POLICY.adhoc if not explicit else False
+    )
+    allow = frozenset(raw) if explicit else DEFAULT_POLICY.allow
+    hosts = DEFAULT_POLICY.hosts
+    if section.get("allowed_hosts") is not None or (explicit and ("host" in raw or adhoc)):
         hosts = _parse_hosts(section.get("allowed_hosts"))
     ports = (
         _parse_ports(section["allowed_ports"]) if section.get("allowed_ports") is not None else []
@@ -224,18 +292,26 @@ def parse_policy(config):
         else None
     )
     return Policy(
-        frozenset(raw),
+        allow,
         hosts,
         ports,
         dialects,
         adhoc,
-        _flag(section, "allow_call_literal_password"),
-        _flag(section, "inherit_password"),
+        _flag(
+            section,
+            "allow_call_literal_password",
+            DEFAULT_POLICY.literal_password if not explicit else False,
+        ),
+        _flag(section, "inherit_password", False),
+        not explicit,
     )
 
 
 def require_enabled(config, names):
-    """``[E_POLICY]`` if ``names`` (call-time parameters, for the ``psql_query`` form) are given but the feature is off."""
+    """
+    ``[E_POLICY]`` if ``names`` (call-time parameters, for the ``psql_query`` form) are given but the operator turned
+    the feature off (``allow_call_params: []``). Returns the parsed :class:`Policy`.
+    """
     policy = parse_policy(config)
     if names and not policy.allow:
         _fail(
@@ -243,12 +319,13 @@ def require_enabled(config, names):
             f"call-time connection parameters are disabled ({', '.join(sorted(names))}); "
             "the operator enables fields with sqlx:_policy:allow_call_params",
         )
+    return policy
 
 
 # -- splitting the call -----------------------------------------------------------------------------------------------
 
 
-def prepare(function, kwargs, config):  # pylint: disable=unused-argument
+def prepare(function, kwargs, config):
     """
     Split the connection keywords off a call and choose the base profile.
 
@@ -301,6 +378,13 @@ def prepare(function, kwargs, config):  # pylint: disable=unused-argument
                 )
             out["profile"] = ADHOC_NAME
             adhoc = True
+        elif supplied:
+            missing = [k for k in _ADHOC_REQUIRED if k not in supplied]
+            _fail(
+                "E_OPTION_INVALID",
+                f"option 'profile' is required for sqlx.{function} unless the call sends a whole connection "
+                f"(dialect, host, database, username; missing: {', '.join(missing)})",
+            )
     return Call(out, supplied, adhoc)
 
 
@@ -357,12 +441,31 @@ def _lifted(ip, nets):
     return True
 
 
+def _check_host_default(text, port, resolver):
+    """D16 default (no ``allowed_hosts``): any host except link-local and cloud-metadata targets, by resolved address."""
+    literal = _address(text)
+    if literal is not None:
+        addresses = [literal]
+    else:
+        found = _lookup(resolver, text, port if _is_int(port) else 0, True)
+        addresses = [a for a in (_address(x) for x in found) if a is not None]
+    if any(_in(a, net) for a in addresses for net in _COMPAT_DENIED):
+        _fail(
+            "E_POLICY",
+            "'host' is a link-local or cloud-metadata address; the operator can allow it by "
+            "listing it in sqlx:_policy:allowed_hosts",
+        )
+
+
 def _check_host(host, port, policy, resolver):
     if not isinstance(host, str) or not host:
         _fail("E_OPTION_INVALID", "option 'host' must be a non-empty string")
     if not _HOST_RE.fullmatch(host):
         _fail("E_POLICY", "'host' must be a plain host name or IP address")
     text = host.lower().rstrip(".")
+    if policy.hosts is None:
+        _check_host_default(text, port, resolver)
+        return
     names = [v for k, v in policy.hosts if k == "name"]
     nets = [v for k, v in policy.hosts if k == "net"]
     name_ok = any(fnmatch.fnmatchcase(text, pattern) for pattern in names)
@@ -407,6 +510,8 @@ def _check_dialect(dialect, policy):
 def _text(key, value):
     if not isinstance(value, str) or not value:
         _fail("E_OPTION_INVALID", f"option '{key}' must be a non-empty string")
+    if "\x00" in value:
+        _fail("E_OPTION_INVALID", f"option '{key}' must not contain a NUL character")
     return value
 
 
@@ -445,7 +550,13 @@ def _merge(raw, supplied, policy):  # pylint: disable=too-many-branches
             out[key] = value  # type and range: profiles.validate_profile
         elif key == "password":
             if not isinstance(value, str) or not value:
-                _fail("E_OPTION_INVALID", "option 'password' must be a non-empty string")
+                _fail(
+                    "E_OPTION_INVALID",
+                    "option 'password' must be a non-empty string (the command line turns an all-digit "
+                    "password into a number: quote it as password='\"<digits>\"')",
+                )
+            if "\x00" in value:
+                _fail("E_OPTION_INVALID", "option 'password' must not contain a NUL character")
             if not value.startswith(_SDB_PREFIX) and not policy.literal_password:
                 _fail(
                     "E_POLICY",
@@ -538,6 +649,10 @@ def build_profile(call, name, config, resolver=None):
     profile = profiles.validate_profile(label, merged, config.get("_policy"))
     profile["call_overrides"] = sorted(supplied)
     profile["password_from_call"] = "password" in supplied
+    profile["adhoc"] = call.adhoc
+    # D16 hard rule: under the compat default a call that carries connection fields never runs ``execute``, even on a
+    # profile that sets ``allow_execute`` (the operator never agreed to let callers aim a writing profile elsewhere).
+    profile["execute_blocked"] = call.adhoc or policy.default
     # The driver must not fall back to the minion's own environment or password file for the target the caller chose
     # (libpq reads $PGPASSWORD and ~/.pgpass); ``dialects.PostgreSQL`` honours this marker.
     profile["password_dropped"] = (
