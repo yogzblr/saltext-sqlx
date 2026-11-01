@@ -7,6 +7,7 @@ saltext.demo VERSION v:
     saltext/demo/modules/demo_mod.py    execution module `demo`;  demo.version -> what each layer reports
 Entry point group `salt.loader` makes Salt scan the package for modules/ (exactly like saltext-sqlx).
 """
+
 import base64
 import hashlib
 import zipfile

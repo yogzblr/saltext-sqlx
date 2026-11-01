@@ -12,6 +12,7 @@ MARKER_JSON  where the pins that were applied successfully are recorded (written
 Exit status: 0 = ok (stdout: {"changed": "yes"|"no", "comment": "..."}), 1 = failed (reason on stderr, marker untouched).
 Standard library only; it must run in the Salt onedir Python on Linux and Windows. On success nothing is written to stderr.
 """
+
 import argparse
 import hashlib
 import json
@@ -23,10 +24,12 @@ import sys
 from importlib import metadata
 
 try:  # pip vendors it; the standalone packaging may be absent in a onedir
-    from packaging.version import InvalidVersion, Version
+    from packaging.version import InvalidVersion
+    from packaging.version import Version
 except ImportError:  # pragma: no cover
     try:
-        from pip._vendor.packaging.version import InvalidVersion, Version
+        from pip._vendor.packaging.version import InvalidVersion
+        from pip._vendor.packaging.version import Version
     except ImportError:
         Version = None
 
@@ -117,7 +120,9 @@ def pending(pins, applied):
     todo = {}
     for spec, want in pins.items():
         name, _ = split_spec(spec)
-        if not same_version(installed_version(name), want) or not same_version(applied.get(spec), want):
+        if not same_version(installed_version(name), want) or not same_version(
+            applied.get(spec), want
+        ):
             todo[spec] = want
     return todo
 
@@ -135,16 +140,23 @@ def pip_env(target):
 
 def run_pip(args, target):
     cmd = [sys.executable, "-m", "pip"] + args
-    return subprocess.run(cmd, capture_output=True, text=True, check=False, env=pip_env(target), timeout=1800)
+    return subprocess.run(
+        cmd, capture_output=True, text=True, check=False, env=pip_env(target), timeout=1800
+    )
 
 
 def prune_stale_dist_info(target, name, want):
     """`pip install --target DIR --upgrade` replaces the package folder but leaves the OLD <name>-<old>.dist-info next to the new one,
-    and importlib.metadata may then report the old version forever (found by test_target_directory_install_like_salt_pip)."""
+    and importlib.metadata may then report the old version forever (found by test_target_directory_install_like_salt_pip).
+    """
     norm = re.sub(r"[-_.]+", "_", name).lower()
     for entry in os.listdir(target):
         m = re.match(r"^(.+)-([^-]+)\.dist-info$", entry)
-        if m and re.sub(r"[-_.]+", "_", m.group(1)).lower() == norm and not same_version(m.group(2), want):
+        if (
+            m
+            and re.sub(r"[-_.]+", "_", m.group(1)).lower() == norm
+            and not same_version(m.group(2), want)
+        ):
             shutil.rmtree(os.path.join(target, entry), ignore_errors=True)
 
 
@@ -177,11 +189,22 @@ def main(argv=None):
     if args.check:
         return 0 if not todo else 1
     if not todo:
-        print(json.dumps({"changed": "no", "comment": "saltext packages already at the pinned versions"}))
+        print(
+            json.dumps(
+                {"changed": "no", "comment": "saltext packages already at the pinned versions"}
+            )
+        )
         return 0
 
     verify_checksums(args.wheels)
-    pip_args = ["install", "--no-index", "--find-links", args.wheels, "--only-binary=:all:", "--no-input"]
+    pip_args = [
+        "install",
+        "--no-index",
+        "--find-links",
+        args.wheels,
+        "--only-binary=:all:",
+        "--no-input",
+    ]
     if target:
         pip_args += ["--target", target, "--upgrade"]
     pip_args += [f"{spec}=={want}" for spec, want in sorted(todo.items())]
@@ -190,12 +213,24 @@ def main(argv=None):
         raise ApplyError("pip install failed:\n" + (res.stdout[-2000:] + res.stderr[-2000:]))
     chk = run_pip(["check"], target)
     if chk.returncode != 0:
-        raise ApplyError("pip check failed after the install (broken dependency set; marker NOT written):\n" + chk.stdout[-2000:] + chk.stderr[-1000:])
+        raise ApplyError(
+            "pip check failed after the install (broken dependency set; marker NOT written):\n"
+            + chk.stdout[-2000:]
+            + chk.stderr[-1000:]
+        )
     if target:
         for spec, want in todo.items():
             prune_stale_dist_info(target, split_spec(spec)[0], want)
     write_marker(args.marker, pins)
-    print(json.dumps({"changed": "yes", "comment": f"installed {len(todo)} package(s)", "installed": dict(sorted(todo.items()))}))
+    print(
+        json.dumps(
+            {
+                "changed": "yes",
+                "comment": f"installed {len(todo)} package(s)",
+                "installed": dict(sorted(todo.items())),
+            }
+        )
+    )
     return 0
 
 

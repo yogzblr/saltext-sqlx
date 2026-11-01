@@ -1,4 +1,5 @@
 """Shared fixtures for the deploy/ tests. See deploy/tests/README.md."""
+
 import base64
 import hashlib
 import json
@@ -19,8 +20,12 @@ STATE_ROOT = DEPLOY / "salt"
 
 
 def pytest_configure(config):
-    config.addinivalue_line("markers", "needs_wheelhouse: needs a built wheelhouse (env SALTEXTS_WHEELHOUSE)")
-    config.addinivalue_line("markers", "needs_salt: needs `salt` importable in the interpreter running pytest")
+    config.addinivalue_line(
+        "markers", "needs_wheelhouse: needs a built wheelhouse (env SALTEXTS_WHEELHOUSE)"
+    )
+    config.addinivalue_line(
+        "markers", "needs_salt: needs `salt` importable in the interpreter running pytest"
+    )
 
 
 def _wheel_bytes(name, version, requires=(), extras=None, body=""):
@@ -88,17 +93,33 @@ class Env:
     def __init__(self, root: Path):
         self.root = root
         venv.EnvBuilder(with_pip=True, clear=True).create(root)
-        self.python = root / ("Scripts" if os.name == "nt" else "bin") / ("python.exe" if os.name == "nt" else "python")
-        stub = subprocess.run([sys.executable, str(TOOL), "stub", str(root / "stubdir")], check=True, capture_output=True, text=True)
+        self.python = (
+            root
+            / ("Scripts" if os.name == "nt" else "bin")
+            / ("python.exe" if os.name == "nt" else "python")
+        )
+        stub = subprocess.run(
+            [sys.executable, str(TOOL), "stub", str(root / "stubdir")],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
         self.pip("install", "--no-index", "--find-links", str(root / "stubdir"), "salt")
 
     def pip(self, *args, check=True):
-        return subprocess.run([str(self.python), "-m", "pip", "--disable-pip-version-check", *args],
-                              capture_output=True, text=True, check=check)
+        return subprocess.run(
+            [str(self.python), "-m", "pip", "--disable-pip-version-check", *args],
+            capture_output=True,
+            text=True,
+            check=check,
+        )
 
     def version(self, name):
-        r = subprocess.run([str(self.python), "-c", f"import importlib.metadata as m;print(m.version({name!r}))"],
-                           capture_output=True, text=True)
+        r = subprocess.run(
+            [str(self.python), "-c", f"import importlib.metadata as m;print(m.version({name!r}))"],
+            capture_output=True,
+            text=True,
+        )
         return r.stdout.strip() if r.returncode == 0 else None
 
     def apply(self, pins, wheels, marker, *extra, pins_file=None, env=None):
@@ -106,8 +127,12 @@ class Env:
         Path(pins_file).write_text(json.dumps(pins), encoding="utf-8")
         e = dict(os.environ)
         e.update(env or {})
-        return subprocess.run([str(self.python), str(APPLY), str(pins_file), str(wheels), str(marker), *extra],
-                              capture_output=True, text=True, env=e)
+        return subprocess.run(
+            [str(self.python), str(APPLY), str(pins_file), str(wheels), str(marker), *extra],
+            capture_output=True,
+            text=True,
+            env=e,
+        )
 
 
 @pytest.fixture
@@ -129,7 +154,9 @@ def wheelhouse_root():
 def real_wheelhouse():
     root = wheelhouse_root()
     if root is None or not (root / "VERSIONS.json").exists():
-        pytest.skip("set SALTEXTS_WHEELHOUSE to the OUT directory of build_wheelhouse.sh (needs VERSIONS.json)")
+        pytest.skip(
+            "set SALTEXTS_WHEELHOUSE to the OUT directory of build_wheelhouse.sh (needs VERSIONS.json)"
+        )
     return root
 
 

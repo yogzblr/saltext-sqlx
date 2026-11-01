@@ -10,6 +10,7 @@ Why a stub for `salt`: every Salt extension declares `salt>=...` as a dependency
 `pip download --only-binary=:all:` cannot resolve it, and the minions already have Salt (that is where the extension runs).
 The stub is used ONLY at build time to let the resolver finish; it is never copied into the wheelhouse.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -92,7 +93,10 @@ def cmd_versions(args) -> int:
         "own": own,
         "targets": targets,
         "pillar_hint": {
-            "saltexts": {"python": args.pyver, "packages": {f"{k}[<extras>]": v for k, v in own.items()}},
+            "saltexts": {
+                "python": args.pyver,
+                "packages": {f"{k}[<extras>]": v for k, v in own.items()},
+            },
         },
     }
     Path(args.out).write_text(json.dumps(doc, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -165,7 +169,9 @@ def cmd_licences(args) -> int:
         Path(args.markdown).write_text(report, encoding="utf-8")
     lgpl = sorted(k for k, v in rows.items() if v[1] == "LGPL")
     unknown = sorted(k for k, v in rows.items() if v[0] == "UNKNOWN")
-    print(f"{len(rows)} distinct wheels; LGPL (accepted, unmodified pip packages): {', '.join(lgpl) or 'none'}")
+    print(
+        f"{len(rows)} distinct wheels; LGPL (accepted, unmodified pip packages): {', '.join(lgpl) or 'none'}"
+    )
     if unknown:
         print(f"WARNING: no licence metadata: {', '.join(unknown)}", file=sys.stderr)
     if bad:
@@ -176,7 +182,9 @@ def cmd_licences(args) -> int:
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     sub = ap.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("stub")
     p.add_argument("outdir")

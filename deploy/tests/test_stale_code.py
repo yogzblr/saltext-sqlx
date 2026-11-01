@@ -7,6 +7,7 @@ The extension is demo_ext.py (v1 -> v2). `demo.version` reports, per layer, whic
   late_at_call    saltext/demo/lib/late.py   (imported inside the function, at first call)
   pid             the process that executed the call
 """
+
 import json
 import os
 import shutil
@@ -18,7 +19,6 @@ import venv
 from pathlib import Path
 
 import pytest
-
 from conftest import write_sums
 from demo_ext import make_demo_wheel
 
@@ -28,8 +28,14 @@ pytest.importorskip("saltfactories")
 def _venv(root: Path) -> Path:
     venv.EnvBuilder(with_pip=True, clear=True).create(root)
     py = root / "bin" / "python"
-    sp = subprocess.run([str(py), "-c", "import sysconfig;print(sysconfig.get_paths()['purelib'])"], capture_output=True, text=True).stdout.strip()
-    (Path(sp) / "zz_salt.pth").write_text("\n".join(p for p in site.getsitepackages() if Path(p).exists()) + "\n")
+    sp = subprocess.run(
+        [str(py), "-c", "import sysconfig;print(sysconfig.get_paths()['purelib'])"],
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    (Path(sp) / "zz_salt.pth").write_text(
+        "\n".join(p for p in site.getsitepackages() if Path(p).exists()) + "\n"
+    )
     return py
 
 
@@ -43,8 +49,21 @@ def rig(tmp_path_factory, salt_factories):
     py = _venv(base / "venv")
 
     def pip(*a):
-        r = subprocess.run([str(py), "-m", "pip", "install", "--no-index", "--find-links", str(wh), "--disable-pip-version-check", *a],
-                           capture_output=True, text=True)
+        r = subprocess.run(
+            [
+                str(py),
+                "-m",
+                "pip",
+                "install",
+                "--no-index",
+                "--find-links",
+                str(wh),
+                "--disable-pip-version-check",
+                *a,
+            ],
+            capture_output=True,
+            text=True,
+        )
         assert r.returncode == 0, r.stderr
         return r
 
@@ -56,7 +75,17 @@ def rig(tmp_path_factory, salt_factories):
         minion.start()
         master.salt_key_cli().run("-a", minion.id, "-y")
         try:
-            yield type("Rig", (), {"master": master, "minion": minion, "py": py, "pip": staticmethod(pip), "base": base})
+            yield type(
+                "Rig",
+                (),
+                {
+                    "master": master,
+                    "minion": minion,
+                    "py": py,
+                    "pip": staticmethod(pip),
+                    "base": base,
+                },
+            )
         finally:
             minion.terminate()
 
@@ -72,9 +101,16 @@ def version(rig):
 
 def salt_call_local_version(rig):
     """A NEW process (what `salt-call` or a freshly started minion does): always imports from disk."""
-    r = subprocess.run([str(rig.py), "-c", "from saltext.demo import __version__ as a; from saltext.demo.lib import helper, late; "
-                        "import json; print(json.dumps({'package_init': a, 'helper': helper.VERSION, 'late': late.VERSION}))"],
-                       capture_output=True, text=True)
+    r = subprocess.run(
+        [
+            str(rig.py),
+            "-c",
+            "from saltext.demo import __version__ as a; from saltext.demo.lib import helper, late; "
+            "import json; print(json.dumps({'package_init': a, 'helper': helper.VERSION, 'late': late.VERSION}))",
+        ],
+        capture_output=True,
+        text=True,
+    )
     return json.loads(r.stdout)
 
 
@@ -82,7 +118,11 @@ def test_stale_code_after_upgrade_without_restart(rig):
     out = {}
     out["1_before_upgrade"] = version(rig)
     assert {k: v for k, v in out["1_before_upgrade"].items() if k not in ("pid", "ppid")} == {
-        "module_file": "1.0.0", "package_init": "1.0.0", "helper_at_load": "1.0.0", "late_at_call": "1.0.0"}
+        "module_file": "1.0.0",
+        "package_init": "1.0.0",
+        "helper_at_load": "1.0.0",
+        "late_at_call": "1.0.0",
+    }
     minion_pid = rig.minion.pid
     rig.pip("saltext.demo==2.0.0")
     out["2_new_process_on_same_disk"] = salt_call_local_version(rig)
@@ -102,15 +142,35 @@ def test_stale_code_after_upgrade_without_restart(rig):
     # OBSERVED (Salt 3008.5, Python 3.14, Linux): a job is a child of the minion process and loads the module itself, so it already runs
     # the NEW module file and the NEW submodules the parent never imported. What stays OLD is everything the minion's main process had
     # imported before the upgrade: here saltext/demo/__init__.py (the entry-point scan imports the package to find its directory).
-    for k in ("3_job_after_upgrade_no_refresh", "4_job_after_refresh_modules", "5_job_after_sync_all"):
-        assert out[k]["module_file"] == "2.0.0" and out[k]["helper_at_load"] == "2.0.0" and out[k]["late_at_call"] == "2.0.0"
-        assert out[k]["package_init"] == "1.0.0", "the package __init__ is stale in job processes (inherited from the running minion)"
-    assert all(p == minion_pid for p in out["job_ppids"]) or True  # recorded in the output; the parent may be a worker process
+    for k in (
+        "3_job_after_upgrade_no_refresh",
+        "4_job_after_refresh_modules",
+        "5_job_after_sync_all",
+    ):
+        assert (
+            out[k]["module_file"] == "2.0.0"
+            and out[k]["helper_at_load"] == "2.0.0"
+            and out[k]["late_at_call"] == "2.0.0"
+        )
+        assert (
+            out[k]["package_init"] == "1.0.0"
+        ), "the package __init__ is stale in job processes (inherited from the running minion)"
+    assert (
+        all(p == minion_pid for p in out["job_ppids"]) or True
+    )  # recorded in the output; the parent may be a worker process
     # restart: the only thing that makes the daemon's own process tree use the new code
     rig.minion.terminate()
     rig.minion.start()
     out["6_job_after_restart"] = version(rig)
     print("STALE-CODE AFTER RESTART " + json.dumps(out["6_job_after_restart"]))
     assert {k: v for k, v in out["6_job_after_restart"].items() if k not in ("pid", "ppid")} == {
-        "module_file": "2.0.0", "package_init": "2.0.0", "helper_at_load": "2.0.0", "late_at_call": "2.0.0"}
-    assert out["2_new_process_on_same_disk"] == {"package_init": "2.0.0", "helper": "2.0.0", "late": "2.0.0"}
+        "module_file": "2.0.0",
+        "package_init": "2.0.0",
+        "helper_at_load": "2.0.0",
+        "late_at_call": "2.0.0",
+    }
+    assert out["2_new_process_on_same_disk"] == {
+        "package_init": "2.0.0",
+        "helper": "2.0.0",
+        "late": "2.0.0",
+    }
