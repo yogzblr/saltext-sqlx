@@ -89,7 +89,7 @@ docs = [
 ]
 docsauto = ["sphinx-autobuild"]
 lint = [
-    "pylint==4.0.4",
+    "pylint==4.0.9",
 ]
 tests = [
     "pg8000>=1.31.5,<1.32",
