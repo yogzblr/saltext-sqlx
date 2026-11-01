@@ -1,0 +1,65 @@
+# syntax=docker/dockerfile:1.7
+# Salt master image that carries the offline wheelhouse, the saltexts state, the orchestration and the pillar.
+#
+# NOT BUILT IN THE SANDBOX (no container registry is reachable there). Reviewed line by line; see deploy/README.md "What is verified".
+#
+# Build context = the REPOSITORY ROOT (paths below are relative to it):
+#   docker build -f deploy/Dockerfile.master \
+#     --build-arg SQLX_VERSION=0.1.0 --build-arg KAFKA_REPO=https://github.com/<org>/saltext-kafka --build-arg KAFKA_REF=v1.0.0 \
+#     --build-arg KAFKA_VERSION=1.0.0 -t salt-master-saltexts:0.1.0 .
+#
+# There is no official `saltproject/salt` image on Docker Hub (tests-e2e/salt/Dockerfile checked this on 2026-10-31), so the master is
+# built from the Salt Project onedir tarball, the same artefact the salt-master package ships. Salt 3008.x onedir = Python 3.14,
+# which is what the wheelhouse is built for (PYVER); Salt 3006.27+/3007.15+ ship 3.11: build with --build-arg PYVER=3.11.
+
+ARG PYVER=3.14
+ARG SALT_VERSION=3008.5
+
+# ---- stage 1: OUR OWN pure-Python wheels, built once (platform independent) --------------------------------------------------
+FROM python:${PYVER}-slim AS own
+ARG SQLX_REPO=https://github.com/yogzblr/saltext-sqlx
+ARG SQLX_REF=main
+ARG SQLX_VERSION
+# KAFKA_*: the package that provides `saltext.kafka`. The default is the UPSTREAM salt-extensions/saltext-kafka and is a TEST STAND-IN
+# ONLY (administration only, cannot read messages); production builds MUST pass our own repository. Never both: same namespace.
+ARG KAFKA_REPO=https://github.com/salt-extensions/saltext-kafka
+ARG KAFKA_REF=main
+ARG KAFKA_VERSION
+RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates && rm -rf /var/lib/apt/lists/*
+COPY deploy/wheelhouse/build_own_wheels.sh /usr/local/bin/build_own_wheels.sh
+RUN test -n "$SQLX_VERSION" -a -n "$KAFKA_VERSION" || { echo "pass --build-arg SQLX_VERSION=... and KAFKA_VERSION=... (the wheels are stamped explicitly)"; exit 1; } \
+ && python -m pip install --no-cache-dir "pip>=24" setuptools wheel \
+ && OWN=/own SQLX_REPO="$SQLX_REPO" SQLX_REF="$SQLX_REF" SQLX_VERSION="$SQLX_VERSION" \
+    KAFKA_REPO="$KAFKA_REPO" KAFKA_REF="$KAFKA_REF" KAFKA_VERSION="$KAFKA_VERSION" bash /usr/local/bin/build_own_wheels.sh
+
+# ---- stage 2: every dependency as a wheel for every target (fails if any package lacks a wheel for a target) --------------------
+FROM python:${PYVER}-slim AS wheelhouse
+ARG PYVER
+COPY --from=own /own /own
+COPY deploy/wheelhouse /wh
+RUN python -m pip install --no-cache-dir "pip>=24" \
+ && PYVER="${PYVER}" OWN=/own OUT=/out REQ=/wh/requirements bash /wh/build_wheelhouse.sh
+
+# ---- stage 3: the master ------------------------------------------------------------------------------------------------------
+FROM debian:bookworm-slim AS master
+ARG SALT_VERSION
+ARG SALT_ONEDIR_URL=https://packages.broadcom.com/artifactory/saltproject-generic/onedir/${SALT_VERSION}/salt-${SALT_VERSION}-onedir-linux-x86_64.tar.xz
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl xz-utils procps && rm -rf /var/lib/apt/lists/* \
+ && mkdir -p /opt/saltstack \
+ && curl -fsSL "$SALT_ONEDIR_URL" | tar -xJ -C /opt/saltstack \
+ && for b in salt salt-call salt-key salt-master salt-run; do ln -s /opt/saltstack/salt/$b /usr/local/bin/$b; done \
+ && salt-call --version
+
+# file_roots=/srv/salt, pillar_roots=/srv/pillar (deploy/master.d/roots.conf). The image's master reads /etc/salt/master.d/*.conf.
+COPY deploy/master.d/roots.conf /etc/salt/master.d/roots.conf
+# The hourly convergence is shipped DISABLED: copy it to /etc/salt/master.d/ (mount a volume) after the first full rollout converged.
+COPY deploy/master.d/saltexts-schedule.conf /usr/share/saltexts/saltexts-schedule.conf.disabled
+COPY deploy/salt /srv/salt
+COPY deploy/pillar /srv/pillar
+COPY --from=wheelhouse /out /srv/salt/saltexts/wheels
+# wheels are read-only for everybody but root: a minion can only read what the master serves
+RUN chmod -R go-w /srv/salt /srv/pillar
+VOLUME ["/etc/salt/pki", "/var/cache/salt", "/var/log/salt"]
+EXPOSE 4505 4506
+ENTRYPOINT ["/opt/saltstack/salt/salt-master"]
+CMD ["-l", "info"]

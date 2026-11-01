@@ -1,0 +1,4 @@
+# Appended to requirements.common.txt by build_wheelhouse.sh. Lines naming one of OUR wheels (in $OWN) get ==<its version>.
+saltext-sqlx[postgres,mysql,oracle,mssql]
+saltext-kafka
+psycopg[binary]==3.3.6

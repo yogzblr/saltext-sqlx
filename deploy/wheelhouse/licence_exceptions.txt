@@ -1,0 +1,1 @@
+# Package names (one per line) whose GPL-looking licence metadata was reviewed by a human and accepted. Keep empty if possible.
