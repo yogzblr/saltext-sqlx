@@ -67,13 +67,6 @@ def _run(function, work, kwargs):  # pylint: disable=inconsistent-return-stateme
             raise CommandExecutionError(
                 f"[E_EXECUTE_DISABLED] profile '{profile['name']}' does not set allow_execute: true"
             )
-        if function == "execute" and profile.get("execute_blocked"):
-            # An ad-hoc connection never writes, and under the default call policy (D16) neither does a call that
-            # carries connection fields. Checked after the generic refusal so both read the same for an ad-hoc call.
-            raise CommandExecutionError(
-                f"[E_EXECUTE_DISABLED] profile '{profile['name']}' cannot execute with connection "
-                "parameters in the call (sqlx:_policy:allow_call_params lists them explicitly to allow it)"
-            )
         resolved = overrides.resolve_secrets(profile, __salt__["sdb.get"])
         _MASK.add_secret(resolved.get("password"))
         result = work(options.apply_caps(opts, profile), resolved)

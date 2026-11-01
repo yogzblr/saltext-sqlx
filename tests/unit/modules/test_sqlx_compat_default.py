@@ -203,12 +203,10 @@ def test_execute_with_an_ad_hoc_connection_is_refused(fake):
 @pytest.mark.parametrize(
     "kw", [{"database": "x"}, {"host": "10.2.2.2"}, {"password": LITERAL}, {"username": "x"}]
 )
-def test_execute_on_a_writing_profile_refuses_connection_fields_under_the_default(fake, kw):
-    with pytest.raises(
-        CommandExecutionError, match=r"^\[E_EXECUTE_DISABLED\].*parameters in the call"
-    ):
-        mod.execute(profile="pg_rw", sql="update t set a = 1", **kw)
-    assert fake.connections == [] and fake.executes == []
+def test_execute_on_a_writing_profile_works_with_connection_fields(fake, kw):
+    """Not restricted: Salt's own psql_query writes whatever connection the call names; ``allow_execute`` is the profile's."""
+    assert mod.execute(profile="pg_rw", sql="update t set a = 1", **kw)["rows_affected"] == 3
+    assert len(fake.connections) == 1
 
 
 def test_execute_on_a_writing_profile_without_fields_still_works(fake):

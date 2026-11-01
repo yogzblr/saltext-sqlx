@@ -510,8 +510,6 @@ def _check_dialect(dialect, policy):
 def _text(key, value):
     if not isinstance(value, str) or not value:
         _fail("E_OPTION_INVALID", f"option '{key}' must be a non-empty string")
-    if "\x00" in value:
-        _fail("E_OPTION_INVALID", f"option '{key}' must not contain a NUL character")
     return value
 
 
@@ -555,8 +553,6 @@ def _merge(raw, supplied, policy):  # pylint: disable=too-many-branches
                     "option 'password' must be a non-empty string (the command line turns an all-digit "
                     "password into a number: quote it as password='\"<digits>\"')",
                 )
-            if "\x00" in value:
-                _fail("E_OPTION_INVALID", "option 'password' must not contain a NUL character")
             if not value.startswith(_SDB_PREFIX) and not policy.literal_password:
                 _fail(
                     "E_POLICY",
@@ -650,9 +646,6 @@ def build_profile(call, name, config, resolver=None):
     profile["call_overrides"] = sorted(supplied)
     profile["password_from_call"] = "password" in supplied
     profile["adhoc"] = call.adhoc
-    # D16 hard rule: under the compat default a call that carries connection fields never runs ``execute``, even on a
-    # profile that sets ``allow_execute`` (the operator never agreed to let callers aim a writing profile elsewhere).
-    profile["execute_blocked"] = call.adhoc or policy.default
     # The driver must not fall back to the minion's own environment or password file for the target the caller chose
     # (libpq reads $PGPASSWORD and ~/.pgpass); ``dialects.PostgreSQL`` honours this marker.
     profile["password_dropped"] = (

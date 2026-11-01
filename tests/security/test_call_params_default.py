@@ -7,8 +7,8 @@ for a cleartext password, every error path with the secrets in the call):
 
 * a link-local / cloud-metadata target never gets a connection, whatever its spelling, and no secret is resolved first;
 * the password of a profile never follows a retargeted call; the minion's libpq environment is not offered either;
-* an ad-hoc connection can never ``execute`` (nor ``psql_query write=True``), and neither can a call that carries
-  connection fields on a writing profile;
+* an ad-hoc connection can never ``execute`` (nor ``psql_query write=True``); a writing profile still executes with
+  connection fields in the call (as in Salt; ``allow_execute`` is the profile's);
 * callers cannot raise caps, set ``allow_execute`` / ``error_detail`` / ``read_only=False``, or weaken TLS;
 * a literal password is on no error path, audit line or log record;
 * every behaviour above is the SAME as before D16 once the operator sets ``allow_call_params: []`` (mirror tests).
@@ -245,22 +245,14 @@ def test_an_ad_hoc_connection_can_never_write(cfg, connects, fake, call):
     "fields",
     [{"host": HOST}, {"database": "x"}, {"username": "x"}, {"password": LITERAL}, {"port": 5}],
 )
-def test_a_writing_profile_does_not_execute_when_the_call_carries_connection_fields(
+def test_a_writing_profile_may_execute_when_the_call_carries_connection_fields(
     cfg, connects, fake, fields
 ):
-    with pytest.raises(CommandExecutionError, match=r"^\[E_EXECUTE_DISABLED\]"):
+    """Same as Salt's psql_query: the call may name the connection; ``allow_execute`` still comes only from the profile."""
+    with pytest.raises((CommandExecutionError, SaltInvocationError)) as exc:
         mod.execute(profile="writer", sql="insert into t values (1)", **fields)
-    with pytest.raises(CommandExecutionError, match=r"^\[E_EXECUTE_DISABLED\]"):
-        mod.psql_query(
-            "insert into t values (1)",
-            profile="writer",
-            write=True,
-            **{
-                {"database": "maintenance_db", "username": "user"}.get(k, k): v
-                for k, v in fields.items()
-            },
-        )
-    assert connects == [] and fake.accepted == 0
+    assert not str(exc.value).startswith("[E_EXECUTE_DISABLED]")  # it reached the connection
+    assert connects
 
 
 def test_a_writing_profile_still_executes_without_connection_fields(cfg, connects):

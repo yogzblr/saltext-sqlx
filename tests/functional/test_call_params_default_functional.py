@@ -145,7 +145,8 @@ def test_an_ad_hoc_connection_cannot_write_even_with_the_rw_account(cfg, server)
     assert server.admin_run(f"select count(*) from {server.table} where k = 'zz'")[0][0] == 0
 
 
-def test_a_writing_profile_with_connection_fields_does_not_write(cfg, server):
+def test_a_writing_profile_writes_with_connection_fields_in_the_call(cfg, server):
+    """As in Salt: the call may name the connection; ``allow_execute`` is the profile's, not the call's."""
     cfg["profiles"] = {
         "w": {
             "dialect": server.dialect,
@@ -159,13 +160,13 @@ def test_a_writing_profile_with_connection_fields_does_not_write(cfg, server):
         }
     }
     sql = f"insert into {server.table} (k, n) values ('yy', 8)"
-    with pytest.raises(CommandExecutionError, match=r"^\[E_EXECUTE_DISABLED\]"):
-        mod.execute(profile="w", sql=sql, database=server.cfg["database"])
-    assert server.admin_run(f"select count(*) from {server.table} where k = 'yy'")[0][0] == 0
-    out = mod.execute(profile="w", sql=sql)  # no connection fields: the profile as configured
+    out = mod.execute(profile="w", sql=sql, database=server.cfg["database"])
     assert out["rows_affected"] == 1 and out["committed"] is True
     assert server.admin_run(f"select count(*) from {server.table} where k = 'yy'")[0][0] == 1
     server.admin_run(f"delete from {server.table} where k = 'yy'")
+    with pytest.raises(CommandExecutionError, match=r"^\[E_EXECUTE_DISABLED\]"):
+        mod.execute(sql=sql, **conn(server))  # no profile: nothing says writes are allowed
+    assert server.admin_run(f"select count(*) from {server.table} where k = 'yy'")[0][0] == 0
 
 
 def test_caps_stay_the_hard_defaults(cfg, server):

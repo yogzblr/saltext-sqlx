@@ -211,14 +211,14 @@ def test_read_only_and_timeouts_cannot_be_changed_by_default_but_read_only_stays
     assert code(exc) == "[E_POLICY]"
 
 
-def test_ad_hoc_and_default_policy_calls_are_marked_unable_to_execute():
-    assert go(nopolicy(), dict(ADHOC))["execute_blocked"] is True  # ad-hoc: never
-    # a profile with allow_execute plus ANY connection field: blocked under the default (D16) ...
-    assert go(nopolicy(), {"profile": "pg_rw", "database": "x"})["execute_blocked"] is True
-    # ... but not when the operator listed the fields explicitly (the old opt-in contract), and not without fields
-    explicit = nopolicy(allow_call_params=["database"])
-    assert go(explicit, {"profile": "pg_rw", "database": "x"})["execute_blocked"] is False
-    assert "execute_blocked" not in go(nopolicy(), {"profile": "pg_rw"})
+def test_ad_hoc_has_no_allow_execute_but_a_writing_profile_keeps_it_with_connection_fields():
+    """Salt allows a write through psql_query whatever the call sends; sqlx keeps ``allow_execute`` a property of the profile."""
+    assert (
+        go(nopolicy(), dict(ADHOC))["allow_execute"] is False
+    )  # no profile, nothing says writes are allowed
+    for fields in ({"database": "x"}, {"host": "10.2.2.2"}, {"username": "x"}):
+        assert go(nopolicy(), dict({"profile": "pg_rw"}, **fields))["allow_execute"] is True
+    assert "execute_blocked" not in go(nopolicy(), {"profile": "pg_rw", "database": "x"})
 
 
 def test_the_profile_password_is_dropped_when_the_target_changes():
@@ -495,10 +495,10 @@ def test_a_numeric_password_message_tells_how_to_quote_it():
 
 
 @pytest.mark.parametrize("field", ["password", "database", "username"])
-def test_a_nul_character_is_refused(field):
-    with pytest.raises(SaltInvocationError) as exc:
-        go(nopolicy(), dict(ADHOC, **{field: "a\x00b"}))
-    assert code(exc) == "[E_OPTION_INVALID]" and "\x00" not in str(exc.value)
+def test_a_nul_character_in_a_connection_field_is_left_to_the_driver_and_the_database(field):
+    """Whether a NUL is acceptable differs per database and driver, so sqlx does not judge it (the real error comes back)."""
+    prof = go(nopolicy(), dict(ADHOC, **{field: "a\x00b"}))
+    assert prof[field] == "a\x00b"
 
 
 def test_no_refusal_message_contains_a_password_a_reference_or_a_host():

@@ -160,7 +160,7 @@ salt-call --local sqlx.ping dialect=postgresql host=169.254.169.254 database=d u
 What the default does not open: `ssl_mode`, `ssl_certs_dir`, `ssl_files`, `query`, `connect_args`, `read_only` and the
 timeouts are not accepted from a call (`[E_POLICY]`); `allow_execute`, `execute_verbs`, `error_detail`, `row_limit` and
 `_policy` are never call keywords; caps and timeouts can only be lowered; a call without a profile can never run `execute`
-(nor `psql_query write=True`), and neither can a call that carries connection fields on a writing profile; a retargeted
+(nor `psql_query write=True`); a writing profile keeps working with connection fields in the call; a retargeted
 connection never receives the profile's password; link-local and cloud-metadata addresses (`169.254.0.0/16`, `fe80::/10`,
 `fd00:ec2::254`, `100.100.100.200`) are refused on the resolved address. Loopback and private addresses are allowed.
 

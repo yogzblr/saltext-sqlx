@@ -75,7 +75,7 @@ Notes:
 | Way | The call sends | The operator configures | Can run `execute` |
 |---|---|---|---|
 | **Connection in the call (the default)** | `dialect`, `host`, `database`, `username`, usually `port` and `password` (a literal, or `sdb://...`, which is recommended); no profile | nothing | **never** |
-| Profile plus call-time fields (default) | `profile=` and the fields to change (`host=`, `database=`, `password=`, ...) | the profile | only for the profile's own target: a call that carries connection fields is refused by `execute` unless the operator lists the fields (section 3.2) |
+| Profile plus call-time fields (default) | `profile=` and the fields to change (`host=`, `database=`, `password=`, ...) | the profile | only if the profile sets `allow_execute: true`; connection fields in the call do not change that (as in Salt), so a call that aims a writing profile elsewhere writes there with the caller's credentials |
 | Profile | `profile=orders_pg` | the profile (host, account, `sdb://` password, limits) | only if the profile sets `allow_execute: true` |
 
 All three work on the same minion with no `sqlx:_policy`. To restrict where a minion may connect or to go back to
@@ -219,7 +219,7 @@ What the default does and does not do:
   `psql_query write=True`); set `row_limit`, `allow_execute`, `execute_verbs`, `error_detail` or `_policy`
   (`[E_OPTION_UNKNOWN]`); raise a timeout or a cap (only lower); turn `read_only` off; weaken `ssl_mode`. With the default,
   `ssl_mode`, `ssl_certs_dir`, `ssl_files`, `query`, `connect_args`, `read_only` and the timeouts are not accepted from a call
-  (`[E_POLICY]`). Keep writes on a profile, and call that profile without connection fields.
+  (`[E_POLICY]`). Keep writes on a profile with its own write-capable account; if callers must not aim that profile at another target, the operator narrows the call fields (`allow_call_params: []` or a shorter list, `allowed_hosts`).
 - The return names the connection as `"profile": "(adhoc)"`; the minion's audit log line records which fields came from the
   call and the target `host:port`, never a password.
 
