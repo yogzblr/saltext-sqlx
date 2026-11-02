@@ -10,6 +10,8 @@ Salt extension to run SQL on PostgreSQL, MySQL/MariaDB, Oracle and SQL Server vi
 
   topics/installation
   USER_GUIDE
+  SALT_API_QUICK
+  SALT_API
 
 .. toctree::
   :maxdepth: 2

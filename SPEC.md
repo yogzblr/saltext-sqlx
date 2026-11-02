@@ -68,7 +68,7 @@ failure is `[E_PROFILE_INVALID]`, names keys only and never contains a value.
 | Key | Rule |
 |---|---|
 | unknown key | rejected |
-| `dialect` | **required**; one of `postgresql`, `mysql`, `oracle`, `mssql` (section 7; whether `mariadb` becomes a fifth value is D10) |
+| `dialect` | **required**; one of `postgresql`, `mysql`, `oracle`, `mssql` (section 7). `mariadb` is **not** a profile value (`[E_PROFILE_INVALID]`); it is accepted only as the `dialect` of a call or in `allowed_dialects`, where it means `mysql` (D10) |
 | `driver` | optional; defaults to the first driver of the dialect (`postgresql` **pg8000**, alternative `psycopg`; `mysql` pymysql, `oracle` oracledb, `mssql` pymssql, decision D15); any other value is rejected, and the message names the choices. The single source of truth for this table is `lib/dialects.py` (`DIALECT_DRIVER_CHOICES`, `DIALECT_DRIVERS` is its first column); `profiles.py` imports both. A call cannot change it (section 3.2) |
 | `host`, `database`, `username` | **required**, non-empty strings |
 | `port` | **required**, integer 1-65535 (a bool is not an integer) |
@@ -224,9 +224,11 @@ Messages name the key only, never the host.
 The existing call options `limit`, `timeout_ms` and `max_bytes` can only lower the cap (D9). `read_only` can be turned on, never
 off (and is not in the default set at all). Caps can only be lowered. `execute` still needs `allow_execute: true` on the **base
 profile** and the verb filter, and in addition: an **ad-hoc connection can never `execute`** (`[E_EXECUTE_DISABLED]`, checked in
-the module whatever the profile object says), and under the D16 default a call that carries **any** connection field on a
-profile that has `allow_execute` is `[E_EXECUTE_DISABLED]` too (the operator never agreed to let a caller aim a writing profile
-somewhere else; an explicit `allow_call_params` list restores the pre-D16 behaviour for the fields it lists). A retargeted
+the module whatever the profile object says). A call that carries connection fields on a profile that has `allow_execute`
+still executes: `allow_execute` is a property of the profile, as with Salt's own `postgres.psql_query` (the stricter rule that
+refused this was withdrawn by the owner, see D16; observed through salt-api: `sqlx.execute` with `profile=pg_rw`, `host=` and
+`password=sdb://...` ran, `docs/SALT_API.md` section 3.2). The operator narrows what a call may aim a writing profile at with
+`allow_call_params`, `allowed_hosts`, `allowed_ports` and `allowed_dialects`. A retargeted
 connection (`host`, `port`, `username` or `dialect` changed) never receives the base profile's password (D14). The masking
 filter remembers at most `secrets.MAX_SECRETS` (512) distinct password values, oldest dropped first, so a stream of distinct
 passwords cannot grow the minion's memory (see D13).
@@ -764,7 +766,7 @@ curl -sS -k https://salt-api.example:8000/run -H 'Content-Type: application/json
 | ID | Decision | Assumption |
 |---|---|---|
 | D9 | A call value above a cap (`limit`, `timeout_ms`, `max_bytes`, `retry_timeout_s`): clamp silently, or reject? | **Clamp** (current code: `options.apply_caps`). Rejecting with `E_OPTION_INVALID` would tell the caller its request was not honoured; clamping is friendlier to agents but hides the truncation until `truncated` is read. Profile values above a hard maximum are already rejected. |
-| D10 | Is `mariadb` a separate `dialect` value, or detected at run time through `dialect.is_mariadb`? | Detect (`mysql` is the only value; WS 9 item 5 shows `is_mariadb` is `False` on MySQL and `True` on MariaDB). A separate value would make the choice of variable explicit in config and let `profiles.py` reject a wrong guess, at the cost of a fifth dialect and the same driver. |
+| D10 | Is `mariadb` a separate `dialect` value, or detected at run time through `dialect.is_mariadb`? | Detect (`mysql` is the only value **in a profile**; WS 9 item 5 shows `is_mariadb` is `False` on MySQL and `True` on MariaDB). Since D16 a call (and `allowed_dialects`) also accepts `mariadb` as an alias of `mysql` (`overrides._norm_dialect`); a profile with `dialect: mariadb` is `[E_PROFILE_INVALID]`. A separate value would make the choice of variable explicit in config and let `profiles.py` reject a wrong guess, at the cost of a fifth dialect and the same driver. |
 | D11 | Use PyMySQL `read_timeout` as a client-side backstop for MySQL/MariaDB statement timeouts? | **Yes, implemented (T11 D2).** `read_timeout = statement_timeout_ms / 1000 + 1` s, module-owned; a profile may lower it, not raise it. Observed on MySQL 8.0.46: after the client gives up with 2013 the server keeps running the statement until it finishes, then rolls back (0 rows persisted for an `INSERT ... SELECT SLEEP(8)`). The backstop bounds the caller's wait, not the server's work. |
 
 ### Open decisions added after wave 3 (assumption used if unanswered)

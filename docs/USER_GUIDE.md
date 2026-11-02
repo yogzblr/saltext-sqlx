@@ -333,6 +333,8 @@ Salt parses each `key=value` as YAML, so comparison operators need YAML quotes i
 
 ### From salt-api
 
+[SALT_API.md](SALT_API.md) has a complete, tested salt-api example of every function for each database (login, request and response shapes, errors, long calls, what a caller can and cannot send). The short version:
+
 ```bash
 curl -sS https://salt-api.example:8000/run -H 'Content-Type: application/json' \
   -d '[{"client":"local","tgt":"db-minion-01","fun":"sqlx.query",
@@ -439,7 +441,7 @@ external_auth:
 ```
 
 A function listed **without** `kwargs` has no profile limit. Always anchor the regex. Arguments a rule does not name are not
-restricted by eauth.
+restricted by eauth. In particular a user pinned to `profile` can still send `host=` **together with** an allowed `profile` (observed through salt-api: HTTP 200); only the minion policy (section 3.2, `allow_call_params: []`) stops that. Tested examples: [SALT_API.md](SALT_API.md) section 5.
 
 A call with the connection in it has no `profile` to match, so pin the fields instead (verified with the `file`
 backend, `tests-e2e/test_e2e_adhoc.py`):

@@ -7,7 +7,7 @@ A call reaches a database in one of two ways:
 
 # saltext-sqlx
 Salt execution module that runs SQL on PostgreSQL, MySQL/MariaDB, Oracle and SQL Server and returns the database's real
-error. **Start with [docs/USER_GUIDE.md](docs/USER_GUIDE.md)** (install, connecting, usage, errors, eauth); `SPEC.md` is the contract.
+error. **Start with [docs/USER_GUIDE.md](docs/USER_GUIDE.md)** (install, connecting, usage, errors, eauth); `SPEC.md` is the contract. Real salt-api calls for every function on every database, and what a caller can and cannot send: [docs/SALT_API.md](docs/SALT_API.md).
 
 ## Install
 
@@ -268,7 +268,7 @@ to [Salt's security guide][security].
 
 ## User Documentation
 
-See [docs/USER_GUIDE.md](docs/USER_GUIDE.md) for install and usage, and `SPEC.md` for the full contract.
+See [docs/USER_GUIDE.md](docs/USER_GUIDE.md) for install and usage, [docs/SALT_API_QUICK.md](docs/SALT_API_QUICK.md) (one page) and [docs/SALT_API.md](docs/SALT_API.md) (every function, tested) for calling it through salt-api, and `SPEC.md` for the full contract.
 
 ## Contributing
 
