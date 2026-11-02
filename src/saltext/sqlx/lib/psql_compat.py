@@ -9,7 +9,7 @@ import json
 
 from salt.exceptions import SaltInvocationError
 
-__all__ = ["shape", "supplied_names", "translate"]
+__all__ = ["add_dialect", "shape", "supplied_names", "translate"]
 
 #: psql_query argument -> sqlx connection keyword
 _MAP = {
@@ -28,6 +28,15 @@ def _fail(message):
 def supplied_names(**given):
     """Names of the connection arguments of ``psql_query`` that are not ``None`` (for the policy message)."""
     return sorted(name for name in _MAP if given.get(name) is not None)
+
+
+def add_dialect(kwargs):
+    """Add ``dialect=postgresql`` to ``kwargs`` unless the call already names a dialect (flat or in ``connection``)."""
+    connection = kwargs.get("connection")
+    if kwargs.get("dialect") is None and not (
+        isinstance(connection, dict) and connection.get("dialect") is not None
+    ):
+        kwargs["dialect"] = "postgresql"
 
 
 def translate(query, runas, write, **given):

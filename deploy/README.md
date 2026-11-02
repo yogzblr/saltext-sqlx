@@ -253,7 +253,7 @@ What still has to be proven on a real Windows minion: the whole state run, the r
   wheelhouse is the build pipeline's and the master's job: write access to `/srv/salt/saltexts/wheels` only for the pipeline; sign `SHA256SUMS.all` in CI.
 * Only master-side `eauth`/ACL decides who may run `state.orchestrate`; restrict `runner` access to `orch.saltexts.*` and give the canary a separate group.
 * The state needs no secrets. `pip install` runs with `--no-index` and with `PIP_INDEX_URL`/`PIP_EXTRA_INDEX_URL` removed from the environment.
-* `saltext-sqlx` itself: see `SECURITY.md` (read-only profiles; the database role is the real control).
+* `saltext-sqlx` itself: see `SECURITY.md` (read-only profiles; the database role is the real control). Installing it makes `sqlx.*` accept the connection (host, port, user, password) in the call with no minion configuration (decision D16, like Salt's `postgres.psql_query`). To restrict that fleet-wide, push `sqlx: {_policy: {allow_call_params: []}}` (profiles only) or `sqlx: {_policy: {allowed_hosts: [...]}}` through minion config or pillar; this state does not manage it.
 
 ## Design notes: what the sketch got wrong
 

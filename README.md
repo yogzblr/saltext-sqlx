@@ -1,3 +1,10 @@
+A call reaches a database in one of two ways:
+
+- it **sends the connection details itself** (dialect, host, port, database, username, password) from the `salt` CLI,
+  `salt-call` or salt-api, as Salt's own `postgres.psql_query` does. This needs **no minion configuration**; an operator
+  narrows it or switches it off with `sqlx:_policy` (see "Connection details in the call"); or
+- it names a **profile**, configured under `sqlx:profiles:<name>` in minion config or pillar (below).
+
 # saltext-sqlx
 Salt execution module that runs SQL on PostgreSQL, MySQL/MariaDB, Oracle and SQL Server and returns the database's real
 error. **Start with [docs/USER_GUIDE.md](docs/USER_GUIDE.md)** (install, connecting, usage, errors, eauth); `SPEC.md` is the contract.
@@ -121,58 +128,84 @@ curl -sS http://127.0.0.1:51565/run -H 'Content-Type: application/json' -d '[{"c
 
 ### Connection details in the call
 
-Off until the operator lists the fields a call may send in `sqlx:_policy:allow_call_params` (minion config or pillar;
-never from the call). Every connection field can be listed; with `allow_adhoc_connection: true` a call needs no profile:
+**On by default** (SPEC decision D16, owner decision): with nothing in the minion config, a call may send `dialect`,
+`driver`, `host`, `port`, `database`, `username` and `password` on every function and dialect, with or without a profile.
+`psql_query` keeps Salt's names `user` and `maintenance_db`. A literal `password` works, as in Salt; an `sdb://` reference
+works too and is recommended, because **a literal password in a call is stored in clear text in the Salt job cache, on the
+event bus and in the minion's debug log** (that is how Salt treats every argument, `postgres.psql_query` included; the
+extension itself never logs or returns it).
+
+Real runs (`salt-call --local` on a minion whose config has no `sqlx:` section at all; PostgreSQL 16.15, MySQL 8.0.46,
+MariaDB 10.11.14; output abridged to one line):
+
+```bash
+salt-call --local sqlx.psql_query 'select 1' host=127.0.0.1 port=54329 user=ro maintenance_db=sqlx_test password=ro_pw
+#   [{"?column?": "1"}]
+salt-call --local sqlx.query sql='select current_user() as who, version() as v' dialect=mysql host=127.0.0.1 port=33061 username=ro database=scratch password=ro_pw
+#   {"columns": ["who", "v"], "rows": [["ro@%", "8.0.46-0ubuntu0.24.04.4"]], "row_count": 1, "truncated": false, "elapsed_ms": 0, "profile": "(adhoc)"}
+salt-call --local sqlx.query sql='select current_user() as who, version() as v' dialect=mariadb host=127.0.0.1 port=33062 username=ro database=scratch password=ro_pw
+#   {"columns": ["who", "v"], "rows": [["ro@%", "10.11.14-MariaDB-0ubuntu0.24.04.1"]], "row_count": 1, "truncated": false, "elapsed_ms": 0, "profile": "(adhoc)"}
+salt-call --local sqlx.check_row_count sql='select 1' operator='"=="' expected=1 dialect=postgresql host=127.0.0.1 port=54329 username=ro database=sqlx_test password=ro_pw
+#   {"ok": true, "actual": 1, "expected": 1, "operator": "==", "attempts": 1, "profile": "(adhoc)"}
+salt-call --local sqlx.table_list dialect=mariadb host=127.0.0.1 port=33062 username=ro database=scratch password=ro_pw
+#   {"schema": "scratch", "tables": ["orders", "t_probe", "uniq"], "views": [], "profile": "(adhoc)"}
+
+# refused, with the same default
+salt-call --local sqlx.execute sql='insert into scratch.t_probe values (1)' dialect=postgresql host=127.0.0.1 port=54329 username=rw database=sqlx_test password=rw_pw
+#   Error running 'sqlx.execute': [E_EXECUTE_DISABLED] profile '(adhoc)' does not set allow_execute: true
+salt-call --local sqlx.ping dialect=postgresql host=169.254.169.254 database=d username=u password=x
+#   Passed invalid arguments: [E_POLICY] 'host' is a link-local or cloud-metadata address; the operator can allow it by listing it in sqlx:_policy:allowed_hosts.
+```
+
+What the default does not open: `ssl_mode`, `ssl_certs_dir`, `ssl_files`, `query`, `connect_args`, `read_only` and the
+timeouts are not accepted from a call (`[E_POLICY]`); `allow_execute`, `execute_verbs`, `error_detail`, `row_limit` and
+`_policy` are never call keywords; caps and timeouts can only be lowered; a call without a profile can never run `execute`
+(nor `psql_query write=True`); a writing profile keeps working with connection fields in the call; a retargeted
+connection never receives the profile's password; link-local and cloud-metadata addresses (`169.254.0.0/16`, `fe80::/10`,
+`fd00:ec2::254`, `100.100.100.200`) are refused on the resolved address. Loopback and private addresses are allowed.
+
+**Tightening it** (minion config or pillar; a call can never send or change the policy):
 
 ```yaml
 sqlx:
   _policy:
+    allow_call_params: []      # strict: profiles only, every connection keyword is [E_OPTION_UNKNOWN] (the behaviour before D16)
+```
+
+```yaml
+sqlx:
+  _policy:                     # keep the default fields, restrict where and what
+    allowed_hosts: [db1.internal, db2.internal, 10.20.0.0/16]   # names, globs, IPs, CIDRs; only these are allowed
+    allowed_ports: [5432, 3306, 1521, 1433]                       # optional
+    allowed_dialects: [postgresql, mysql]                         # optional
+    allow_adhoc_connection: false                                 # a call must name a profile
+    allow_call_literal_password: false                            # sdb:// references only
+```
+
+```yaml
+sqlx:
+  _policy:                     # an explicit list replaces the default completely (and turns ad-hoc and literals off unless set)
     allow_call_params: [dialect, driver, host, port, database, username, password, ssl_mode, ssl_certs_dir,
                         ssl_files, query, connect_args, connect_timeout_s, statement_timeout_ms, read_only]
     allow_adhoc_connection: true
-    allowed_hosts: [db1.internal, db2.internal, 10.20.0.0/16]   # required: names, globs, IPs, CIDRs
-    allowed_ports: [5432, 3306, 1521, 1433]                       # optional
+    allowed_hosts: [db1.internal, db2.internal, 10.20.0.0/16]   # required when host is in the list
 ```
 
-Ad-hoc calls (no profile) send `dialect`, `host`, `database` and `username` (and usually `port` and an `sdb://`
-`password`). Verified on all five databases through `salt`, `salt-call` and salt-api on a minion with no profiles
-(`tests-e2e/test_e2e_adhoc.py`); outputs below are from that run (Sakila data):
+Verified earlier on all five databases through `salt`, `salt-call` and salt-api on a minion with an explicit list and no
+profiles (`tests-e2e/test_e2e_adhoc.py`); outputs below are from that run (Sakila data):
 
 ```bash
 salt minion-adhoc sqlx.ping dialect=postgresql host=pg port=5432 database=sakila username=ro password=sdb://e2e_sdb/ro_pw
 #   {"ok": true, "dialect": "postgresql", "server_version": "18.4", "elapsed_ms": 185, "profile": "(adhoc)"}
 salt-call sqlx.query sql="select count(*) as n from film" connection='{"dialect":"postgresql","host":"pg","port":5432,"database":"sakila","username":"ro","password":"sdb://e2e_sdb/ro_pw"}'
 #   {"columns": ["n"], "rows": [[1000]], "row_count": 1, "truncated": false, "elapsed_ms": 15, "profile": "(adhoc)"}
-salt minion-adhoc sqlx.execute sql="delete from film where film_id = -1" dialect=postgresql host=pg port=5432 database=sakila username=ro password=sdb://e2e_sdb/ro_pw
-#   ERROR: [E_EXECUTE_DISABLED] profile '(adhoc)' does not set allow_execute: true
 ```
-
-```bash
-curl -sS http://127.0.0.1:8000/run -H 'Content-Type: application/json' -d '[{"client": "local", "tgt": "minion-adhoc", "fun": "sqlx.query", "kwarg": {"dialect": "postgresql", "host": "pg", "port": 5432, "database": "sakila", "username": "ro", "password": "sdb://e2e_sdb/ro_pw", "sql": "select film_id, title from film where film_id <= CAST(:n AS INTEGER) order by film_id", "params": {"n": 2}}, "eauth": "file", "username": "e2e_full", "password": "..."}]'
-```
-```json
-{"return": [{"minion-adhoc": {"columns": ["film_id", "title"], "rows": [[1, "ACADEMY DINOSAUR"], [2, "ACE GOLDFINGER"]], "row_count": 2, "truncated": false, "elapsed_ms": 6, "profile": "(adhoc)"}}]}
-```
-
-A call can never run `execute` without a profile that sets `allow_execute: true`, never set `row_limit`,
-`allow_execute`, `execute_verbs` or `error_detail`, and can only lower timeouts and caps, turn `read_only` on and
-tighten `ssl_mode`. Keep writes on profiles.
 
 A call can also **overlay** a profile: it names `profile=` (or the minion sets `sqlx:default_profile`) and sends only the
-fields to change. A policy for that, narrower than the one above:
+fields to change. A profile can narrow what a call may change with its own `allow_call_params: [...]`.
 
-```yaml
-sqlx:
-  default_profile: orders_pg
-  profiles:
-    orders_pg: {dialect: postgresql, host: db1.corp.example, port: 5432, database: orders, username: ro, password: sdb://vault/orders_ro}
-  _policy:
-    allow_call_params: [host, port, database, username, password]   # explicit names; "*" is not accepted
-    allowed_hosts: [db1.corp.example, db2.corp.example, 10.20.0.0/16]  # required when host is allowed
-```
-
-Real invocations (PostgreSQL test server; `password` is an `sdb://` reference, a literal is `[E_POLICY]` unless the
-operator sets `allow_call_literal_password`). Output lines are abridged JSON from real runs:
+More real invocations (PostgreSQL test server; this minion had an explicit `allow_call_params` list, so a literal password
+needed `allow_call_literal_password`; under the default a literal is accepted). Output lines are abridged JSON from real runs:
 
 ```bash
 # flat keywords; port is YAML-typed, so port=5432 is an integer
@@ -187,13 +220,16 @@ salt-call --local sqlx.query sql="select current_user as who" connection='{"host
 salt-call --local sqlx.psql_query "select 1 as one, null as nothing" user=ro host=127.0.0.1 port=54329 maintenance_db=sqlx_test password=sdb://cli_sdb/cli_pw
 #   [{"one": "1", "nothing": null}]
 
-# refused
+# refused (explicit list with allowed_hosts, no literals)
 salt-call --local sqlx.ping host=192.0.2.9
 #   Passed invalid arguments: [E_POLICY] 'host' is not in sqlx:_policy:allowed_hosts.
 salt-call --local sqlx.ping host=127.0.0.1 port=54329 username=ro database=sqlx_test password=literalpw
 #   Passed invalid arguments: [E_POLICY] 'password' from a call must be an sdb:// reference (a literal would be stored in the job cache and on the event bus).
 salt-call --local sqlx.psql_query "select 1" runas=postgres
 #   Passed invalid arguments: [E_OPTION_INVALID] runas is not supported; sqlx does not use psql or an OS user.
+# strict (allow_call_params: [])
+salt-call --local sqlx.psql_query 'select 1' host=127.0.0.1 port=54329 user=ro maintenance_db=sqlx_test password=ro_pw
+#   Passed invalid arguments: [E_POLICY] call-time connection parameters are disabled (host, maintenance_db, password, port, user); the operator enables fields with sqlx:_policy:allow_call_params.
 ```
 
 Through `salt-api` (`tests/integration/params_path`, `file` eauth, kwargs are JSON-typed, `port` is a number):
@@ -211,7 +247,7 @@ to see it); a quoted `port='5432'` is a string and is refused, never coerced; wh
 `connection`, `username` and the other fields (SECURITY section 4), and kwargs a rule does not name are not restricted by eauth,
 so the minion policy is the real control. For ad-hoc calls pin `host` (and `dialect`) in the eauth rule, since there is
 no `profile` to match; such a rule refuses a call that hides its details in `connection=` (observed, HTTP 401), so callers
-use the flat keywords. The user guide, section 6, has the rule. Hard rules no policy relaxes, the per-field table and the `psql_query` differences
+use the flat keywords. The user guide, section 6, has the rule. Hard rules no policy or default relaxes, the per-field table and the `psql_query` differences
 from `postgres.psql_query` are in `SPEC.md` sections 3.2 and 4.7; the threat table is in `SECURITY.md` section 3.
 
 ### Authorization and what Salt stores

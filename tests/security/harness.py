@@ -110,12 +110,17 @@ class Server:
 
 
 @contextlib.contextmanager
-def injected(profiles, sdb=None):
-    """Point the module's ``__salt__`` at ``profiles`` (and an ``sdb`` dict) for the duration of the block."""
+def injected(profiles, sdb=None, policy=None):
+    """
+    Point the module's ``__salt__`` at ``profiles`` (and an ``sdb`` dict) for the duration of the block.
+
+    ``policy`` is the ``sqlx:_policy`` mapping; ``None`` means no policy at all (the D16 compat default).
+    """
+    config = {"profiles": profiles}
+    if policy is not None:
+        config["_policy"] = policy
     functions = {
-        "config.get": lambda key, default=None: (
-            {"profiles": profiles} if key == "sqlx" else default
-        ),
+        "config.get": lambda key, default=None: (config if key == "sqlx" else default),
         "sdb.get": (sdb or {}).__getitem__,
     }
     had = hasattr(mod, "__salt__")

@@ -222,11 +222,26 @@ def test_an_unresolvable_allowed_name_is_a_policy_error_not_a_connection(
     assert all(s not in str(exc.value) for s in SECRETS)
 
 
-def test_the_feature_is_off_by_default_even_with_a_hosts_list(cfg, connects):
-    cfg["_policy"].pop("allow_call_params")
+def test_the_strict_config_is_off_even_with_a_hosts_list(cfg, connects):
+    """D16 mirror of the old "off by default" test: ``allow_call_params: []`` restores the profile-only contract."""
+    cfg["_policy"]["allow_call_params"] = []
     with pytest.raises(SaltInvocationError, match=r"^\[E_OPTION_UNKNOWN\]"):
         mod.ping(profile="base", host=HOST)
     assert connects == []
+
+
+def test_a_hosts_list_without_allow_call_params_narrows_the_default_instead_of_turning_it_off(
+    cfg, connects
+):
+    """D16: no ``allow_call_params`` means the default field set; ``allowed_hosts`` still restricts the hosts."""
+    cfg["_policy"].pop("allow_call_params")
+    with pytest.raises(SaltInvocationError, match=r"^\[E_POLICY\].*allowed_hosts"):
+        mod.ping(profile="base", host="10.20.30.40")
+    assert connects == []
+    with pytest.raises((CommandExecutionError, SaltInvocationError)) as exc:
+        mod.ping(profile="base", host=HOST)  # listed: the call is tried (port 1 refuses)
+    assert not str(exc.value).startswith(("[E_POLICY]", "[E_OPTION_UNKNOWN]"))
+    assert connects
 
 
 # -- credential relay -------------------------------------------------------------------------------------------------

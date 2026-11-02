@@ -10,6 +10,7 @@ from conftest import assert_ok
 
 
 def test_policy_off_refuses_call_time_connection_fields(salt):
+    # the `minion` container is configured with allow_call_params: [] (strict, D16); the default is not tested here
     for minion_kw in (
         {"host": "pg"},
         {"port": 5432},

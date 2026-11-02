@@ -110,8 +110,9 @@ def query(profile=None, sql=None, **kwargs):
     Run one statement in a transaction that is always rolled back.
 
     Keywords: ``params`` (object of bind values), ``limit``, ``timeout_ms``, ``max_bytes`` (each can only lower
-    the profile's cap). Call-time connection parameters (``connection={...}`` or ``host``, ``port``, ``database``,
-    ``username``, ``password``, ...) work only if the operator enables them in ``sqlx:_policy`` (SPEC section 3.2).
+    the profile's cap). The connection can be sent in the call (``dialect``, ``host``, ``port``, ``database``,
+    ``username``, ``password``, ``driver``, or ``connection={...}``), with or without a profile, unless the operator
+    narrowed or switched this off in ``sqlx:_policy:allow_call_params`` (SPEC section 3.2, D16).
     Returns ``profile``, ``columns``, ``rows``, ``row_count``, ``truncated``, ``elapsed_ms``.
 
     CLI Example:
@@ -298,18 +299,21 @@ def psql_query(  # pylint: disable=too-many-arguments,too-many-positional-argume
     """
     Look-alike of Salt's ``postgres.psql_query`` that goes through sqlx (profile, policy, real errors).
 
-    ``user`` is the username, ``maintenance_db`` the database; ``host``, ``port`` and ``password`` (an ``sdb://``
-    reference unless the policy allows literals) are call-time parameters and need ``sqlx:_policy:allow_call_params``.
-    ``profile`` defaults to ``sqlx:default_profile`` and must be a postgresql profile. ``runas`` is refused. ``write=True``
-    goes through the ``execute`` path (``allow_execute`` and the verb filter apply). Returns a list of dicts
-    (column to text or ``None``; rows beyond the row or byte cap are dropped silently, ``sqlx.query`` shows the ``truncated`` flag); a failure raises ``[E_...]`` instead of returning ``[]``. Differences: SPEC section 4.7.
+    ``user`` is the username, ``maintenance_db`` the database; ``host``, ``port`` and ``password`` (a literal, or an
+    ``sdb://`` reference, which is recommended) are connection parameters sent in the call, as for Salt's own
+    ``postgres.psql_query``; the operator can restrict them in ``sqlx:_policy:allow_call_params`` (D16). Without a
+    profile the connection is PostgreSQL and needs ``user`` and ``maintenance_db`` too. ``profile`` defaults to
+    ``sqlx:default_profile`` and must be a postgresql profile. ``runas`` is refused. ``write=True`` goes through the
+    ``execute`` path (``allow_execute`` and the verb filter apply; never with an ad-hoc connection). Returns a list of
+    dicts (column to text or ``None``; rows beyond the row or byte cap are dropped silently, ``sqlx.query`` shows the
+    ``truncated`` flag); a failure raises ``[E_...]`` instead of returning ``[]``. Differences: SPEC section 4.7.
 
     CLI Example:
 
     .. code-block:: bash
 
         salt '*' sqlx.psql_query 'select * from pg_stat_activity' profile=orders_pg
-        salt '*' sqlx.psql_query 'select 1' host=db2.corp.example port=5432 user=svc maintenance_db=orders
+        salt '*' sqlx.psql_query 'select 1' host=db2.corp.example port=5432 user=svc maintenance_db=orders password=sdb://vault/svc
     """
     given = {
         "user": user,
@@ -319,9 +323,16 @@ def psql_query(  # pylint: disable=too-many-arguments,too-many-positional-argume
         "password": password,
     }
     function, call = psql_compat.translate(query, runas, write, extra=kwargs, **given)
-    overrides.require_enabled(
-        __salt__["config.get"]("sqlx", {}), psql_compat.supplied_names(**given)
-    )
+    config = __salt__["config.get"]("sqlx", {})
+    policy = overrides.require_enabled(config, psql_compat.supplied_names(**given))
+    if (
+        psql_compat.supplied_names(**given)
+        and "dialect" in policy.allow
+        and not profile
+        and not config.get("default_profile")
+    ):
+        # Salt's psql_query has no dialect argument: with no profile the connection can only be PostgreSQL.
+        psql_compat.add_dialect(call)
     result = _run(
         function, _postgres_only(_execute if write else _query), dict(call, profile=profile)
     )

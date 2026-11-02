@@ -108,14 +108,16 @@ def code(exc):
 # -- feature off by default -------------------------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize(
-    "policy", [None, {}, {"allow_call_params": []}, {"allow_call_params": None}]
-)
-def test_feature_is_off_by_default(policy):
-    config = {"profiles": copy.deepcopy(BASE_PROFILES)}
-    if policy is not None:
-        config["_policy"] = policy
-    for kw in ({"host": "x"}, {"connection": {"host": "x"}}, {"password": LITERAL}):
+@pytest.mark.parametrize("policy", [{"allow_call_params": []}, {"allow_call_params": None}])
+def test_strict_config_is_off(policy):
+    """D16 mirror: ``allow_call_params: []`` (or an empty key) is exactly the behaviour before the default flipped."""
+    config = {"profiles": copy.deepcopy(BASE_PROFILES), "_policy": policy}
+    for kw in (
+        {"host": "x"},
+        {"connection": {"host": "x"}},
+        {"password": LITERAL},
+        {"dialect": "postgresql", "host": "x", "database": "d", "username": "u"},
+    ):
         with pytest.raises(SaltInvocationError) as exc:
             go(config, dict(kw, profile="pg"))
         assert code(exc) == "[E_OPTION_UNKNOWN]"
@@ -136,13 +138,14 @@ def test_missing_profile_is_still_required_when_nothing_is_configured():
 
 
 def test_compat_wording_when_feature_off():
-    config = {"profiles": copy.deepcopy(BASE_PROFILES)}
+    config = {"profiles": copy.deepcopy(BASE_PROFILES), "_policy": {"allow_call_params": []}}
     with pytest.raises(SaltInvocationError) as exc:
         overrides.require_enabled(config, ["username", "host"])
     assert code(exc) == "[E_POLICY]"
     assert "allow_call_params" in str(exc.value)
-    overrides.require_enabled(cfg(), [])  # nothing supplied: fine
+    overrides.require_enabled(config, [])  # nothing supplied: fine
     overrides.require_enabled(cfg(), ["host"])
+    overrides.require_enabled({"profiles": {}}, ["host"])  # the D16 default allows them
 
 
 # -- policy parsing ---------------------------------------------------------------------------------------------------
