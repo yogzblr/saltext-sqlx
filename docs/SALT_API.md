@@ -1,5 +1,7 @@
 # Calling saltext-sqlx through salt-api
 
+In a hurry? [SALT_API_QUICK.md](SALT_API_QUICK.md) is the one-page version.
+
 This page shows, with real requests and real responses, how to call every `sqlx` function through **salt-api**
 (`rest_cherrypy`) on PostgreSQL, MySQL, MariaDB, Oracle and SQL Server, and states exactly what a caller can send, what
 is opt-in and what can never be sent. It complements [the user guide](USER_GUIDE.md) (install, profiles, errors) and
