@@ -5628,7 +5628,7 @@ Response, HTTP 200:
 }]}
 ```
 
-Refused (all HTTP 401, observed): `sqlx.execute` (even on an allowed profile name), a profile outside the regex, any call without
+Refused (all HTTP 401, observed): `sqlx.execute` (this user's rule does not list it), a profile outside the regex, any call without
 `profile` (that includes every call that sends the connection in the call), another sqlx function, another module:
 
 ```bash
@@ -5950,8 +5950,8 @@ Salt keeps the job (its arguments included) in the master job cache, publishes i
 log (this page did not examine the debug log). Observed in the sandbox: a `local_async` call with `"password": "ro_pw"` and one with
 `"password": "sdb://sqlx_sdb/pg_ro"`, then `GET /jobs/<jid>` for each. The job record of the first shows the literal, the second only the
 reference. Anyone who may read jobs (`GET /jobs/<jid>`, the `jobs.list_job` runner, `salt-run state.event`) can read the literal. A
-separate probe with a marker password found it in the job cache files and in 3 events on the event bus; the database password resolved
-from the `sdb://` reference appeared in neither.
+separate probe with a marker password found it in one job-cache file and in 3 events on the event bus; the `sdb://` call put only the reference on the bus, and the
+database password it resolved to (`ro_pw`) did not appear on the bus at all.
 
 ```bash
 curl -sS --cacert "$CACERT" "$API/" -H "X-Auth-Token: $TOKEN" -H 'Accept: application/json' -H 'Content-Type: application/json' -d @- <<'JSON'
