@@ -1,6 +1,6 @@
 anyio==4.14.2
 asn1crypto==1.5.1
-dnspython==2.9.1
+dnspython==2.9.2
 elastic-transport==9.4.2
 elasticsearch==9.5.1
 greenlet==3.5.6
