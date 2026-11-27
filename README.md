@@ -150,21 +150,44 @@ salt-call --local sqlx.check_row_count sql='select 1' operator='"=="' expected=1
 salt-call --local sqlx.table_list dialect=mariadb host=127.0.0.1 port=33062 username=ro database=scratch password=ro_pw
 #   {"schema": "scratch", "tables": ["orders", "t_probe", "uniq"], "views": [], "profile": "(adhoc)"}
 
-# refused, with the same default
-salt-call --local sqlx.execute sql='insert into scratch.t_probe values (1)' dialect=postgresql host=127.0.0.1 port=54329 username=rw database=sqlx_test password=rw_pw
-#   Error running 'sqlx.execute': [E_EXECUTE_DISABLED] profile '(adhoc)' does not set allow_execute: true
+# writes work with no profile too (D17, below); one statement per call, DML verbs only unless the operator lists more
+salt-call --local sqlx.psql_query 'insert into scratch.t_adhoc values (1)' host=127.0.0.1 port=54329 user=rw maintenance_db=sqlx_test password=rw_pw write=True
+#   [{"rows_affected": "1"}]
+salt-call --local sqlx.execute sql='insert into scratch.t_adhoc values (1)' dialect=mariadb host=127.0.0.1 port=33062 username=rw database=scratch password=rw_pw
+#   {"rows_affected": 1, "committed": true, "dry_run": false, "elapsed_ms": 1, "profile": "(adhoc)"}
+salt-call --local sqlx.psql_query 'insert into scratch.t_adhoc values (5); insert into scratch.t_adhoc values (6)' host=127.0.0.1 port=54329 user=rw maintenance_db=sqlx_test password=rw_pw write=True
+#   Error running 'sqlx.psql_query': [E_SQL] postgresql 42601: cannot insert multiple commands into a prepared statement
 salt-call --local sqlx.ping dialect=postgresql host=169.254.169.254 database=d username=u password=x
 #   Passed invalid arguments: [E_POLICY] 'host' is a link-local or cloud-metadata address; the operator can allow it by listing it in sqlx:_policy:allowed_hosts.
 ```
 
 What the default does not open: `ssl_mode`, `ssl_certs_dir`, `ssl_files`, `query`, `connect_args`, `read_only` and the
 timeouts are not accepted from a call (`[E_POLICY]`); `allow_execute`, `execute_verbs`, `error_detail`, `row_limit` and
-`_policy` are never call keywords; caps and timeouts can only be lowered; a call without a profile can never run `execute`
-(nor `psql_query write=True`); a writing profile keeps working with connection fields in the call; a retargeted
+`_policy` are never call keywords; caps and timeouts can only be lowered; a writing profile keeps working with connection
+fields in the call; a retargeted
 connection never receives the profile's password; link-local and cloud-metadata addresses (`169.254.0.0/16`, `fe80::/10`,
 `fd00:ec2::254`, `100.100.100.200`) are refused on the resolved address. Loopback and private addresses are allowed.
 
+**Writes with no profile (D17, owner decision 2026-11-27; on by default).** `sqlx.execute` and `sqlx.psql_query write=True` with the
+connection in the call and no profile run, like Salt's `postgres.psql_query(write=True)`: they commit (`rows_affected`,
+`committed`), `dry_run=True` rolls back, one statement per call, the caps and timeouts apply and a call can only lower them, the
+password is masked, link-local and cloud-metadata targets are refused, and `allowed_hosts`, `allowed_ports` and
+`allowed_dialects` still apply. The statement must start with INSERT, UPDATE or DELETE unless the operator lists more verbs in
+`sqlx:_policy:adhoc_execute_verbs` (the same default as a profile's `execute_verbs`; DDL such as `CREATE` is `[E_POLICY]` until
+listed). The read functions stay read-only: an `INSERT` sent to `sqlx.query` is rolled back. **The accepted risk:** anyone who
+can run `sqlx.execute` can run write statements against any host the minion can reach, with credentials they supply; the
+database account is the real limit. Where callers are not fully trusted set `allow_adhoc_execute: false` (the old behaviour,
+`[E_EXECUTE_DISABLED] profile '(adhoc)' does not set allow_execute: true`) and `allowed_hosts`, and write through named
+profiles; `external_auth` can keep a user to `sqlx.query` only, and that user still cannot call `sqlx.execute`.
+
 **Tightening it** (minion config or pillar; a call can never send or change the policy):
+
+```yaml
+sqlx:
+  _policy:
+    allow_adhoc_execute: false   # no write without a named profile (D17); everything else stays as it is
+    # adhoc_execute_verbs: [INSERT, UPDATE, DELETE, CREATE]   # or: widen the verbs an ad-hoc write may start with
+```
 
 ```yaml
 sqlx:

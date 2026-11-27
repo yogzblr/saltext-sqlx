@@ -39,7 +39,9 @@ salt-api -> master -> minion job -> sqlx_mod.query(**kwargs)           # every f
                                                   # else policy gates (fields, host/CIDR/resolved IPs, ports, dialects,
                                                   # caps, read_only, ssl_mode, password form) -> E_POLICY, then
                                                   # profiles.validate_profile on the merged profile (tls.py included)
-     execute only: profile allow_execute false -> E_EXECUTE_DISABLED   (before any secret or connection)
+     execute only: profile allow_execute false -> E_EXECUTE_DISABLED   (before any secret or connection);
+                   for an ad-hoc profile allow_execute IS sqlx:_policy:allow_adhoc_execute (D17, default true) and
+                   execute_verbs IS sqlx:_policy:adhoc_execute_verbs, both set in overrides.build_profile
   3  overrides.resolve_secrets(profile, __salt__["sdb.get"])   # = secrets.resolve_profile_secrets
                                                   # sdb:// -> value on a copy, E_SECRET on failure, never logged
      MaskingFilter.add_secret(password)           # the resolved value is masked in this module's log records
@@ -170,4 +172,4 @@ bounds server time; `connect_timeout_s` bounds connect time; the minion's own jo
 `sqlx.psql_query`) are the only new modules; `sqlx_mod._run` calls `prepare`, `build_profile`, `resolve_secrets`, `overridden`
 and `target`, and `profiles.validate_profile` honours a per-profile `allow_call_params` list. Neither module has Salt dunders
 or driver imports; the policy mapping is passed in by the module. SPEC section 3.2 is the contract, SECURITY section 3 the
-threat table. The default policy is the object `overrides.DEFAULT_POLICY` (D16): `parse_policy` returns it when `sqlx:_policy:allow_call_params` is absent, `STRICT_POLICY` for `[]`, and a policy built from the explicit list otherwise; `build_profile` marks the profile `adhoc` / `execute_blocked` and `sqlx_mod._run` refuses `execute` for those.
+threat table. The default policy is the object `overrides.DEFAULT_POLICY` (D16): `parse_policy` returns it when `sqlx:_policy:allow_call_params` is absent, `STRICT_POLICY` for `[]`, and a policy built from the explicit list otherwise; `build_profile` marks the profile `adhoc` and, for an ad-hoc connection, sets its `allow_execute` from `sqlx:_policy:allow_adhoc_execute` (D17, absent = true) and its `execute_verbs` from `adhoc_execute_verbs` (absent = INSERT, UPDATE, DELETE); `sqlx_mod._run` refuses `execute` when that `allow_execute` is false, exactly as for a profile. The ad-hoc profile keeps `read_only: true`: the read functions keep their guard, `execute` skips it itself.

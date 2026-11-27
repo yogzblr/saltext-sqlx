@@ -31,7 +31,9 @@ connection in the call** (D16, owner decision 2026-11-01, which reversed D1): wi
 minion config, `dialect`, `driver`, `host`, `port`, `database`, `username` and `password` may be sent in the call on every
 function and dialect, with or without `profile=`, as Salt's own `postgres.psql_query` takes its connection in the call
 (section 3.2). The operator restores the profile-only contract with `allow_call_params: []` or narrows the default with a
-shorter list, `allowed_hosts`, `allowed_ports`, `allowed_dialects` and two flags (section 3.2).
+shorter list, `allowed_hosts`, `allowed_ports`, `allowed_dialects` and two flags (section 3.2). Writes follow the same rule
+(D17, owner decision 2026-11-27): `execute` and `psql_query write=True` with the connection in the call and **no profile** run by
+default; the operator switches that off with `sqlx:_policy:allow_adhoc_execute: false` (section 3.2).
 
 ```yaml
 sqlx:
@@ -136,13 +138,15 @@ maximum (`options.apply_caps`); it is not an error (D9).
 | `allow_adhoc_connection` | `true`: a call that sends `dialect`, `host`, `database` and `username` and names no profile (and there is no `sqlx:default_profile`) connects without one |
 | `allow_call_literal_password` | `true`: a literal `password` is accepted; an `sdb://` reference is resolved on the minion and is recommended |
 | `inherit_password` | `false` (D14) |
+| `allow_adhoc_execute` (D17) | `true`: `execute` / `psql_query write=True` on an ad-hoc connection (no profile) run, as `postgres.psql_query(write=True)` does in Salt |
+| `adhoc_execute_verbs` (D17) | `[INSERT, UPDATE, DELETE]`, the same default list as a profile's `execute_verbs` (`profiles.DEFAULT_EXECUTE_VERBS`) |
 
 How the operator changes it (minion config or pillar only; a call can never read or send `_policy`, and a call that names it is
 `[E_OPTION_UNKNOWN]`):
 
 | `sqlx:_policy` | Result |
 |---|---|
-| nothing, or keys other than `allow_call_params` (for example `ssl_certs_dir_root`) | the default above; `allowed_hosts`, `allowed_ports`, `allowed_dialects`, `allow_adhoc_connection: false` and `allow_call_literal_password: false` in the same section narrow it. `allowed_hosts` switches the host check to the allow-list rules below |
+| nothing, or keys other than `allow_call_params` (for example `ssl_certs_dir_root`) | the default above; `allowed_hosts`, `allowed_ports`, `allowed_dialects`, `allow_adhoc_connection: false`, `allow_call_literal_password: false` and `allow_adhoc_execute: false` in the same section narrow it. `allowed_hosts` switches the host check to the allow-list rules below |
 | `allow_call_params: []` (or the key present and empty) | **strict, exactly the contract before D16**: every connection keyword is `[E_OPTION_UNKNOWN]`, `psql_query`'s connection arguments are `[E_POLICY]`, and no code path of this section runs |
 | `allow_call_params: [names...]` | the list **replaces** the default completely, with the pre-D16 rules: only those fields; `allowed_hosts` required when `host` is listed or `allow_adhoc_connection` is true; ad-hoc and literal passwords are off unless their flags are set; the old denied ranges (loopback included) apply. `"*"` and unknown names are refused (`[E_POLICY]`, fails closed) |
 | `allow_call_params: [names...]` in a **profile** | can only narrow what the minion policy allows for that profile (the intersection); `[]` closes the profile to call-time fields |
@@ -153,7 +157,8 @@ connectivity and port-scanning oracle from the minion's network position, and a 
 only the minion can reach. A literal password in a call is stored in the master job cache, on the event bus and in Salt's own
 minion debug log (SECURITY section 3); the extension cannot prevent that, only recommend `sdb://`. What bounds it: the caller
 needs a valid database account on the target; the connection is read-only and rolled back (`query`), with the hard caps; an
-ad-hoc connection can never `execute` (a writing profile does, with or without connection fields in the call, as in Salt); metadata and link-local targets
+ad-hoc connection can only `execute` while the operator has not set `allow_adhoc_execute: false` (D17: on by default, see below; a writing profile
+writes with or without connection fields in the call, as in Salt); metadata and link-local targets
 are denied; and the operator can restore the strict contract or an allow-list with one line of minion config. `external_auth`
 should still pin who may call what (SECURITY section 4).
 
@@ -178,7 +183,9 @@ names (`user`, `maintenance_db`) and, with no profile, supplies `dialect: postgr
 | `allowed_hosts` | with an explicit `allow_call_params`: **required** (non-empty) when `host` is in the list or `allow_adhoc_connection` is true. With the default: optional; when present it makes the host check an allow-list exactly as below. Entries: exact names, `fnmatch` globs (`*.corp.example`), IP addresses, CIDR ranges. An entry made only of `*`/`?` is refused (`[E_POLICY]`); `0.0.0.0/0` is accepted as a CIDR but cannot lift the denied ranges below |
 | `allowed_ports` | optional list of ports or `"low-high"` ranges; a call port outside it is `[E_POLICY]` |
 | `allowed_dialects` | optional list; a call (or ad-hoc) dialect outside it is `[E_POLICY]` |
-| `allow_adhoc_connection` | default `true` under the D16 default, `false` with an explicit `allow_call_params`; see above. An ad-hoc connection can never execute (it has no profile, so no `allow_execute`; `execute` refuses it explicitly with `[E_EXECUTE_DISABLED]`) |
+| `allow_adhoc_connection` | default `true` under the D16 default, `false` with an explicit `allow_call_params`; see above. With `false` there is no ad-hoc connection at all, so no ad-hoc write either (`[E_POLICY]` naming the key, before anything connects, whatever `allow_adhoc_execute` says) |
+| `allow_adhoc_execute` | **D17.** Boolean; **absent = `true`**, in the default mode and with an explicit `allow_call_params` list alike. `true`: an ad-hoc connection may `execute` / `psql_query write=True` (below). `false`: exactly the behaviour before D17, `[E_EXECUTE_DISABLED] profile '(adhoc)' does not set allow_execute: true`, raised before a secret is resolved or a socket opened. Anything but a boolean is `[E_POLICY]` naming the key (fails closed). Read only when the call carries connection fields; with `allow_call_params: []` nothing is read (no connection fields exist, so nothing ad-hoc can happen). A call can never send it |
+| `adhoc_execute_verbs` | **D17.** List of single-word alphabetic strings (upper-cased, as `execute_verbs`); **absent = `[INSERT, UPDATE, DELETE]`**, the profile default. The verb list of an ad-hoc `execute`: an ad-hoc connection has no profile to carry `execute_verbs`, so the operator sets it here. An empty list is accepted (no statement passes). Anything else is `[E_POLICY]`. A call can never send it |
 | `allow_call_literal_password` | default `true` under the D16 default, `false` with an explicit `allow_call_params`; see "Secrets" |
 | `inherit_password` | default `false`; see "Credential relay". **Deviation from the owner's design, recorded in section 12 (D14)** |
 
@@ -223,8 +230,10 @@ Messages name the key only, never the host.
 `error_detail` or `_policy`: they are not in the schema and are `[E_OPTION_UNKNOWN]` (the profile-only keys stay profile-only).
 The existing call options `limit`, `timeout_ms` and `max_bytes` can only lower the cap (D9). `read_only` can be turned on, never
 off (and is not in the default set at all). Caps can only be lowered. `execute` still needs `allow_execute: true` on the **base
-profile** and the verb filter, and in addition: an **ad-hoc connection can never `execute`** (`[E_EXECUTE_DISABLED]`, checked in
-the module whatever the profile object says). A call that carries connection fields on a profile that has `allow_execute`
+profile** and the verb filter; an **ad-hoc connection** (no profile) may `execute` only because of the operator's
+`allow_adhoc_execute` (default true, D17; `[E_EXECUTE_DISABLED]` when false, checked in the module before a secret or a socket) and
+only with a statement that starts with one of `adhoc_execute_verbs`. A call can never send `allow_adhoc_execute`,
+`adhoc_execute_verbs`, `allow_execute` or `execute_verbs` (`[E_OPTION_UNKNOWN]`). A call that carries connection fields on a profile that has `allow_execute`
 still executes: `allow_execute` is a property of the profile, as with Salt's own `postgres.psql_query` (the stricter rule that
 refused this was withdrawn by the owner, see D16; observed through salt-api: `sqlx.execute` with `profile=pg_rw`, `host=` and
 `password=sdb://...` ran, `docs/SALT_API.md` section 3.2). The operator narrows what a call may aim a writing profile at with
@@ -232,6 +241,18 @@ refused this was withdrawn by the owner, see D16; observed through salt-api: `sq
 connection (`host`, `port`, `username` or `dialect` changed) never receives the base profile's password (D14). The masking
 filter remembers at most `secrets.MAX_SECRETS` (512) distinct password values, oldest dropped first, so a stream of distinct
 passwords cannot grow the minion's memory (see D13).
+
+**Ad-hoc writes (D17).** With `allow_adhoc_execute` true an ad-hoc `execute` (and `psql_query write=True`, which is the same path)
+behaves like a write on a profile with `allow_execute: true` and `read_only: false`: it commits (`rows_affected`, `committed: true`),
+`dry_run=True` rolls back, the session read-only guard is not applied to that statement, one statement per call (multi-statement is
+refused on every dialect, including pg8000's `execute_unnamed` path), the hard caps and timeouts apply and a call can only lower
+them, the password is masked in errors and logs, link-local and cloud-metadata targets are refused, `allowed_hosts` /
+`allowed_ports` / `allowed_dialects` still apply, and no profile password is involved. The statement verb must be in
+`adhoc_execute_verbs` (default `INSERT, UPDATE, DELETE`: the code already documents that list as the default for a profile, so the
+ad-hoc default follows it; DDL such as `CREATE` or `TRUNCATE` is `[E_POLICY]` until the operator lists it). The profile built for an
+ad-hoc connection keeps `read_only: true`: `query`, `check_query_result`, `check_row_count`, `ping` and `table_list` stay read-only and
+rolled back, an `INSERT` sent to `query` never commits. With a `sqlx:default_profile` (or `profile=`) the call is an overlay on that
+profile and the profile's own `allow_execute` and `execute_verbs` decide; the D17 keys are for connections without a profile.
 
 **Secrets and audit.** A resolved password is never in a message, log record, return or audit line. The audit line (SECURITY
 section 5) gains `overrides=<comma list of field names>` (`-` when none) and `target=<host>:<port>` (the one actually used;
@@ -254,7 +275,7 @@ profile. Without a profile (and without `sqlx:default_profile`) the connection i
 `dialect: postgresql` itself (it has no `dialect` argument), so `user` and `maintenance_db` are both needed (`host` has no default
 here, unlike `psql`); a non-PostgreSQL `dialect` is `[E_OPTION_INVALID]`. With `allow_call_params: []` they are `[E_POLICY]`; with a
 shorter list a field that is not listed is `[E_POLICY]`. The call with only `query` (and a profile) always works.
-`write=True` with an ad-hoc connection is refused (`[E_EXECUTE_DISABLED]`, before anything connects: there is no profile to say `allow_execute`). `write=True` on a writing profile works with connection fields in the call, as `postgres.psql_query` does.
+`write=True` with an ad-hoc connection runs by default (D17, like `postgres.psql_query(write=True)`): the verb list is `adhoc_execute_verbs` (default INSERT, UPDATE, DELETE) and the operator's `allow_adhoc_execute: false` restores the refusal (`[E_EXECUTE_DISABLED]`, before anything connects). `write=True` on a writing profile works with connection fields in the call, as `postgres.psql_query` does.
 
 Differences from `postgres.psql_query`, all deliberate:
 
@@ -263,7 +284,7 @@ Differences from `postgres.psql_query`, all deliberate:
 | mechanism | runs the `psql` binary as `runas` (OS user) | SQLAlchemy and the profile's driver; no `psql`, no OS user. For a retargeted connection without its own password libpq's `$PGPASSWORD` and `~/.pgpass` are switched off (see section 3.2); an unchanged profile keeps libpq's normal behaviour |
 | `runas` | OS user to run `psql` as | any non-`None` value is `[E_OPTION_INVALID] runas is not supported; sqlx does not use psql or an OS user` |
 | failure | returns `[]`/`False`/the `psql` stderr as data | raises `[E_...]` with the real database error (`CommandExecutionError`, or `SaltInvocationError` for argument/policy errors); never returns an empty list for a failure |
-| `write=True` | allows DML | goes through the `execute` path: needs `allow_execute: true` on the profile and the verb filter; returns one row `{"rows_affected": "<n>"}`; never bypasses them. `write=False` runs in a transaction that is rolled back |
+| `write=True` | allows any statement | goes through the `execute` path: needs `allow_execute: true` on the profile (or, with no profile, the operator's `allow_adhoc_execute`, default true, D17) and the verb filter (the profile's `execute_verbs`, or `adhoc_execute_verbs`: default INSERT, UPDATE, DELETE, so DDL is refused until the operator lists it); returns one row `{"rows_affected": "<n>"}`; never bypasses them. `write=False` runs in a transaction that is rolled back |
 | result | list of dicts, column -> str or `None` | the same shape: values are text, `NULL` is `None`, booleans are `t`/`f`, JSON values are compact JSON text; a trailing `;` is removed like Salt does. Rows beyond the row or byte cap are dropped without a flag (use `sqlx.query` to see `truncated`) |
 | `password` | literal | a literal (as in Salt) or an `sdb://` reference (recommended); a literal lands in the job cache and event bus, as it does for Salt's own function |
 | `host`/`port`/`user`/`maintenance_db` | free | free by default (D16); policy-gated when the operator sets `sqlx:_policy` (section 3.2). Hosts: link-local and cloud-metadata addresses are refused |
@@ -330,7 +351,9 @@ conversions are in section 9.
 
 ### 4.2 `sqlx.execute(profile, sql, params=None, dry_run=False, timeout_ms=None)`
 Refused with `[E_EXECUTE_DISABLED]` unless the profile has `allow_execute: true` (checked by the module before any secret
-is resolved or any connection is opened). Then, in `runner.run_execute`:
+is resolved or any connection is opened). An ad-hoc connection has no profile: it is allowed by `sqlx:_policy:allow_adhoc_execute`
+(default true, D17; with `false` the refusal is the same `[E_EXECUTE_DISABLED]`, naming `(adhoc)`) and its verb list is
+`sqlx:_policy:adhoc_execute_verbs` (default `[INSERT, UPDATE, DELETE]`). Then, in `runner.run_execute`:
 
 - `dry_run` must be exactly `True` or `False` (a real `bool`); anything else, including a string or a number, is
   `[E_OPTION_INVALID]`, so a malformed flag can never commit. The call-level default is `false` (D2). **`dry_run=None`
@@ -597,7 +620,7 @@ way; PostgreSQL `DETAIL` is added only when `error_detail` is true.
 | `E_OPTION_UNKNOWN` / `E_OPTION_INVALID` | unknown call keyword / missing, mistyped or out-of-range value, unknown operator. A call limit above a cap is **not** an error: it is clamped (section 6, D9) | validation |
 | `E_SECRET` | `sdb://` reference failed, resolved empty, resolved to a non-string, or was returned unresolved; the message carries the reference and the exception class name only | secrets |
 | `E_POLICY` | `execute` verb not in `execute_verbs`, or a statement that does not start with a keyword; a `query` / `connect_args` key outside the driver allowlist (section 7); a statement timeout above the hard maximum passed to the adapter | policy (a call limit above a cap is not `E_POLICY`: it is clamped) |
-| `E_EXECUTE_DISABLED` | `execute` on a profile without `allow_execute`; `execute` on an ad-hoc connection (no profile, so no `allow_execute`) | policy |
+| `E_EXECUTE_DISABLED` | `execute` on a profile without `allow_execute`; `execute` on an ad-hoc connection only when the operator set `allow_adhoc_execute: false` (D17; before D17 always) | policy |
 | `E_DRIVER_MISSING` | driver package not installed | import (`dialects.Adapter.load_driver`; the message names the pip extra only). The bare `RuntimeError` naming `cryptography` (PyMySQL authentication) maps here too |
 | `E_CONNECT` | network/TLS/host failure, **including a connect timeout** (`E_TIMEOUT` is for statements only) | PostgreSQL `psycopg.OperationalError` (or `ConnectionTimeout`), no SQLSTATE, matched on text: `Connection refused`, `connection timeout expired`, `failed to resolve host`, `server closed the connection`, `no pg_hba.conf entry`, `pg_hba.conf rejects`, `too many connections`, and any other `connection failed: ...` not claimed by `E_AUTH_FAILED` (WS section 13); MySQL/MariaDB `OperationalError` 2003 (no SQLSTATE); Oracle `OperationalError` `DPY-6005` (refused, timed out, `DPY-6001` service not registered) and an unwrapped `socket.gaierror` (unknown host); SQL Server `OperationalError` with DB-Lib 20009 in the text (refused, timed out, unknown host), **decided on the text** because the number pymssql reports can be stale (WS 15) |
 | `E_AUTH_FAILED` | bad credentials | PostgreSQL: `psycopg.OperationalError` with **no SQLSTATE** (28P01 is not observable), only the text `FATAL:  password authentication failed`, `fe_sendauth: no password supplied` (no password given, or withheld after a retarget, SPEC 3.2) or `role ... is not permitted to log in`; MySQL/MariaDB: 1045 (SQLSTATE 28000). Access to an unknown/forbidden database as a non-admin gave 1044 (SQLSTATE 42000) on MySQL/MariaDB and `FATAL:  database ... does not exist` (no SQLSTATE) on PostgreSQL. Oracle: `DatabaseError` ORA-01017 (wrong password and unknown user give the same text) and DPY-4001 `no credentials specified` (no password). SQL Server: 18456 `Login failed for user '...'` for a wrong password, no password and an unknown database at login alike |
@@ -788,3 +811,9 @@ curl -sS -k https://salt-api.example:8000/run -H 'Content-Type: application/json
 | ID | Decision | Assumption |
 |---|---|---|
 | D16 | **Decided (owner, explicit, twice; 2026-11-01) and implemented**: connection parameters in the call work with no minion configuration, for every function and dialect. Quote: "keep the current psql query and other query behaviour by default; we can't break it by insisting on minion config; the same parameters must work for all dialects." Salt's own `postgres.psql_query(query, user, host, port, maintenance_db, password, runas, write)` takes its connection in the call; before this decision `sqlx.psql_query host=... user=...` failed with `[E_OPTION_UNKNOWN]` unless the operator had listed the fields in `sqlx:_policy:allow_call_params`. | The default is the explicit object `overrides.DEFAULT_POLICY` (section 3.2): fields `dialect`, `driver`, `host`, `port`, `database`, `username`, `password`; ad-hoc connections and literal passwords on; any host except link-local and cloud-metadata targets (`169.254.0.0/16`, `fe80::/10`, `fd00:ec2::254`, `100.100.100.200`); loopback and private addresses allowed; any port and dialect. "Absent policy" (no `allow_call_params` key) = this default; an explicit list, including `[]`, replaces it (`[]` = strict, exactly the pre-D16 contract). `allowed_hosts` / `allowed_ports` / `allowed_dialects` work as before and now also narrow the default. **Kept regardless of defaults (tested):** callers cannot raise caps, set `allow_execute`, `execute_verbs`, `error_detail` or `row_limit`, turn `read_only` off or raise a timeout; `ssl_*`, `query`, `connect_args`, `read_only` and the timeouts are not in the default set; an ad-hoc connection can never `execute` (nor `psql_query write=True`); `*` is rejected in a list; a retargeted connection drops the profile password (D14), and PostgreSQL is told not to use `$PGPASSWORD`/`~/.pgpass`; passwords are masked in errors and logs and never echoed in a result. **Additions made while implementing (not in the owner's text, listed so they can be reversed):** (1) the masking filter remembers at most 512 password values; (2) the "profile is required" error names the missing connection fields. **Withdrawn by the owner (2026-11-01):** an implementation addition that refused `execute` on a writing profile when the call carried connection fields (not Salt's behaviour; `allow_execute` stays a property of the profile), and a refusal of NUL in `password`, `database` and `username` (acceptability differs per database and driver, so the driver and database decide and their real error is returned). **Risk accepted by the owner:** any identity allowed to run `sqlx.*` on a minion can aim it at any reachable host and port with credentials it supplies (connectivity/port-scan oracle, hop to a database only the minion reaches), and a literal password lands in the Salt job cache, event bus and minion debug log in clear text (inherent to Salt, same as `postgres.psql_query`); mitigations are the database account the caller must hold, read-only rolled-back `query`, hard caps, no `execute` on an ad-hoc connection, the metadata/link-local deny, and one line of minion config (`allow_call_params: []`, a shorter list, `allowed_hosts`) to tighten. Questions the owner may still want to decide: whether loopback and ad-hoc without `allowed_hosts`, literal passwords, and the link-local deny are acceptable defaults for production fleets; whether the default should require `external_auth` pinning. |
+
+### Decision added with ad-hoc writes (D17)
+
+| ID | Decision | Assumption |
+|---|---|---|
+| D17 | **Decided (owner, explicit; 2026-11-27) and implemented**: `execute` and `psql_query write=True` work on a connection with no profile, **on by default**, to mimic Salt (`postgres.psql_query` writes whatever it is sent, with the connection in the call). Before this decision such a call was `[E_EXECUTE_DISABLED]` before anything connected (no profile, so no `allow_execute`). | New operator keys under `sqlx:_policy`: `allow_adhoc_execute` (boolean, **absent = true**; `false` restores the refusal exactly; a malformed value is `[E_POLICY]`; a caller can never send it or `allow_execute`, `[E_OPTION_UNKNOWN]`) and `adhoc_execute_verbs` (absent = `[INSERT, UPDATE, DELETE]`, the profile default; added because an ad-hoc connection has no profile to carry `execute_verbs`). Behaviour: section 3.2 "Ad-hoc writes". Interactions: `allow_adhoc_connection: false` = no ad-hoc connection, so no ad-hoc write; `allow_call_params: []` = no connection fields, so nothing ad-hoc; with an explicit `allow_call_params` list the flag still defaults to true wherever ad-hoc connections are enabled. **Verb policy chosen**: the code already documents a default list (`profiles.DEFAULT_EXECUTE_VERBS`), so ad-hoc follows it and does NOT accept "any statement" by default: `CREATE`, `DROP`, `TRUNCATE`, `GRANT` are `[E_POLICY]` until the operator lists them in `adhoc_execute_verbs`. This is narrower than Salt, deliberately; the full Salt behaviour is one list away. **Risk accepted by the owner, written plainly:** anyone who may run `sqlx.execute` (or `sqlx.psql_query write=True`) on a minion can run a write statement against ANY host that minion can reach, with credentials they supply, with no profile and no per-profile `allow_execute` standing in the way. What bounds it is only: the database account the caller must hold (the database role is the real control), the verb list, one statement per call, the hard caps, the link-local / cloud-metadata deny, and whatever `allowed_hosts` / `allowed_ports` / `allowed_dialects` the operator configured; `external_auth` can pin who may call `sqlx.execute` at all (a user pinned to `sqlx.query` still cannot call it). A literal password in the call is in the job cache and on the event bus (D16). The in-session read-only guard is not applied to `execute` and is bypassable anyway. **Recommended for fleets where callers are not fully trusted:** `allow_adhoc_execute: false` plus `allowed_hosts`, and writes through named profiles. | The accepted risk widens the D16 one from "read and probe" to "write". Not decided: whether an explicit `allow_call_params` list should default `allow_adhoc_execute` to false like its other two flags (today true, literally as decided); whether the default verb list should be wider. |

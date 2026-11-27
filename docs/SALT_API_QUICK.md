@@ -51,12 +51,14 @@ By profile, replace the connection fields with `"profile":"<name>"`. PostgreSQL 
 
 | | Fields | Result if not allowed |
 |---|---|---|
-| **By default** (no `sqlx:_policy`) | the keywords above, and the connection: `dialect`, `driver`, `host`, `port`, `database`, `username`, `password` (literal or `sdb://`), with or without `profile` | |
+| **By default** (no `sqlx:_policy`) | the keywords above, and the connection: `dialect`, `driver`, `host`, `port`, `database`, `username`, `password` (literal or `sdb://`), with or without `profile`. That includes **writes with no profile**: `sqlx.execute` and `sqlx.psql_query write=true` commit (D17); the statement must start with INSERT, UPDATE or DELETE unless the operator lists more in `adhoc_execute_verbs` | |
 | **Only if the operator lists it** in `sqlx:_policy:allow_call_params` | `ssl_mode`, `ssl_certs_dir`, `ssl_files`, `query`, `connect_args`, `read_only` (only `true`), `statement_timeout_ms` and `connect_timeout_s` (only lower) | `[E_POLICY] '<field>' may not be set from a call` |
-| **Never** | `allow_execute`, `execute_verbs`, `error_detail`, `row_limit`, `_policy` | `[E_OPTION_UNKNOWN]` |
+| **Never** | `allow_execute`, `allow_adhoc_execute`, `adhoc_execute_verbs`, `execute_verbs`, `error_detail`, `row_limit`, `_policy` | `[E_OPTION_UNKNOWN]` |
 | | raising `limit`, `timeout_ms`, `max_bytes` or any timeout | clamped to the lowest of call, profile and hard maximum |
 | | `read_only: false` | `[E_POLICY]` |
-| | `execute` or `psql_query write=true` on a connection with no profile | `[E_EXECUTE_DISABLED]` |
+| | `execute` or `psql_query write=true` on a connection with no profile, **only when the operator set `allow_adhoc_execute: false`** (it is allowed by default, D17) | `[E_EXECUTE_DISABLED] profile '(adhoc)' does not set allow_execute: true` |
+| | a second statement in the same call | refused (one statement per call, every dialect) |
+| | `query` (and the other read functions) committing an `INSERT` | rolled back, never committed |
 | | link-local and cloud-metadata hosts (`169.254.0.0/16`, `fe80::/10`, `fd00:ec2::254`, `100.100.100.200`), also as decimal, hex or IPv4-mapped spellings | `[E_POLICY]` |
 | | a profile's password to a different host, port, username or dialect | not sent |
 
@@ -73,11 +75,14 @@ sqlx:
     # allowed_ports: [5432, 3306]
     # allowed_dialects: [postgresql, mysql]
     # allow_adhoc_connection: false
+    # allow_adhoc_execute: false           # no write without a named profile (D17); recommended where callers are not fully trusted
+    # adhoc_execute_verbs: [INSERT, UPDATE, DELETE, CREATE]   # or widen the verbs of an ad-hoc write
     # allow_call_literal_password: false   # only sdb:// references
 ```
 
 eauth can pin which functions and which `profile` an API user may send, but it cannot forbid a keyword: a user pinned to a profile
-can still add `host=` to it. Only the minion policy closes that.
+can still add `host=` to it. Only the minion policy closes that. A user pinned to `sqlx.query` stays unable to call `sqlx.execute`
+(HTTP 401, observed; section 3.4 of [SALT_API.md](SALT_API.md)).
 
 ## Password
 
