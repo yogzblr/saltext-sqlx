@@ -126,7 +126,9 @@ def test_psql_query_with_salts_names(cfg, server):
     assert out == [{"one": "1", "nothing": None, "flag": "t"}]
 
 
-def test_an_ad_hoc_connection_cannot_write_even_with_the_rw_account(cfg, server):
+def test_an_ad_hoc_connection_cannot_write_with_allow_adhoc_execute_false(cfg, server):
+    """Mirror of the pre-D17 rule; the default (on) is tested in test_adhoc_execute_functional.py."""
+    cfg["_policy"] = {"allow_adhoc_execute": False}
     kw = conn(server, username="rw", password="rw_pw")
     sql = f"insert into {server.table} (k, n) values ('zz', 9)"
     with pytest.raises(CommandExecutionError, match=r"^\[E_EXECUTE_DISABLED\]"):
@@ -164,8 +166,9 @@ def test_a_writing_profile_writes_with_connection_fields_in_the_call(cfg, server
     assert out["rows_affected"] == 1 and out["committed"] is True
     assert server.admin_run(f"select count(*) from {server.table} where k = 'yy'")[0][0] == 1
     server.admin_run(f"delete from {server.table} where k = 'yy'")
+    cfg["_policy"] = {"allow_adhoc_execute": False}
     with pytest.raises(CommandExecutionError, match=r"^\[E_EXECUTE_DISABLED\]"):
-        mod.execute(sql=sql, **conn(server))  # no profile: nothing says writes are allowed
+        mod.execute(sql=sql, **conn(server))  # no profile and the operator said no ad-hoc writes
     assert server.admin_run(f"select count(*) from {server.table} where k = 'yy'")[0][0] == 0
 
 

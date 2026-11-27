@@ -333,3 +333,10 @@ def test_load_profile_signature_takes_only_name_and_config():
 @pytest.mark.parametrize("key", ["query", "connect_args"])
 def test_null_mapping_means_empty(key):
     assert profiles.validate_profile("p", make(**{key: None}))[key] == {}
+
+
+def test_a_profile_cannot_use_the_any_sentinel_of_ad_hoc_writes():
+    """D17: "*" (any statement) exists only as the operator's ad-hoc default; a profile's execute_verbs stay alphabetic words."""
+    raw = dict(BASE, execute_verbs=["*"])
+    with pytest.raises(SaltInvocationError, match=r"^\[E_PROFILE_INVALID\].*execute_verbs"):
+        profiles.validate_profile("p", raw)

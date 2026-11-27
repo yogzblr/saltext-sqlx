@@ -215,8 +215,22 @@ What the default does and does not do:
   `169.254.169.254`, `fe80::/10`, `fd00:ec2::254`, `100.100.100.200`), checked on the resolved address, so alternative
   spellings and DNS names pointing there are refused as well (`[E_POLICY]`). Loopback and private addresses are allowed.
   Any port is allowed.
-- **What a call can never do**, whatever the policy: run `execute` on an ad-hoc connection (`[E_EXECUTE_DISABLED]`, also
-  `psql_query write=True`); set `row_limit`, `allow_execute`, `execute_verbs`, `error_detail` or `_policy`
+- **Writes with no profile (D17, on by default).** `sqlx.execute` and `sqlx.psql_query write=True` with the connection in the call
+  run, as Salt's `postgres.psql_query(write=True)` does: they commit and return `rows_affected` / `committed`, `dry_run=True`
+  rolls back, one statement per call, caps and timeouts apply. Any single statement is accepted by default, DDL included (`CREATE`,
+  `ALTER`, `TRUNCATE`, `DROP`, ...); the operator narrows it with `sqlx:_policy:adhoc_execute_verbs: [INSERT, UPDATE, DELETE]`,
+  after which `CREATE`, `DROP` and the like are `[E_POLICY] statement verb '...' is not in adhoc_execute_verbs`. `query`, `check_query_result`, `check_row_count`, `ping` and `table_list` stay read-only: an `INSERT`
+  sent to `query` is rolled back (`[E_READ_ONLY]` on PostgreSQL). The operator can switch ad-hoc writes off with
+  `sqlx:_policy:allow_adhoc_execute: false`; the call then fails as before, `[E_EXECUTE_DISABLED] profile '(adhoc)' does not
+  set allow_execute: true`, before anything connects. **Risk:** anyone who may run `sqlx.execute` can run DDL, `DROP` and
+  `TRUNCATE` on any host the minion can reach with credentials they supply; the database account is the real limit. For fleets
+  where callers are not fully trusted, set `allow_adhoc_execute: false` (or a narrow `adhoc_execute_verbs`) and `allowed_hosts`,
+  and write through named profiles. With `allow_adhoc_connection:
+  false` there is no ad-hoc connection at all, so no ad-hoc write; with `allow_call_params: []` no connection field can be sent.
+  With a `sqlx:default_profile` (or `profile=`) a call that sends connection fields is an overlay, and that profile's own
+  `allow_execute` decides.
+- **What a call can never do**, whatever the policy: set `allow_adhoc_execute`, `adhoc_execute_verbs`, `row_limit`,
+  `allow_execute`, `execute_verbs`, `error_detail` or `_policy`
   (`[E_OPTION_UNKNOWN]`); raise a timeout or a cap (only lower); turn `read_only` off; weaken `ssl_mode`. With the default,
   `ssl_mode`, `ssl_certs_dir`, `ssl_files`, `query`, `connect_args`, `read_only` and the timeouts are not accepted from a call
   (`[E_POLICY]`). Keep writes on a profile with its own write-capable account; if callers must not aim that profile at another target, the operator narrows the call fields (`allow_call_params: []` or a shorter list, `allowed_hosts`).
@@ -249,6 +263,8 @@ sqlx:
     allowed_dialects: [postgresql, mysql]
     allow_adhoc_connection: false                                # a call must name a profile
     allow_call_literal_password: false                           # sdb:// references only
+    allow_adhoc_execute: false                                   # no write without a named profile (D17); reads unaffected
+    # adhoc_execute_verbs: [INSERT, UPDATE, DELETE]              # or keep ad-hoc writes but narrow them to DML (default: any single statement)
 
 # 4. More than the default (TLS directory, driver args, timeouts): list the fields explicitly.
 sqlx:
@@ -412,7 +428,7 @@ ERROR: [E_TIMEOUT] mssql 20003: TDS server connection timed out; DBPROCESS is de
 | `E_OPTION_UNKNOWN` / `E_OPTION_INVALID` | a call keyword is misspelt, mistyped or out of range | check spelling and YAML quoting |
 | `E_SECRET` | `sdb://` reference did not resolve | check the sdb profile and key |
 | `E_POLICY` | refused by policy (host not allowed, certificate path or key mode, literal password) | see `SECURITY.md` |
-| `E_EXECUTE_DISABLED` | `execute` on a profile without `allow_execute: true` | use the write profile |
+| `E_EXECUTE_DISABLED` | `execute` on a profile without `allow_execute: true`; with no profile, only when the operator set `allow_adhoc_execute: false` | use the write profile |
 | `E_DRIVER_MISSING` | the driver for that dialect is not installed (PostgreSQL: a profile with `driver: psycopg` needs `[postgres-psycopg]`, one with `driver: pg8000` needs `[postgres]`) | `salt-pip install 'saltext-sqlx[<extra>]'` |
 | `E_CONNECT` / `E_AUTH_FAILED` | cannot connect / wrong credentials or certificate | check host, port, firewall, account |
 | `E_SQL` / `E_SQL_DATA` / `E_CONSTRAINT` | SQL error / bad data / constraint violation | the message is the database's own |

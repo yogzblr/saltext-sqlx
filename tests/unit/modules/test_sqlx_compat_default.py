@@ -178,7 +178,10 @@ def test_psql_query_overlay_on_the_default_profile_does_not_add_a_dialect(fake):
     assert fake.connections[0]["profile"]["call_overrides"] == ["host", "password"]
 
 
-def test_psql_query_write_with_an_ad_hoc_connection_is_refused_before_connecting(fake):
+def test_psql_query_write_with_an_ad_hoc_connection_is_refused_before_connecting_when_the_flag_is_false(
+    fake,
+):
+    fake.cfg["_policy"] = {"allow_adhoc_execute": False}
     with pytest.raises(CommandExecutionError, match=r"^\[E_EXECUTE_DISABLED\]"):
         mod.psql_query(
             "insert into t values (1)",
@@ -194,7 +197,8 @@ def test_psql_query_write_with_an_ad_hoc_connection_is_refused_before_connecting
 # -- execute --------------------------------------------------------------------------------------------------------
 
 
-def test_execute_with_an_ad_hoc_connection_is_refused(fake):
+def test_execute_with_an_ad_hoc_connection_is_refused_when_the_flag_is_false(fake):
+    fake.cfg["_policy"] = {"allow_adhoc_execute": False}
     with pytest.raises(CommandExecutionError, match=r"^\[E_EXECUTE_DISABLED\]"):
         mod.execute(sql="update t set a = 1", dialect="postgresql", password=LITERAL, **CONN)
     assert fake.connections == [] and fake.executes == [] and fake.sdb == []

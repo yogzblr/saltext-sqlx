@@ -96,13 +96,22 @@ def _query(opts, resolved):
 def _execute(opts, resolved):
     # An execute-enabled profile must be able to write, so the best-effort read-only guard is not applied.
     with engine.connection(resolved, resolved.get("password"), opts["timeout_ms"], False) as conn:
-        return runner.run_execute(
-            conn,
-            opts["sql"],
-            opts["params"],
-            dry_run=opts["dry_run"],
-            execute_verbs=resolved["execute_verbs"],
-        )
+        try:
+            return runner.run_execute(
+                conn,
+                opts["sql"],
+                opts["params"],
+                dry_run=opts["dry_run"],
+                execute_verbs=resolved["execute_verbs"],
+            )
+        except SaltInvocationError as exc:
+            message = str(exc)
+            if resolved.get("adhoc") and message.startswith("[E_POLICY] statement verb "):
+                # an ad-hoc connection has no profile: the list the operator edits is sqlx:_policy:adhoc_execute_verbs
+                raise SaltInvocationError(
+                    message.replace("not in execute_verbs", "not in adhoc_execute_verbs", 1)
+                ) from exc
+            raise
 
 
 def query(profile=None, sql=None, **kwargs):
@@ -126,7 +135,10 @@ def query(profile=None, sql=None, **kwargs):
 
 def execute(profile=None, sql=None, **kwargs):
     """
-    Run one data-changing statement. Refused with ``[E_EXECUTE_DISABLED]`` unless the profile has ``allow_execute``.
+    Run one data-changing statement. With a profile it is refused with ``[E_EXECUTE_DISABLED]`` unless the profile has
+    ``allow_execute``. With no profile (the connection is sent in the call) it runs by default, like Salt's own
+    ``postgres.psql_query``, unless the operator set ``sqlx:_policy:allow_adhoc_execute: false`` (SPEC D17); the statement
+    is any single statement unless the operator narrows ``sqlx:_policy:adhoc_execute_verbs`` (for example INSERT, UPDATE, DELETE).
 
     Keywords: ``params``, ``dry_run`` (default false; true rolls back), ``timeout_ms``. ``dry_run=None`` means
     "not given", NOT "safe": it takes the default and the statement is COMMITTED. Pass ``dry_run=True`` to roll back.
@@ -304,7 +316,8 @@ def psql_query(  # pylint: disable=too-many-arguments,too-many-positional-argume
     ``postgres.psql_query``; the operator can restrict them in ``sqlx:_policy:allow_call_params`` (D16). Without a
     profile the connection is PostgreSQL and needs ``user`` and ``maintenance_db`` too. ``profile`` defaults to
     ``sqlx:default_profile`` and must be a postgresql profile. ``runas`` is refused. ``write=True`` goes through the
-    ``execute`` path (``allow_execute`` and the verb filter apply; never with an ad-hoc connection). Returns a list of
+    ``execute`` path (``allow_execute`` and the verb filter apply; with an ad-hoc connection the operator's
+    ``allow_adhoc_execute``, on by default, and ``adhoc_execute_verbs`` decide, SPEC D17). Returns a list of
     dicts (column to text or ``None``; rows beyond the row or byte cap are dropped silently, ``sqlx.query`` shows the
     ``truncated`` flag); a failure raises ``[E_...]`` instead of returning ``[]``. Differences: SPEC section 4.7.
 

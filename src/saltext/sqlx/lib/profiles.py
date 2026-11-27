@@ -21,6 +21,11 @@ from saltext.sqlx.lib.dialects import DIALECT_DRIVERS
 
 DEFAULT_EXECUTE_VERBS = ("INSERT", "UPDATE", "DELETE")
 
+#: The explicit representation of "any single statement" in a verb list (D17): the whole list is ``["*"]``. It is the
+#: default of an ad-hoc ``execute`` only (``sqlx:_policy:adhoc_execute_verbs`` absent or ``"*"``). A profile can never use
+#: it: ``execute_verbs`` there must be alphabetic words (``validate_profile``), so it stays a narrow list.
+ANY_EXECUTE_VERB = "*"
+
 _SDB_PREFIX = "sdb://"
 _VERB_RE = re.compile(r"^[A-Za-z]+$")
 

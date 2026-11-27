@@ -18,6 +18,7 @@ import time
 from salt.exceptions import SaltInvocationError
 from sqlalchemy import text
 
+from saltext.sqlx.lib import profiles
 from saltext.sqlx.lib import serialize
 
 _KEYWORD = re.compile(r"[A-Za-z]\w*", re.ASCII)
@@ -268,13 +269,16 @@ def _check_verb(sql, execute_verbs):
         verbs.sort(key=str)
     allowed = {str(v).lower() for v in verbs}
     listing = ", ".join(str(v).lower() for v in verbs)
+    any_verb = verbs == [
+        profiles.ANY_EXECUTE_VERB
+    ]  # D17: only the whole list ["*"] means any statement
     found = _KEYWORD.match(sql, start)
     if found is None:
         _fail(
             "E_POLICY", f"the statement does not start with a SQL keyword; allowed verbs: {listing}"
         )
     verb = found.group(0)
-    if verb.lower() not in allowed:
+    if not any_verb and verb.lower() not in allowed:
         _fail("E_POLICY", f"statement verb '{verb}' is not in execute_verbs ({listing})")
 
 
@@ -287,7 +291,8 @@ def run_execute(conn, sql, params, *, dry_run, execute_verbs):
 
     The first keyword of the statement (after whitespace and ``--`` / ``/* */`` comments; a leading ``/*!``, ``/*M!`` or nested comment is
     ``[E_POLICY]``) must be in
-    ``execute_verbs`` (case-insensitive), else ``[E_POLICY]``; an empty or comment-only statement is
+    ``execute_verbs`` (case-insensitive), else ``[E_POLICY]`` (the list ``["*"]``, which only an ad-hoc connection gets, D17,
+    accepts any verb; the keyword, comment and empty-statement checks still apply); an empty or comment-only statement is
     ``[E_OPTION_INVALID]``. The filter is best effort and bypassable; the database role limits what ``execute`` can do.
     ``dry_run`` must be a real ``bool`` (anything else is ``[E_OPTION_INVALID]``, so a malformed flag can never
     commit by accident). ``options.validate`` turns ``dry_run=None`` ("not given") into the default ``False`` before

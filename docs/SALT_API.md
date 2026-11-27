@@ -16,6 +16,13 @@ the request written from the code and `docs/WIRE_SHAPES.md` sections 14 and 15, 
 response shape without inventing values. The Docker end-to-end suite that does drive all five databases through salt-api is
 `tests-e2e/` (`tests-e2e/up.sh`, then `python -m pytest tests-e2e -m e2e`; see `tests-e2e/README.md`). It was not run for this page.
 
+**Update 2026-11-27 (ad-hoc writes, SPEC decision D17).** Writes with no profile are now allowed by default, so every example in
+this page that used to answer `[E_EXECUTE_DISABLED]` for a connection sent in the call was re-sent to a fresh sandbox (the same
+Salt 3008.5 / CherryPy 18.10 / TLS / `file` eauth stack, one minion `db-minion-01`, PostgreSQL 16.15, MySQL 8.0.46, MariaDB
+10.11.14) and shows the new response; the opt-out (`allow_adhoc_execute: false`) is shown as well. The DDL examples (any single statement by default, and the narrowed `adhoc_execute_verbs` list) were sent the same day to a
+fresh single-minion sandbox. Examples that were not about
+writes were not re-run for D17 and are as they were captured.
+
 **Test values.** Accounts and passwords in the examples are the documented test accounts of `tests-support`
 (`ro` / `ro_pw`, `rw` / `rw_pw`; SQL Server `Ro_pw_12345!`), the salt-api users are throw-away sandbox users
 (`api_admin`, `sre_ops`, `dba_writers`, `adhoc_ops`), and hosts are `127.0.0.1` with the ports of `tests-support/env.sh`
@@ -1566,8 +1573,10 @@ Response, HTTP 200:
 }]}
 ```
 
-`execute` is refused when the connection comes from the call (an ad-hoc connection has no profile, so it can never write) and on a
-profile without `allow_execute`:
+With the connection in the call and **no profile**, `execute` runs by default (D17, owner decision 2026-11-27: Salt's own
+`postgres.psql_query(write=True)` writes whatever it is sent). It commits, supports `dry_run`, and takes any single statement, DDL
+included (owner: "Lets do everything"; the operator can narrow that, section 4). The write below went to PostgreSQL with an `sdb://`
+password; a second connection saw the row afterwards:
 
 ```bash
 sqlx <<'JSON'
@@ -1593,9 +1602,11 @@ Response, HTTP 200:
 
 ```json
 {"return": [{
-  "db-minion-01": "ERROR: [E_EXECUTE_DISABLED] profile '(adhoc)' does not set allow_execute: true"
+  "db-minion-01": {"rows_affected": 1, "committed": true, "dry_run": false, "elapsed_ms": 1, "profile": "(adhoc)"}
 }]}
 ```
+
+A profile without `allow_execute` still refuses:
 
 ```bash
 sqlx <<'JSON'
@@ -1618,6 +1629,139 @@ Response, HTTP 200:
 {"return": [{
   "db-minion-01": "ERROR: [E_EXECUTE_DISABLED] profile 'pg_ro' does not set allow_execute: true"
 }]}
+```
+
+The ad-hoc write in detail (D17), each request sent as shown to the sandbox with no `sqlx:_policy`, then with the opt-out. Dry run (rolled back;
+a second connection found no row):
+
+```bash
+sqlx <<'JSON'
+[{"client": "local", "tgt": "db-minion-01", "fun": "sqlx.execute",
+  "kwarg": {"dialect": "postgresql", "host": "127.0.0.1", "port": 54329, "database": "sqlx_test",
+            "username": "rw", "password": "rw_pw", "sql": "insert into scratch.t_adhoc values (41)", "dry_run": true}}]
+JSON
+```
+
+```text
+{"return": [{"db-minion-01": {"rows_affected": 1, "committed": false, "dry_run": true, "elapsed_ms": 0, "profile": "(adhoc)"}}]}
+HTTP 200
+```
+
+With a bind value, committed (a second connection counted one row with `a = 42`):
+
+```text
+{"return": [{"db-minion-01": {"rows_affected": 1, "committed": true, "dry_run": false, "elapsed_ms": 1, "profile": "(adhoc)"}}]}
+HTTP 200
+```
+
+`psql_query` with `write: true` (Salt's argument names; this statement is an UPDATE; the second connection saw `a = 43`):
+
+```bash
+sqlx <<'JSON'
+[{"client": "local", "tgt": "db-minion-01", "fun": "sqlx.psql_query",
+  "kwarg": {"query": "update scratch.t_adhoc set a = 43 where a = 42", "host": "127.0.0.1", "port": 54329,
+            "user": "rw", "maintenance_db": "sqlx_test", "password": "rw_pw", "write": true}}]
+JSON
+```
+
+```text
+{"return": [{"db-minion-01": [{"rows_affected": "1"}]}]}
+HTTP 200
+```
+
+DDL is accepted by default, one statement per call. Each request below was sent to the sandbox with no `sqlx:_policy`. `rows_affected`
+is `-1` on PostgreSQL for DDL (the driver reports no row count) and `0` on MySQL and MariaDB. `CREATE TABLE` as the admin account (the
+scratch table existed afterwards, `to_regclass` found it):
+
+```bash
+sqlx <<'JSON'
+[{"client": "local", "tgt": "db-minion-01", "fun": "sqlx.execute",
+  "kwarg": {"dialect": "postgresql", "host": "127.0.0.1", "port": 54329, "database": "sqlx_test",
+            "username": "postgres", "password": "<admin password>", "sql": "create table scratch.t_ddl (a integer)"}}]
+JSON
+```
+
+```text
+{"return": [{"db-minion-01": {"rows_affected": -1, "committed": true, "dry_run": false, "elapsed_ms": 2, "profile": "(adhoc)"}}]}
+HTTP 200
+```
+
+`psql_query` with `write: true` ran `alter table scratch.t_ddl add column b integer` and then `truncate table scratch.t_ddl`:
+
+```text
+{"return": [{"db-minion-01": [{"rows_affected": "-1"}]}]}
+HTTP 200
+{"return": [{"db-minion-01": [{"rows_affected": "-1"}]}]}
+HTTP 200
+```
+
+`CREATE TABLE` on MySQL and on MariaDB (one request, two calls):
+
+```text
+{"return": [{"db-minion-01": {"rows_affected": 0, "committed": true, "dry_run": false, "elapsed_ms": 8, "profile": "(adhoc)"}}, {"db-minion-01": {"rows_affected": 0, "committed": true, "dry_run": false, "elapsed_ms": 2, "profile": "(adhoc)"}}]}
+HTTP 200
+```
+
+`DROP TABLE scratch.t_ddl` as the admin account committed the same way (`to_regclass` was `NULL` afterwards). The database role still limits
+what runs: the same `drop table` as `rw`, on a table that did not exist, came back with the database's own error:
+
+```text
+{"return": [{"db-minion-01": "ERROR: [E_SQL] postgresql 42P01: table \"t_adhoc\" does not exist"}]}
+HTTP 200
+```
+
+One statement per call: `drop table scratch.t_ddl; drop table scratch.orders` was refused and both tables were still there:
+
+```text
+{"return": [{"db-minion-01": "ERROR: [E_SQL] postgresql 42601: cannot insert multiple commands into a prepared statement"}]}
+HTTP 200
+```
+
+**Narrowing it.** With `adhoc_execute_verbs: [INSERT, UPDATE, DELETE]` in the minion config (restart the minion) the same `create table` and a
+`psql_query` `truncate` are refused, nothing is created, and DML still works (here a `dry_run`):
+
+```text
+{"return": [{"db-minion-01": "ERROR executing 'sqlx.execute': [E_POLICY] statement verb 'create' is not in adhoc_execute_verbs (insert, update, delete)"}]}
+HTTP 200
+{"return": [{"db-minion-01": "ERROR executing 'sqlx.psql_query': [E_POLICY] statement verb 'truncate' is not in adhoc_execute_verbs (insert, update, delete)"}]}
+HTTP 200
+{"return": [{"db-minion-01": {"rows_affected": 1, "committed": false, "dry_run": true, "elapsed_ms": 1, "profile": "(adhoc)"}}]}
+HTTP 200
+```
+
+A caller cannot send the switch (`"allow_adhoc_execute": true` in `kwarg`), nor `allow_execute`:
+
+```json
+{"return": [{"db-minion-01": "ERROR executing 'sqlx.execute': [E_OPTION_UNKNOWN] unknown option(s) for sqlx.execute: 'allow_adhoc_execute'"}]}
+{"return": [{"db-minion-01": "ERROR executing 'sqlx.execute': [E_OPTION_UNKNOWN] unknown option(s) for sqlx.execute: 'allow_execute'"}]}
+```
+
+`external_auth`: `sre_ops`, pinned to `sqlx.query` with `profile: ^(pg_ro)$`, sent the same ad-hoc `sqlx.execute`. salt-api answered
+`HTTP 401` (`401 Unauthorized`, "Authorization error occurred.") and a second connection found no row: a user who may only call
+`sqlx.query` cannot call `sqlx.execute`.
+
+**The opt-out.** After adding this to the minion config and restarting the minion:
+
+```yaml
+sqlx:
+  _policy:
+    allow_adhoc_execute: false
+```
+
+the same ad-hoc `sqlx.execute` and `sqlx.psql_query write: true` answer (HTTP 200, no row written; the `create table` of the previous
+paragraph was sent again and `to_regclass` found no table):
+
+```json
+{"return": [{"db-minion-01": "ERROR: [E_EXECUTE_DISABLED] profile '(adhoc)' does not set allow_execute: true"}]}
+{"return": [{"db-minion-01": "ERROR: [E_EXECUTE_DISABLED] profile '(adhoc)' does not set allow_execute: true"}]}
+```
+
+while a named writing profile still writes and an ad-hoc read still works (one request with two calls; the row `53` was written by
+`pg_rw`, the read returned it):
+
+```text
+{"return": [{"db-minion-01": {"rows_affected": 1, "committed": true, "dry_run": false, "elapsed_ms": 1, "profile": "pg_rw"}}, {"db-minion-01": {"columns": ["a"], "rows": [[53]], "row_count": 1, "truncated": false, "elapsed_ms": 0, "profile": "(adhoc)"}}]}
+HTTP 200
 ```
 
 **What the database says.** A write through `query` fails in the read-only transaction; an unknown table, a wrong password come back
@@ -1768,7 +1912,7 @@ Response, HTTP 200:
 {"return": [{"db-minion-01": [{"one": "1"}]}]}
 ```
 
-`write: true` goes through the `execute` path: it needs a writing profile, and it is refused without one:
+`write: true` goes through the `execute` path. With no profile it runs by default (D17; any single statement, DDL included, unless the operator narrows `adhoc_execute_verbs`); with a profile that has `allow_execute` it runs as before:
 
 ```bash
 sqlx <<'JSON'
@@ -1835,7 +1979,7 @@ Response, HTTP 200:
 
 ```json
 {"return": [{
-  "db-minion-01": "ERROR: [E_EXECUTE_DISABLED] profile '(adhoc)' does not set allow_execute: true"
+  "db-minion-01": [{"rows_affected": "1"}]
 }]}
 ```
 
@@ -2539,7 +2683,7 @@ Response, HTTP 200:
 
 ```json
 {"return": [{
-  "db-minion-01": "ERROR: [E_EXECUTE_DISABLED] profile '(adhoc)' does not set allow_execute: true"
+  "db-minion-01": {"rows_affected": 1, "committed": true, "dry_run": false, "elapsed_ms": 2, "profile": "(adhoc)"}
 }]}
 ```
 
@@ -3248,7 +3392,7 @@ Response, HTTP 200:
 
 ```json
 {"return": [{
-  "db-minion-01": "ERROR: [E_EXECUTE_DISABLED] profile '(adhoc)' does not set allow_execute: true"
+  "db-minion-01": {"rows_affected": 1, "committed": true, "dry_run": false, "elapsed_ms": 1, "profile": "(adhoc)"}
 }]}
 ```
 
@@ -3662,8 +3806,9 @@ JSON
 ```
 
 Response shape: `{"rows_affected": <n>, "committed": false, "dry_run": true, "elapsed_ms": <n>, "profile": "oracle_rw"}`. With the
-connection in the call, `execute` answers `[E_EXECUTE_DISABLED]` exactly as on PostgreSQL (checked by the module before any
-connection is opened, so the behaviour does not depend on the database).
+connection in the call, `execute` follows the same D17 rule as on PostgreSQL: it runs by default and answers
+`[E_EXECUTE_DISABLED]` only when the operator set `allow_adhoc_execute: false` (decided by the module before any connection is
+opened, so it does not depend on the database). **Not run against Oracle**: unit and security tests only.
 
 **Errors** are `ERROR: [E_...] oracle ORA-nnnnn: <message>`; the observed texts are in the user guide, section 5
 (`ORA-00942`, `ORA-01017`).
@@ -4888,7 +5033,7 @@ None of these can be sent from a call, on any minion, with any policy:
 | `allow_execute`, `execute_verbs`, `error_detail`, `row_limit`, `_policy` | `[E_OPTION_UNKNOWN]`: they are not keywords at all |
 | raising a cap or a timeout (`limit`, `timeout_ms`, `max_bytes`, `statement_timeout_ms`, `connect_timeout_s`, `retry_timeout_s`) | silently **clamped** to the lowest of call, profile and hard maximum (10 000 rows, 300 s, 8 MiB, 60 s connect, 10 s retry; SPEC section 6; observed for `limit`, `timeout_ms`, `max_bytes` and `statement_timeout_ms`); not an error |
 | `read_only: false` | `[E_POLICY] 'read_only' can be turned on from a call, never off` (when `read_only` is allowed at all) |
-| `execute` (or `psql_query write=true`) on a connection without a profile | `[E_EXECUTE_DISABLED]` |
+| `allow_adhoc_execute`, `adhoc_execute_verbs` | `[E_OPTION_UNKNOWN]` (D17): only the operator sets them |
 | a profile's password sent to a retargeted host, port, username or dialect | not sent (section 3.2) |
 | link-local and cloud-metadata hosts | `[E_POLICY]` (below) |
 
@@ -5077,7 +5222,7 @@ Response, HTTP 200:
 }]}
 ```
 
-An ad-hoc or read-only profile cannot write (section 2.1):
+A read-only profile cannot write, and neither can an ad-hoc connection if the operator set `allow_adhoc_execute: false` (section 2.1; by default the ad-hoc write below commits, D17):
 
 ```bash
 sqlx <<'JSON'
@@ -5103,7 +5248,7 @@ Response, HTTP 200:
 
 ```json
 {"return": [{
-  "db-minion-01": "ERROR: [E_EXECUTE_DISABLED] profile '(adhoc)' does not set allow_execute: true"
+  "db-minion-01": {"rows_affected": 1, "committed": true, "dry_run": false, "elapsed_ms": 1, "profile": "(adhoc)"}
 }]}
 ```
 
@@ -5300,7 +5445,9 @@ pillar refreshed) after a change.
 | profile-only, nothing from the call | `allow_call_params: []` | every connection keyword is `[E_OPTION_UNKNOWN]`; `psql_query`'s `host`, `user`, ... are `[E_POLICY]` |
 | fewer fields | `allow_call_params: [host, database, username, password]` plus `allowed_hosts` | the list **replaces** the default; the old rules apply: `allowed_hosts` is required when `host` is listed, ad-hoc and literal passwords are off unless `allow_adhoc_connection: true` / `allow_call_literal_password: true` are set |
 | only known targets | `allowed_hosts`, `allowed_ports`, `allowed_dialects` | anything else is `[E_POLICY]`; with `allowed_hosts` the loopback address must be listed too |
-| ad-hoc connections off | `allow_adhoc_connection: false` | a call must name a profile |
+| ad-hoc connections off | `allow_adhoc_connection: false` | a call must name a profile (and so there is no ad-hoc write either) |
+| no write without a named profile (D17) | `allow_adhoc_execute: false` | `execute` / `psql_query write=true` with no profile: `[E_EXECUTE_DISABLED] profile '(adhoc)' does not set allow_execute: true`; ad-hoc reads still work (observed, section 2.1) |
+| narrow an ad-hoc write (D17) | `adhoc_execute_verbs: [INSERT, UPDATE, DELETE]` (default: any single statement) | a statement starting with another word is `[E_POLICY] statement verb '...' is not in adhoc_execute_verbs (insert, update, delete)` (observed, section 2.1) |
 | no literal passwords | `allow_call_literal_password: false` | `[E_POLICY] 'password' from a call must be an sdb:// reference ...` |
 
 Strict (`pol_strict`, minion `db-minion-strict`):
