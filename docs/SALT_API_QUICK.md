@@ -51,7 +51,7 @@ By profile, replace the connection fields with `"profile":"<name>"`. PostgreSQL 
 
 | | Fields | Result if not allowed |
 |---|---|---|
-| **By default** (no `sqlx:_policy`) | the keywords above, and the connection: `dialect`, `driver`, `host`, `port`, `database`, `username`, `password` (literal or `sdb://`), with or without `profile`. That includes **writes with no profile**: `sqlx.execute` and `sqlx.psql_query write=true` commit (D17); the statement must start with INSERT, UPDATE or DELETE unless the operator lists more in `adhoc_execute_verbs` | |
+| **By default** (no `sqlx:_policy`) | the keywords above, and the connection: `dialect`, `driver`, `host`, `port`, `database`, `username`, `password` (literal or `sdb://`), with or without `profile`. That includes **writes with no profile**: `sqlx.execute` and `sqlx.psql_query write=true` commit (D17); any single statement is accepted (DDL included) unless the operator narrows `adhoc_execute_verbs`, e.g. to `[INSERT, UPDATE, DELETE]` | |
 | **Only if the operator lists it** in `sqlx:_policy:allow_call_params` | `ssl_mode`, `ssl_certs_dir`, `ssl_files`, `query`, `connect_args`, `read_only` (only `true`), `statement_timeout_ms` and `connect_timeout_s` (only lower) | `[E_POLICY] '<field>' may not be set from a call` |
 | **Never** | `allow_execute`, `allow_adhoc_execute`, `adhoc_execute_verbs`, `execute_verbs`, `error_detail`, `row_limit`, `_policy` | `[E_OPTION_UNKNOWN]` |
 | | raising `limit`, `timeout_ms`, `max_bytes` or any timeout | clamped to the lowest of call, profile and hard maximum |
@@ -76,7 +76,7 @@ sqlx:
     # allowed_dialects: [postgresql, mysql]
     # allow_adhoc_connection: false
     # allow_adhoc_execute: false           # no write without a named profile (D17); recommended where callers are not fully trusted
-    # adhoc_execute_verbs: [INSERT, UPDATE, DELETE, CREATE]   # or widen the verbs of an ad-hoc write
+    # adhoc_execute_verbs: [INSERT, UPDATE, DELETE]   # or narrow an ad-hoc write to DML (default: any single statement)
     # allow_call_literal_password: false   # only sdb:// references
 ```
 

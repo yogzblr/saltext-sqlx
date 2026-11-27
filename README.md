@@ -150,11 +150,13 @@ salt-call --local sqlx.check_row_count sql='select 1' operator='"=="' expected=1
 salt-call --local sqlx.table_list dialect=mariadb host=127.0.0.1 port=33062 username=ro database=scratch password=ro_pw
 #   {"schema": "scratch", "tables": ["orders", "t_probe", "uniq"], "views": [], "profile": "(adhoc)"}
 
-# writes work with no profile too (D17, below); one statement per call, DML verbs only unless the operator lists more
+# writes work with no profile too (D17, below); one statement per call, any statement unless the operator narrows the verbs
 salt-call --local sqlx.psql_query 'insert into scratch.t_adhoc values (1)' host=127.0.0.1 port=54329 user=rw maintenance_db=sqlx_test password=rw_pw write=True
 #   [{"rows_affected": "1"}]
 salt-call --local sqlx.execute sql='insert into scratch.t_adhoc values (1)' dialect=mariadb host=127.0.0.1 port=33062 username=rw database=scratch password=rw_pw
 #   {"rows_affected": 1, "committed": true, "dry_run": false, "elapsed_ms": 1, "profile": "(adhoc)"}
+salt-call --local sqlx.execute sql='create table scratch.t_ddl (a int)' dialect=postgresql host=127.0.0.1 port=54329 username=postgres database=sqlx_test password=admin_pw
+#   {"rows_affected": -1, "committed": true, "dry_run": false, "elapsed_ms": 1, "profile": "(adhoc)"}
 salt-call --local sqlx.psql_query 'insert into scratch.t_adhoc values (5); insert into scratch.t_adhoc values (6)' host=127.0.0.1 port=54329 user=rw maintenance_db=sqlx_test password=rw_pw write=True
 #   Error running 'sqlx.psql_query': [E_SQL] postgresql 42601: cannot insert multiple commands into a prepared statement
 salt-call --local sqlx.ping dialect=postgresql host=169.254.169.254 database=d username=u password=x
@@ -172,13 +174,13 @@ connection never receives the profile's password; link-local and cloud-metadata 
 connection in the call and no profile run, like Salt's `postgres.psql_query(write=True)`: they commit (`rows_affected`,
 `committed`), `dry_run=True` rolls back, one statement per call, the caps and timeouts apply and a call can only lower them, the
 password is masked, link-local and cloud-metadata targets are refused, and `allowed_hosts`, `allowed_ports` and
-`allowed_dialects` still apply. The statement must start with INSERT, UPDATE or DELETE unless the operator lists more verbs in
-`sqlx:_policy:adhoc_execute_verbs` (the same default as a profile's `execute_verbs`; DDL such as `CREATE` is `[E_POLICY]` until
-listed). The read functions stay read-only: an `INSERT` sent to `sqlx.query` is rolled back. **The accepted risk:** anyone who
-can run `sqlx.execute` can run write statements against any host the minion can reach, with credentials they supply; the
-database account is the real limit. Where callers are not fully trusted set `allow_adhoc_execute: false` (the old behaviour,
-`[E_EXECUTE_DISABLED] profile '(adhoc)' does not set allow_execute: true`) and `allowed_hosts`, and write through named
-profiles; `external_auth` can keep a user to `sqlx.query` only, and that user still cannot call `sqlx.execute`.
+`allowed_dialects` still apply. **Any single statement is accepted by default, DDL included** (`CREATE`, `ALTER`, `TRUNCATE`,
+`DROP`, ..., as Salt's `postgres.psql_query` does); the operator narrows it with `sqlx:_policy:adhoc_execute_verbs: [INSERT,
+UPDATE, DELETE]`, after which any other first keyword is `[E_POLICY] ... not in adhoc_execute_verbs`. The read functions stay read-only: an `INSERT` sent to `sqlx.query` is rolled back. **The accepted risk:** anyone who
+can run `sqlx.execute` can run DDL, `DROP` and `TRUNCATE` (any single statement) on any host the minion can reach, with
+credentials they supply; the database account is the real limit. Where callers are not fully trusted set
+`allow_adhoc_execute: false` (the old behaviour, `[E_EXECUTE_DISABLED] profile '(adhoc)' does not set allow_execute: true`) or
+a narrow `adhoc_execute_verbs`, plus `allowed_hosts`, and write through named profiles; `external_auth` can keep a user to `sqlx.query` only, and that user still cannot call `sqlx.execute`.
 
 **Tightening it** (minion config or pillar; a call can never send or change the policy):
 
@@ -186,7 +188,7 @@ profiles; `external_auth` can keep a user to `sqlx.query` only, and that user st
 sqlx:
   _policy:
     allow_adhoc_execute: false   # no write without a named profile (D17); everything else stays as it is
-    # adhoc_execute_verbs: [INSERT, UPDATE, DELETE, CREATE]   # or: widen the verbs an ad-hoc write may start with
+    # adhoc_execute_verbs: [INSERT, UPDATE, DELETE]   # or keep ad-hoc writes but narrow them to DML (default: any single statement)
 ```
 
 ```yaml

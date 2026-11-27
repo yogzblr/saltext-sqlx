@@ -217,15 +217,15 @@ What the default does and does not do:
   Any port is allowed.
 - **Writes with no profile (D17, on by default).** `sqlx.execute` and `sqlx.psql_query write=True` with the connection in the call
   run, as Salt's `postgres.psql_query(write=True)` does: they commit and return `rows_affected` / `committed`, `dry_run=True`
-  rolls back, one statement per call, caps and timeouts apply. The statement must start with INSERT, UPDATE or DELETE; `CREATE`,
-  `DROP` and the like are `[E_POLICY] statement verb '...' is not in execute_verbs` until the operator lists them in
-  `sqlx:_policy:adhoc_execute_verbs` (the message says `execute_verbs`; for a connection without a profile that list is
-  `adhoc_execute_verbs`). `query`, `check_query_result`, `check_row_count`, `ping` and `table_list` stay read-only: an `INSERT`
+  rolls back, one statement per call, caps and timeouts apply. Any single statement is accepted by default, DDL included (`CREATE`,
+  `ALTER`, `TRUNCATE`, `DROP`, ...); the operator narrows it with `sqlx:_policy:adhoc_execute_verbs: [INSERT, UPDATE, DELETE]`,
+  after which `CREATE`, `DROP` and the like are `[E_POLICY] statement verb '...' is not in adhoc_execute_verbs`. `query`, `check_query_result`, `check_row_count`, `ping` and `table_list` stay read-only: an `INSERT`
   sent to `query` is rolled back (`[E_READ_ONLY]` on PostgreSQL). The operator can switch ad-hoc writes off with
   `sqlx:_policy:allow_adhoc_execute: false`; the call then fails as before, `[E_EXECUTE_DISABLED] profile '(adhoc)' does not
-  set allow_execute: true`, before anything connects. **Risk:** anyone who may run `sqlx.execute` can write to any host the
-  minion can reach with credentials they supply; the database account is the real limit. For fleets where callers are not fully
-  trusted, set `allow_adhoc_execute: false` and `allowed_hosts` and write through named profiles. With `allow_adhoc_connection:
+  set allow_execute: true`, before anything connects. **Risk:** anyone who may run `sqlx.execute` can run DDL, `DROP` and
+  `TRUNCATE` on any host the minion can reach with credentials they supply; the database account is the real limit. For fleets
+  where callers are not fully trusted, set `allow_adhoc_execute: false` (or a narrow `adhoc_execute_verbs`) and `allowed_hosts`,
+  and write through named profiles. With `allow_adhoc_connection:
   false` there is no ad-hoc connection at all, so no ad-hoc write; with `allow_call_params: []` no connection field can be sent.
   With a `sqlx:default_profile` (or `profile=`) a call that sends connection fields is an overlay, and that profile's own
   `allow_execute` decides.
@@ -264,7 +264,7 @@ sqlx:
     allow_adhoc_connection: false                                # a call must name a profile
     allow_call_literal_password: false                           # sdb:// references only
     allow_adhoc_execute: false                                   # no write without a named profile (D17); reads unaffected
-    # adhoc_execute_verbs: [INSERT, UPDATE, DELETE, CREATE]      # or keep ad-hoc writes and widen the verbs (default INSERT, UPDATE, DELETE)
+    # adhoc_execute_verbs: [INSERT, UPDATE, DELETE]              # or keep ad-hoc writes but narrow them to DML (default: any single statement)
 
 # 4. More than the default (TLS directory, driver args, timeouts): list the fields explicitly.
 sqlx:
