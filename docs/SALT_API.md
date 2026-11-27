@@ -1641,14 +1641,14 @@ sqlx <<'JSON'
 JSON
 ```
 
-```json
+```text
 {"return": [{"db-minion-01": {"rows_affected": 1, "committed": false, "dry_run": true, "elapsed_ms": 0, "profile": "(adhoc)"}}]}
 HTTP 200
 ```
 
 With a bind value, committed (a second connection counted one row with `a = 42`):
 
-```json
+```text
 {"return": [{"db-minion-01": {"rows_affected": 1, "committed": true, "dry_run": false, "elapsed_ms": 1, "profile": "(adhoc)"}}]}
 HTTP 200
 ```
@@ -1663,7 +1663,7 @@ sqlx <<'JSON'
 JSON
 ```
 
-```json
+```text
 {"return": [{"db-minion-01": [{"rows_affected": "1"}]}]}
 HTTP 200
 ```
@@ -1671,7 +1671,7 @@ HTTP 200
 DDL is outside the default verb list (the message says `execute_verbs`; for a connection without a profile the operator's list is
 `adhoc_execute_verbs`):
 
-```json
+```text
 {"return": [{"db-minion-01": "ERROR executing 'sqlx.execute': [E_POLICY] statement verb 'drop' is not in execute_verbs (insert, update, delete)"}]}
 HTTP 200
 ```
@@ -1705,7 +1705,7 @@ the same ad-hoc `sqlx.execute` and `sqlx.psql_query write: true` answer (HTTP 20
 while a named writing profile still writes and an ad-hoc read still works (one request with two calls; the row `53` was written by
 `pg_rw`, the read returned it):
 
-```json
+```text
 {"return": [{"db-minion-01": {"rows_affected": 1, "committed": true, "dry_run": false, "elapsed_ms": 1, "profile": "pg_rw"}}, {"db-minion-01": {"columns": ["a"], "rows": [[53]], "row_count": 1, "truncated": false, "elapsed_ms": 0, "profile": "(adhoc)"}}]}
 HTTP 200
 ```
