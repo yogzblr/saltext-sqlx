@@ -225,6 +225,9 @@ def test_execute_still_needs_allow_execute_on_the_profile(cfg, server):
             sql=f"insert into {server.table} values ('y', 1)",
             **target(server, username="rw", password="sdb://vault/rw"),
         )
+    cfg["_policy"][
+        "allow_adhoc_execute"
+    ] = False  # D17 opt-out: the pre-D17 refusal of an ad-hoc write
     with pytest.raises(CommandExecutionError, match=r"^\[E_EXECUTE_DISABLED\]"):
         del cfg["default_profile"]
         mod.execute(

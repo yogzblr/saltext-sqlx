@@ -570,7 +570,10 @@ def test_adhoc_is_off_by_default():
 
 
 def test_adhoc_connection_builds_a_profile_with_the_default_port():
-    prof = go(cfg(allow=ADHOC_ALLOW, allow_adhoc_connection=True), dict(ADHOC))
+    # allow_adhoc_execute: false is the pre-D17 behaviour; the default (true) is tested in test_overrides_adhoc_execute.py
+    prof = go(
+        cfg(allow=ADHOC_ALLOW, allow_adhoc_connection=True, allow_adhoc_execute=False), dict(ADHOC)
+    )
     assert prof["name"] == overrides.ADHOC_NAME
     assert (prof["host"], prof["port"], prof["database"], prof["username"]) == (
         "db2.corp.example",
@@ -628,9 +631,13 @@ def test_adhoc_with_a_named_profile_is_an_overlay_not_adhoc():
     assert prof["name"] == "pg"
 
 
-def test_adhoc_cannot_execute_or_turn_off_read_only():
+def test_adhoc_cannot_execute_with_allow_adhoc_execute_false_or_turn_off_read_only():
     prof = go(
-        cfg(allow=ADHOC_ALLOW + ("read_only",), allow_adhoc_connection=True),
+        cfg(
+            allow=ADHOC_ALLOW + ("read_only",),
+            allow_adhoc_connection=True,
+            allow_adhoc_execute=False,
+        ),
         dict(ADHOC, read_only=True),
     )
     assert prof["allow_execute"] is False

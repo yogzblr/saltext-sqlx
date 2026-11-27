@@ -101,7 +101,7 @@ def test_adhoc_connection_with_no_policy_on_every_dialect(dialect):
     assert prof["host"] == "10.1.1.1" and prof["database"] == "d" and prof["username"] == "u"
     assert prof["password"] == LITERAL and prof["password_from_call"] is True
     assert prof["call_overrides"] == sorted(kw)
-    assert prof["allow_execute"] is False and prof["read_only"] is True
+    assert prof["allow_execute"] is True and prof["read_only"] is True  # D17: on by default
     assert (
         prof["port"]
         == {"postgresql": 5432, "mysql": 3306, "oracle": 1521, "mssql": 1433}[prof["dialect"]]
@@ -200,7 +200,7 @@ def test_caps_can_still_only_be_lowered():
 
 
 def test_read_only_and_timeouts_cannot_be_changed_by_default_but_read_only_stays_on():
-    prof = go(nopolicy(), dict(ADHOC))
+    prof = go(nopolicy(allow_adhoc_execute=False), dict(ADHOC))
     assert (
         prof["read_only"] is True
         and prof["allow_execute"] is False
@@ -211,10 +211,10 @@ def test_read_only_and_timeouts_cannot_be_changed_by_default_but_read_only_stays
     assert code(exc) == "[E_POLICY]"
 
 
-def test_ad_hoc_has_no_allow_execute_but_a_writing_profile_keeps_it_with_connection_fields():
+def test_ad_hoc_has_no_allow_execute_with_the_flag_off_but_a_writing_profile_keeps_it_with_connection_fields():
     """Salt allows a write through psql_query whatever the call sends; sqlx keeps ``allow_execute`` a property of the profile."""
     assert (
-        go(nopolicy(), dict(ADHOC))["allow_execute"] is False
+        go(nopolicy(allow_adhoc_execute=False), dict(ADHOC))["allow_execute"] is False
     )  # no profile, nothing says writes are allowed
     for fields in ({"database": "x"}, {"host": "10.2.2.2"}, {"username": "x"}):
         assert go(nopolicy(), dict({"profile": "pg_rw"}, **fields))["allow_execute"] is True

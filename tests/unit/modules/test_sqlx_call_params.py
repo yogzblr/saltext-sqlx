@@ -165,9 +165,12 @@ def test_call_cannot_enable_execute(fake):
     assert fake.executes == []
 
 
-def test_adhoc_connection_can_never_execute(fake):
+def test_adhoc_connection_cannot_execute_when_allow_adhoc_execute_is_false(fake):
+    """Mirror of the pre-D17 rule; the default (on) is tested in test_sqlx_adhoc_execute.py."""
     fake.cfg["_policy"] = policy(
-        allow_call_params=["dialect", "host", "database", "username"], allow_adhoc_connection=True
+        allow_call_params=["dialect", "host", "database", "username"],
+        allow_adhoc_connection=True,
+        allow_adhoc_execute=False,
     )
     adhoc = {"dialect": "postgresql", "host": "db2.corp.example", "database": "d", "username": "u"}
     assert mod.query(sql="select 1", **adhoc)["profile"] == "(adhoc)"

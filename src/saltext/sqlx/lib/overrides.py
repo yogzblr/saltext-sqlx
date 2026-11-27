@@ -14,7 +14,8 @@ Hard rules that no policy and no default relaxes (SPEC section 3.2): a call can 
 ``connect_timeout_s``; it can never set ``allow_execute``, ``execute_verbs``, ``error_detail``, ``row_limit``,
 ``max_bytes`` or ``_policy`` (they are not in the schema: ``[E_OPTION_UNKNOWN]``); it can turn ``read_only`` on but never
 off; ``ssl_mode`` may only tighten; TLS-owned ``query``/``connect_args`` keys cannot come from a call; an ad-hoc
-connection (no profile) can never ``execute``; and the base profile's password is not sent to a retargeted connection
+connection (no profile) may ``execute`` only while the operator's ``allow_adhoc_execute`` is not false (D17, on by default,
+verbs from ``adhoc_execute_verbs``; a call can never send either); and the base profile's password is not sent to a retargeted connection
 (``host``, ``port``, ``username`` or ``dialect`` changed) unless ``inherit_password``. Under the default (no explicit
 list) a literal ``password`` is accepted; an explicit list refuses it unless ``allow_call_literal_password``.
 
@@ -130,12 +131,14 @@ Call.__doc__ = (
 )
 
 Policy = collections.namedtuple(
-    "Policy", "allow hosts ports dialects adhoc literal_password inherit_password default"
+    "Policy",
+    "allow hosts ports dialects adhoc literal_password inherit_password default adhoc_execute adhoc_verbs",
 )
 Policy.__doc__ = (
     "Parsed ``sqlx:_policy``. ``hosts`` is ``None`` when no ``allowed_hosts`` is configured (any host that is not "
     "link-local or cloud metadata), otherwise the parsed list. ``default`` is true when ``allow_call_params`` was absent "
-    "(the D16 compat default), false for an explicit list (including ``[]``)."
+    "(the D16 compat default), false for an explicit list (including ``[]``). ``adhoc_execute`` (D17) is true unless "
+    "``allow_adhoc_execute: false``; ``adhoc_verbs`` is the verb list an ad-hoc ``execute`` may start with."
 )
 
 #: The documented default policy (D16): what applies when ``sqlx:_policy:allow_call_params`` is absent. Individual
@@ -149,10 +152,14 @@ DEFAULT_POLICY = Policy(
     literal_password=True,
     inherit_password=False,
     default=True,
+    adhoc_execute=True,
+    adhoc_verbs=profiles.DEFAULT_EXECUTE_VERBS,
 )
 
 #: The policy for ``allow_call_params: []`` (strict, the behaviour before D16): nothing may be sent in a call.
-STRICT_POLICY = Policy(frozenset(), None, [], None, False, False, False, False)
+STRICT_POLICY = Policy(
+    frozenset(), None, [], None, False, False, False, False, False, profiles.DEFAULT_EXECUTE_VERBS
+)
 
 
 def _fail(code, message, error=SaltInvocationError):
@@ -245,6 +252,18 @@ def _flag(section, key, default=False):
     return value
 
 
+def _parse_verbs(section):
+    """``adhoc_execute_verbs`` (D17): absent = the profile default; else a list of single-word alphabetic strings."""
+    if "adhoc_execute_verbs" not in section:
+        return DEFAULT_POLICY.adhoc_verbs
+    raw = section["adhoc_execute_verbs"]
+    if not isinstance(raw, list) or not all(
+        isinstance(v, str) and re.fullmatch(r"[A-Za-z]+", v) for v in raw
+    ):
+        _bad_policy("adhoc_execute_verbs", "must be a list of single-word strings")
+    return tuple(v.upper() for v in raw)
+
+
 def parse_policy(config):
     """
     Parse ``sqlx:_policy`` (the ``config`` mapping holds ``profiles`` and ``_policy``) into a :class:`Policy`.
@@ -256,6 +275,10 @@ def parse_policy(config):
     * ``allow_call_params`` **a list**: it replaces the default completely. Every entry must be an explicit field name
       from :data:`FIELDS` (``"*"`` is refused); ``allowed_hosts`` is required when ``host`` can be set or ad-hoc is
       enabled; the two flags default to false, as before D16.
+
+    ``allow_adhoc_execute`` (D17, absent = true) and ``adhoc_execute_verbs`` (absent = INSERT, UPDATE, DELETE, the profile
+    default) are read in the default and in the explicit mode; strict ignores them like every other key (nothing ad-hoc
+    can happen without connection fields).
 
     Any problem is ``[E_POLICY]`` naming the key (the feature fails closed).
     """
@@ -304,6 +327,8 @@ def parse_policy(config):
         ),
         _flag(section, "inherit_password", False),
         not explicit,
+        _flag(section, "allow_adhoc_execute", True),
+        _parse_verbs(section),
     )
 
 
@@ -646,6 +671,11 @@ def build_profile(call, name, config, resolver=None):
     profile["call_overrides"] = sorted(supplied)
     profile["password_from_call"] = "password" in supplied
     profile["adhoc"] = call.adhoc
+    if call.adhoc:
+        # D17: an ad-hoc connection has no profile to say allow_execute; only the operator's policy does (never the call).
+        # ``read_only`` is left as it is: ``execute`` skips the session guard itself, every read function keeps it.
+        profile["allow_execute"] = policy.adhoc_execute
+        profile["execute_verbs"] = [v.upper() for v in policy.adhoc_verbs]
     # The driver must not fall back to the minion's own environment or password file for the target the caller chose
     # (libpq reads $PGPASSWORD and ~/.pgpass); ``dialects.PostgreSQL`` honours this marker.
     profile["password_dropped"] = (

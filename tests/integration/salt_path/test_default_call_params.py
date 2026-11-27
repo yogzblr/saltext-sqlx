@@ -65,29 +65,79 @@ def test_every_function_with_the_connection_in_the_call(call, dialect, port, dat
 
 
 @pytest.mark.pg
-def test_write_with_an_ad_hoc_connection_is_refused(call):
+def test_a_write_with_an_ad_hoc_connection_commits_by_default(call, t10_tables):
+    """D17: no profile, no policy: the write runs like Salt's own ``postgres.psql_query(write=True)``."""
     conn = dict(host=HOST, port=PG_PORT, database="sqlx_test", username="rw", password="rw_pw")
-    ret, retcode, _ = call("sqlx.execute", sql="select 1", dialect="postgresql", **conn)
-    assert retcode == 1 and "[E_EXECUTE_DISABLED]" in ret, ret
-    ret, retcode, _ = call(
-        "sqlx.psql_query",
-        query="create table scratch.t_never (a int)",
-        host=HOST,
-        port=PG_PORT,
-        user="rw",
-        maintenance_db="sqlx_test",
-        password="rw_pw",
-        write=True,
-    )
-    assert retcode == 1 and "[E_EXECUTE_DISABLED]" in ret, ret
+    insert = "insert into scratch.t10_orders values (CAST(:i AS INTEGER), :n)"
+    try:
+        ret, retcode, _ = call(
+            "sqlx.execute",
+            sql=insert,
+            params={"i": 201, "n": "dry"},
+            dry_run=True,
+            dialect="postgresql",
+            **conn,
+        )
+        assert retcode == 0 and (ret["committed"], ret["dry_run"]) == (False, True), ret
+        ret, retcode, _ = call(
+            "sqlx.execute", sql=insert, params={"i": 202, "n": "real"}, dialect="postgresql", **conn
+        )
+        assert retcode == 0, ret
+        assert (ret["rows_affected"], ret["committed"], ret["profile"]) == (1, True, "(adhoc)")
+        ret, retcode, _ = call(
+            "sqlx.psql_query",
+            query="insert into scratch.t10_orders values (203, 'psql')",
+            host=HOST,
+            port=PG_PORT,
+            user="rw",
+            maintenance_db="sqlx_test",
+            password="rw_pw",
+            write=True,
+        )
+        assert retcode == 0 and ret == [{"rows_affected": "1"}], ret
+        ret, retcode, _ = call(
+            "sqlx.query",
+            sql="select id from scratch.t10_orders where id > 200 order by id",
+            dialect="postgresql",
+            **conn,
+        )
+        assert ret["rows"] == [[202], [203]], ret  # the dry run did not persist
+        ret, retcode, _ = call(  # a read function never writes, even with an INSERT in it
+            "sqlx.query",
+            sql="insert into scratch.t10_orders values (204, 'q')",
+            dialect="postgresql",
+            **conn,
+        )
+        assert retcode == 1, ret
+        with t10_tables["pg"].begin() as db:
+            rows = db.exec_driver_sql(
+                "select id from scratch.t10_orders where id > 200 order by id"
+            )
+            assert [r[0] for r in rows] == [202, 203]
+    finally:
+        with t10_tables["pg"].begin() as db:
+            db.exec_driver_sql("DELETE FROM scratch.t10_orders WHERE id > 200")
 
 
 @pytest.mark.pg
-def test_a_writing_profile_with_connection_fields_does_not_execute(call):
+def test_an_ad_hoc_write_still_obeys_the_verb_list(call):
+    conn = dict(host=HOST, port=PG_PORT, database="sqlx_test", username="rw", password="rw_pw")
+    ret, retcode, _ = call(
+        "sqlx.execute", sql="create table scratch.t_never (a int)", dialect="postgresql", **conn
+    )
+    assert retcode == 1 and "[E_POLICY]" in ret and "execute_verbs" in ret, ret
+
+
+@pytest.mark.pg
+def test_a_writing_profile_with_connection_fields_passes_the_execute_gate(call):
+    """D16 withdrew the refusal (``allow_execute`` is the profile's): the call reaches the verb filter, which stops ``select``.
+
+    This test asserted ``[E_EXECUTE_DISABLED]`` and was already stale on main before D17.
+    """
     ret, retcode, _ = call(
         "sqlx.execute", profile="pg_rw", sql="select 1", host=HOST, password="rw_pw"
     )
-    assert retcode == 1 and "[E_EXECUTE_DISABLED]" in ret, ret
+    assert retcode == 1 and "[E_POLICY]" in ret and "execute_verbs" in ret, ret
 
 
 @pytest.mark.pg

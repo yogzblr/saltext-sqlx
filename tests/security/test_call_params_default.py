@@ -235,7 +235,11 @@ def test_an_ad_hoc_call_without_a_password_is_not_answered_from_the_minions_envi
         ),
     ],
 )
-def test_an_ad_hoc_connection_can_never_write(cfg, connects, fake, call):
+def test_an_ad_hoc_connection_cannot_write_when_allow_adhoc_execute_is_false(
+    cfg, connects, fake, call
+):
+    """Mirror of the pre-D17 rule (D17 made ad-hoc writes the default; this is the operator's opt-out)."""
+    cfg["_policy"] = {"allow_adhoc_execute": False}
     with pytest.raises(CommandExecutionError, match=r"^\[E_EXECUTE_DISABLED\]"):
         call()
     assert connects == [] and fake.accepted == 0
@@ -321,7 +325,8 @@ def test_the_hard_caps_of_an_ad_hoc_connection_are_the_defaults(cfg, monkeypatch
         )
     assert seen["timeout_ms"] == 30000
     assert seen["profile"]["row_limit"] == 500 and seen["profile"]["error_detail"] is False
-    assert seen["profile"]["read_only"] is True and seen["profile"]["allow_execute"] is False
+    assert seen["profile"]["read_only"] is True
+    assert seen["profile"]["allow_execute"] is True  # D17: the operator-level default, not the call
 
 
 # -- secrets on every error path, literal password in the call -------------------------------------------------------
