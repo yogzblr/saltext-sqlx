@@ -172,17 +172,30 @@ def test_psql_query_write_with_salts_names(cfg, server):
     assert mod.psql_query(f"select count(*) as c from {server.table}", **args) == [{"c": "3"}]
 
 
-def test_the_default_verbs_refuse_ddl_and_the_operator_can_allow_it(cfg, server):
+def test_the_default_allows_ddl_and_the_operator_can_narrow_it(cfg, server):
+    """D17: any single statement by default; ``adhoc_execute_verbs`` narrows it again."""
     admin = conn(server, username=server.cfg["admin"], password=ADMIN_PW)
     name = f"scratch.t17_ddl_{uuid.uuid4().hex[:6]}"
-    with pytest.raises(SaltInvocationError, match=r"^\[E_POLICY\].*execute_verbs"):
-        mod.execute(sql=f"create table {name} (a integer)", **admin)
-    cfg["_policy"] = {"adhoc_execute_verbs": ["INSERT", "create", "DROP"]}
     try:
-        out = mod.execute(sql=f"create table {name} (a integer)", **admin)
+        out = mod.execute(
+            sql=f"create table {name} (a integer)", **admin
+        )  # the default: any statement
         assert out["committed"] is True
         mod.execute(sql=f"insert into {name} values (1)", **admin)
         assert server.verify(f"select a from {name}") == [(1,)]
+        mod.execute(sql=f"truncate table {name}", **admin)
+        assert server.verify(f"select count(*) from {name}") == [(0,)]
+        cfg["_policy"] = {"adhoc_execute_verbs": ["INSERT", "UPDATE", "DELETE"]}
+        for sql in (
+            f"drop table {name}",
+            f"truncate table {name}",
+            f"alter table {name} add b integer",
+        ):
+            with pytest.raises(SaltInvocationError, match=r"^\[E_POLICY\].*adhoc_execute_verbs"):
+                mod.execute(sql=sql, **admin)
+        assert server.verify(f"select count(*) from {name}") == [(0,)]  # still there
+        cfg["_policy"] = {"adhoc_execute_verbs": "*"}  # the explicit spelling of the default
+        mod.execute(sql=f"drop table {name}", **admin)
     finally:
         server.admin_run(f"drop table if exists {name}")
 

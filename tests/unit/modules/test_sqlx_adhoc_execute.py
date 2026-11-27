@@ -38,7 +38,7 @@ def test_execute_with_no_profile_commits_on_every_dialect(fake, dialect):
             "sql": INSERT,
             "params": None,
             "dry_run": False,
-            "execute_verbs": ["INSERT", "UPDATE", "DELETE"],
+            "execute_verbs": ["*"],
         }
     ]
 
@@ -113,19 +113,35 @@ def test_a_caller_cannot_widen_anything(fake, extra):
 # -- verbs ------------------------------------------------------------------------------------------------------------
 
 
-def test_the_ad_hoc_verbs_default_to_the_profile_default(fake):
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "create table t (a int)",
+        "drop table t",
+        "truncate t",
+        "alter table t add b int",
+        "update t set a = 1",
+    ],
+)
+def test_the_ad_hoc_default_is_any_single_statement(fake, sql):
+    mod.execute(sql=sql, dialect="postgresql", **CONN)
+    assert fake.executes[0]["execute_verbs"] == ["*"] and fake.executes[0]["sql"] == sql
+
+
+def test_the_operator_narrows_the_verbs_and_only_the_operator(fake):
+    fake.cfg["_policy"] = {"adhoc_execute_verbs": ["insert", "update", "delete"]}
     mod.execute(sql="update t set a = 1", dialect="postgresql", **CONN)
     assert fake.executes[0]["execute_verbs"] == ["INSERT", "UPDATE", "DELETE"]
 
 
-def test_the_operator_widens_the_verbs_and_only_the_operator(fake):
-    fake.cfg["_policy"] = {"adhoc_execute_verbs": ["create", "drop", "insert"]}
-    mod.execute(sql="create table t (a int)", dialect="postgresql", **CONN)
-    assert fake.executes[0]["execute_verbs"] == ["CREATE", "DROP", "INSERT"]
-
-
 def test_a_writing_profile_keeps_its_own_verbs_whatever_the_ad_hoc_list_says(fake):
-    fake.cfg["_policy"] = {"adhoc_execute_verbs": ["CREATE"]}
+    for verbs in (["CREATE"], "*"):
+        fake.cfg["_policy"] = {"adhoc_execute_verbs": verbs}
+        fake.executes.clear()
+        mod.execute(profile="pg_rw", sql="update t set a = 1", host="10.2.2.2")
+        assert fake.executes[0]["execute_verbs"] == ["INSERT", "UPDATE", "DELETE"]
+    fake.cfg["_policy"] = {}
+    fake.executes.clear()
     mod.execute(profile="pg_rw", sql="update t set a = 1", host="10.2.2.2")
     assert fake.executes[0]["execute_verbs"] == ["INSERT", "UPDATE", "DELETE"]
 
@@ -262,3 +278,24 @@ def test_with_a_default_profile_a_connection_in_the_call_is_an_overlay_and_the_p
     fake.cfg["default_profile"] = "pg_ro"
     with pytest.raises(CommandExecutionError, match=r"^\[E_EXECUTE_DISABLED\].*'pg_ro'"):
         mod.execute(sql=INSERT, dialect="postgresql", **CONN)
+
+
+def test_the_verb_error_of_an_ad_hoc_call_names_the_operators_list(fake):
+    """The filter itself runs in ``runner`` (tested there); here the module words its refusal for a connection without a profile."""
+    fake.cfg["_policy"] = {"adhoc_execute_verbs": ["INSERT"]}
+    fake.execute_error = SaltInvocationError(
+        "[E_POLICY] statement verb 'drop' is not in execute_verbs (insert)"
+    )
+    with pytest.raises(SaltInvocationError) as exc:
+        mod.execute(sql="drop table t", dialect="postgresql", **CONN)
+    assert (
+        str(exc.value) == "[E_POLICY] statement verb 'drop' is not in adhoc_execute_verbs (insert)"
+    )
+
+
+def test_the_verb_error_of_a_profile_call_is_unchanged(fake):
+    fake.execute_error = SaltInvocationError(
+        "[E_POLICY] statement verb 'drop' is not in execute_verbs (insert)"
+    )
+    with pytest.raises(SaltInvocationError, match=r"not in execute_verbs \(insert\)"):
+        mod.execute(profile="pg_rw", sql="drop table t")

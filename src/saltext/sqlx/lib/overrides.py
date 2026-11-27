@@ -15,7 +15,7 @@ Hard rules that no policy and no default relaxes (SPEC section 3.2): a call can 
 ``max_bytes`` or ``_policy`` (they are not in the schema: ``[E_OPTION_UNKNOWN]``); it can turn ``read_only`` on but never
 off; ``ssl_mode`` may only tighten; TLS-owned ``query``/``connect_args`` keys cannot come from a call; an ad-hoc
 connection (no profile) may ``execute`` only while the operator's ``allow_adhoc_execute`` is not false (D17, on by default,
-verbs from ``adhoc_execute_verbs``; a call can never send either); and the base profile's password is not sent to a retargeted connection
+any statement unless the operator narrows ``adhoc_execute_verbs``; a call can never send either); and the base profile's password is not sent to a retargeted connection
 (``host``, ``port``, ``username`` or ``dialect`` changed) unless ``inherit_password``. Under the default (no explicit
 list) a literal ``password`` is accepted; an explicit list refuses it unless ``allow_call_literal_password``.
 
@@ -153,12 +153,12 @@ DEFAULT_POLICY = Policy(
     inherit_password=False,
     default=True,
     adhoc_execute=True,
-    adhoc_verbs=profiles.DEFAULT_EXECUTE_VERBS,
+    adhoc_verbs=(profiles.ANY_EXECUTE_VERB,),
 )
 
 #: The policy for ``allow_call_params: []`` (strict, the behaviour before D16): nothing may be sent in a call.
 STRICT_POLICY = Policy(
-    frozenset(), None, [], None, False, False, False, False, False, profiles.DEFAULT_EXECUTE_VERBS
+    frozenset(), None, [], None, False, False, False, False, False, (profiles.ANY_EXECUTE_VERB,)
 )
 
 
@@ -253,10 +253,15 @@ def _flag(section, key, default=False):
 
 
 def _parse_verbs(section):
-    """``adhoc_execute_verbs`` (D17): absent = the profile default; else a list of single-word alphabetic strings."""
+    """
+    ``adhoc_execute_verbs`` (D17): absent or the string ``"*"`` = any single statement (``("*",)``); else a list of
+    single-word alphabetic strings that narrows it (``["*"]`` inside a list is refused: it is the whole value or nothing).
+    """
     if "adhoc_execute_verbs" not in section:
         return DEFAULT_POLICY.adhoc_verbs
     raw = section["adhoc_execute_verbs"]
+    if raw == profiles.ANY_EXECUTE_VERB:
+        return DEFAULT_POLICY.adhoc_verbs
     if not isinstance(raw, list) or not all(
         isinstance(v, str) and re.fullmatch(r"[A-Za-z]+", v) for v in raw
     ):
@@ -276,8 +281,8 @@ def parse_policy(config):
       from :data:`FIELDS` (``"*"`` is refused); ``allowed_hosts`` is required when ``host`` can be set or ad-hoc is
       enabled; the two flags default to false, as before D16.
 
-    ``allow_adhoc_execute`` (D17, absent = true) and ``adhoc_execute_verbs`` (absent = INSERT, UPDATE, DELETE, the profile
-    default) are read in the default and in the explicit mode; strict ignores them like every other key (nothing ad-hoc
+    ``allow_adhoc_execute`` (D17, absent = true) and ``adhoc_execute_verbs`` (absent = any single statement; a list such as
+    INSERT, UPDATE, DELETE narrows it) are read in the default and in the explicit mode; strict ignores them like every other key (nothing ad-hoc
     can happen without connection fields).
 
     Any problem is ``[E_POLICY]`` naming the key (the feature fails closed).
@@ -675,7 +680,7 @@ def build_profile(call, name, config, resolver=None):
         # D17: an ad-hoc connection has no profile to say allow_execute; only the operator's policy does (never the call).
         # ``read_only`` is left as it is: ``execute`` skips the session guard itself, every read function keeps it.
         profile["allow_execute"] = policy.adhoc_execute
-        profile["execute_verbs"] = [v.upper() for v in policy.adhoc_verbs]
+        profile["execute_verbs"] = [v.upper() for v in policy.adhoc_verbs]  # ["*"] = any statement
     # The driver must not fall back to the minion's own environment or password file for the target the caller chose
     # (libpq reads $PGPASSWORD and ~/.pgpass); ``dialects.PostgreSQL`` honours this marker.
     profile["password_dropped"] = (

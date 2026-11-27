@@ -120,12 +120,14 @@ def test_a_write_with_an_ad_hoc_connection_commits_by_default(call, t10_tables):
 
 
 @pytest.mark.pg
-def test_an_ad_hoc_write_still_obeys_the_verb_list(call):
+def test_an_ad_hoc_write_may_be_ddl_by_default(call):
+    """D17: any single statement by default. ``rw`` has no DDL right, so the database's own answer proves it got through."""
     conn = dict(host=HOST, port=PG_PORT, database="sqlx_test", username="rw", password="rw_pw")
     ret, retcode, _ = call(
         "sqlx.execute", sql="create table scratch.t_never (a int)", dialect="postgresql", **conn
     )
-    assert retcode == 1 and "[E_POLICY]" in ret and "execute_verbs" in ret, ret
+    assert retcode == 1 and "[E_POLICY]" not in ret and "[E_EXECUTE_DISABLED]" not in ret, ret
+    assert ret.startswith("ERROR: [E_") and "permission denied" in ret, ret
 
 
 @pytest.mark.pg

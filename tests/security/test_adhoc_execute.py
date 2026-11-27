@@ -166,11 +166,7 @@ def test_the_caps_of_an_ad_hoc_write_are_the_hard_defaults(cfg, monkeypatch):
     with pytest.raises(CommandExecutionError):
         mod.execute(sql=INSERT, **ADHOC, host=HOST, timeout_ms=10**9)
     assert seen["timeout_ms"] == 30000 and seen["profile"]["error_detail"] is False
-    assert seen["profile"]["row_limit"] == 500 and seen["profile"]["execute_verbs"] == [
-        "INSERT",
-        "UPDATE",
-        "DELETE",
-    ]
+    assert seen["profile"]["row_limit"] == 500 and seen["profile"]["execute_verbs"] == ["*"]
     assert (
         seen["profile"]["read_only"] is True
     )  # the profile of an ad-hoc connection is read-only for the read functions
@@ -310,11 +306,59 @@ def test_live_wrong_password_is_the_real_error_without_the_password(live, caplog
     assert rows(live.srv) == [(1, 1)]
 
 
-def test_live_the_default_verbs_refuse_ddl_and_nothing_runs(live):
-    with pytest.raises(SaltInvocationError) as exc:
-        live.module.execute(sql=f"DROP TABLE {T}", **live())
-    assert str(exc.value).startswith("[E_POLICY]") and "execute_verbs" in str(exc.value)
-    assert rows(live.srv) == [(1, 1)]
+def admin_conn(srv, **extra):
+    base = {
+        "dialect": srv.dialect,
+        "host": harness.HOST,
+        "port": srv.cfg["port"],
+        "database": srv.cfg["database"],
+        "username": srv.cfg["admin"],
+        "password": harness.ADMIN_PW,
+    }
+    base.update(extra)
+    return base
+
+
+def test_live_the_default_allows_any_single_statement_ddl_included(tables):
+    """D17 (any statement by default): CREATE, ALTER, TRUNCATE and DROP run as one statement each, with the admin account."""
+    srv = tables
+    name = "scratch.t17_ddl"
+    srv.admin(f"DROP TABLE IF EXISTS {name}")
+    try:
+        with harness.injected({}) as module:
+            for sql in (
+                f"CREATE TABLE {name} (a integer)",
+                f"ALTER TABLE {name} ADD COLUMN b integer",
+                f"INSERT INTO {name} (a, b) VALUES (1, 2)",
+                f"TRUNCATE TABLE {name}",
+            ):
+                out = module.execute(sql=sql, **admin_conn(srv))
+                assert out["committed"] is True and out["profile"] == "(adhoc)", sql
+            assert srv.admin(f"SELECT count(*) FROM {name}") == [(0,)]
+            module.execute(sql=f"DROP TABLE {name}", **admin_conn(srv))
+        assert not srv.admin(
+            "SELECT 1 FROM information_schema.tables WHERE table_schema = 'scratch' AND table_name = 't17_ddl'"
+        )
+    finally:
+        srv.admin(f"DROP TABLE IF EXISTS {name}")
+
+
+@pytest.mark.parametrize("verbs", [["INSERT", "UPDATE", "DELETE"], ["insert"]])
+def test_live_a_narrowed_verb_list_still_refuses_ddl_and_nothing_runs(live, verbs):
+    with harness.injected({}, policy={"adhoc_execute_verbs": verbs}) as module:
+        for sql in (
+            f"DROP TABLE {T}",
+            f"TRUNCATE TABLE {T}",
+            f"ALTER TABLE {T} ADD COLUMN z integer",
+        ):
+            with pytest.raises(SaltInvocationError) as exc:
+                module.execute(sql=sql, **live())
+            assert str(exc.value).startswith("[E_POLICY]") and "not in adhoc_execute_verbs" in str(
+                exc.value
+            )
+        out = module.execute(sql=f"INSERT INTO {T} VALUES (11, 11)", **live())
+        assert out["committed"] is True
+    assert rows(live.srv) == [(1, 1), (11, 11)]
 
 
 @pytest.mark.parametrize("variant", ["plain", "comment-trick", "upper-semicolon-end"])

@@ -18,6 +18,7 @@ from tests.unit.lib.test_overrides import go
 
 ADHOC = {"dialect": "postgresql", "host": "10.1.1.1", "database": "d", "username": "u"}
 WORDS = ("INSERT", "UPDATE", "DELETE")
+ANY = ["*"]  # the explicit "any single statement" representation (profiles.ANY_EXECUTE_VERB)
 
 
 def cfg(**policy):
@@ -30,10 +31,11 @@ def cfg(**policy):
 # -- the default ------------------------------------------------------------------------------------------------------
 
 
-def test_the_default_policy_allows_adhoc_execute_with_the_profile_default_verbs():
+def test_the_default_policy_allows_adhoc_execute_with_any_statement():
     d = overrides.DEFAULT_POLICY
     assert d.adhoc_execute is True
-    assert tuple(d.adhoc_verbs) == profiles.DEFAULT_EXECUTE_VERBS == WORDS
+    assert list(d.adhoc_verbs) == ANY == [profiles.ANY_EXECUTE_VERB]
+    assert tuple(profiles.DEFAULT_EXECUTE_VERBS) == WORDS  # a profile's default is unchanged
 
 
 @pytest.mark.parametrize(
@@ -41,7 +43,7 @@ def test_the_default_policy_allows_adhoc_execute_with_the_profile_default_verbs(
 )
 def test_absent_allow_adhoc_execute_is_true(config):
     policy = overrides.parse_policy(config)
-    assert policy.adhoc_execute is True and tuple(policy.adhoc_verbs) == WORDS
+    assert policy.adhoc_execute is True and list(policy.adhoc_verbs) == ANY
 
 
 @pytest.mark.parametrize("value", [True, False])
@@ -90,12 +92,33 @@ def test_adhoc_execute_verbs_are_upper_cased():
     assert list(policy.adhoc_verbs) == ["INSERT", "CREATE", "DROP"]
 
 
+def test_the_narrow_set_is_restored_with_an_explicit_list():
+    policy = overrides.parse_policy(cfg(adhoc_execute_verbs=["INSERT", "UPDATE", "DELETE"]))
+    assert tuple(policy.adhoc_verbs) == WORDS
+
+
+def test_the_string_star_is_the_explicit_spelling_of_any():
+    assert list(overrides.parse_policy(cfg(adhoc_execute_verbs="*")).adhoc_verbs) == ANY
+
+
 def test_an_empty_verb_list_is_accepted_and_means_no_ad_hoc_write_passes():
     assert not overrides.parse_policy(cfg(adhoc_execute_verbs=[])).adhoc_verbs
 
 
 @pytest.mark.parametrize(
-    "value", ["INSERT", ["INSERT UPDATE"], ["drop;"], [1], [""], None, {"a": 1}, ["*"]]
+    "value",
+    [
+        "INSERT",
+        "**",
+        ["INSERT UPDATE"],
+        ["drop;"],
+        [1],
+        [""],
+        None,
+        {"a": 1},
+        ["*"],
+        ["INSERT", "*"],
+    ],
 )
 def test_a_malformed_verb_list_is_e_policy(value):
     with pytest.raises(SaltInvocationError) as exc:
@@ -112,10 +135,10 @@ def test_the_verbs_are_validated_even_when_the_flag_is_off():
 # -- the profile an ad-hoc call gets ----------------------------------------------------------------------------------
 
 
-def test_an_adhoc_profile_may_execute_by_default_with_the_default_verbs_and_stays_read_only_for_reads():
+def test_an_adhoc_profile_may_execute_by_default_any_statement_and_stays_read_only_for_reads():
     prof = go(cfg(), dict(ADHOC, password="pw-literal-1"))
     assert prof["adhoc"] is True and prof["allow_execute"] is True
-    assert prof["execute_verbs"] == list(WORDS)
+    assert prof["execute_verbs"] == ANY
     assert (
         prof["read_only"] is True
     )  # the read functions keep their guard; ``execute`` skips it itself
@@ -139,7 +162,7 @@ def test_operator_verbs_reach_the_adhoc_profile():
 @pytest.mark.parametrize("dialect", ["postgresql", "mysql", "mariadb", "oracle", "mssql"])
 def test_every_dialect_gets_it(dialect):
     prof = go(cfg(), dict(ADHOC, dialect=dialect))
-    assert prof["allow_execute"] is True and prof["execute_verbs"] == list(WORDS)
+    assert prof["allow_execute"] is True and prof["execute_verbs"] == ANY
 
 
 def test_a_profile_is_never_changed_by_the_flag():
@@ -157,7 +180,7 @@ def test_a_profile_is_never_changed_by_the_flag():
 
 
 def test_a_default_profile_means_the_call_is_an_overlay_not_ad_hoc():
-    config = cfg(adhoc_execute_verbs=["CREATE"])
+    config = cfg(adhoc_execute_verbs=["CREATE"])  # or any: the default profile's own verbs rule
     config["default_profile"] = "pg"
     prof = go(config, dict(ADHOC))
     assert prof["adhoc"] is False and prof["name"] == "pg"

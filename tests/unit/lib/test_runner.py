@@ -564,3 +564,69 @@ def test_verb_filter_still_skips_plain_and_hint_comments():
         execute_verbs=VERBS,
     )
     assert fake.events == ["execute", "commit"]
+
+
+# -- D17: the explicit "any statement" verb list of an ad-hoc write -----------------------------------------------------
+
+ANY = ["*"]
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "create table t (a int)",
+        "DROP TABLE t",
+        "truncate t",
+        "alter table t add b int",
+        "grant select on t to x",
+        "call p()",
+        "insert into t values (1)",
+        "/* c */ -- c\n delete from t",
+        "with x as (select 1) insert into t select * from x",
+    ],
+)
+def test_the_any_sentinel_lets_every_single_statement_through(sql):
+    fake = FakeConn(FakeResult(rowcount=1))
+    out = runner.run_execute(fake, sql, None, dry_run=False, execute_verbs=ANY)
+    assert fake.events == ["execute", "commit"] and out["committed"] is True
+
+
+def test_the_any_sentinel_still_rolls_back_a_dry_run():
+    fake = FakeConn(FakeResult(rowcount=1))
+    out = runner.run_execute(fake, "drop table t", None, dry_run=True, execute_verbs=ANY)
+    assert fake.events == ["execute", "rollback"] and out["committed"] is False
+
+
+@pytest.mark.parametrize("sql", ["", "-- only a comment", "/* only */"])
+def test_the_any_sentinel_still_refuses_an_empty_statement(sql):
+    fake = FakeConn()
+    with pytest.raises(SaltInvocationError, match=r"^\[E_OPTION_INVALID\] "):
+        runner.run_execute(fake, sql, None, dry_run=False, execute_verbs=ANY)
+    assert not fake.events
+
+
+@pytest.mark.parametrize(
+    "sql", ["/*! drop table t */", "/*M! drop table t */", "/* a /* b */ c */ drop table t"]
+)
+def test_the_any_sentinel_still_refuses_ambiguous_leading_comments(sql):
+    fake = FakeConn()
+    with pytest.raises(SaltInvocationError, match=r"^\[E_POLICY\] "):
+        runner.run_execute(fake, sql, None, dry_run=False, execute_verbs=ANY)
+    assert not fake.events
+
+
+@pytest.mark.parametrize("sql", ["(select 1)", "; drop table t", "1", "'x'"])
+def test_the_any_sentinel_still_needs_a_leading_keyword(sql):
+    fake = FakeConn()
+    with pytest.raises(SaltInvocationError, match=r"^\[E_POLICY\] "):
+        runner.run_execute(fake, sql, None, dry_run=False, execute_verbs=ANY)
+    assert not fake.events
+
+
+def test_a_list_with_other_words_is_still_a_narrow_list_and_star_is_only_the_whole_list():
+    """``["*"]`` is the sentinel; no word of a real list is ever treated as a wildcard."""
+    fake = FakeConn()
+    with pytest.raises(SaltInvocationError, match=r"^\[E_POLICY\] "):
+        runner.run_execute(fake, "drop table t", None, dry_run=False, execute_verbs=VERBS)
+    with pytest.raises(SaltInvocationError, match=r"^\[E_POLICY\] "):
+        runner.run_execute(fake, "drop table t", None, dry_run=False, execute_verbs=["INSERT", "x"])
